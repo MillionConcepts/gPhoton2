@@ -8,7 +8,7 @@ import numpy as np
 import pyarrow
 from astropy.io import fits as pyfits
 
-import gPhoton.constants as c
+from gPhoton import cal as cal, constants as c
 from gPhoton.CalUtils import (
     compute_stimstats,
     post_csp_caldata,
@@ -82,8 +82,6 @@ def process_chunk(
     dbscale,
     mask,
     maskfill,
-    npixx,
-    npixy,
     stim_coefficients,
     xoffset,
     yoffset,
@@ -95,8 +93,6 @@ def process_chunk(
         chunkid,
         mask,
         maskfill,
-        npixx,
-        npixy,
         stim_coefficients,
         xoffset,
         yoffset,
@@ -225,17 +221,15 @@ def find_null_indices(aspflags, aspect_slice, asptime, flags, ok_indices):
 
 
 def apply_on_detector_corrections(
-        band,
-        cal_data,
-        chunk,
-        chunkid,
-        mask,
-        maskfill,
-        npixx,
-        npixy,
-        stim_coefficients,
-        xoffset,
-        yoffset,
+    band,
+    cal_data,
+    chunk,
+    chunkid,
+    mask,
+    maskfill,
+    stim_coefficients,
+    xoffset,
+    yoffset,
 ):
     q, t, x, xa, xb, y, ya, yamc, yb = (
         chunk["q"],
@@ -316,8 +310,6 @@ def apply_on_detector_corrections(
         flags,
         mask,
         maskfill,
-        npixx,
-        npixy,
         xp_as,
         xshift,
         yp_as,
@@ -334,8 +326,6 @@ def apply_hotspot_mask(
     flags,
     mask,
     maskfill,
-    npixx,
-    npixy,
     xp_as,
     xshift,
     yp_as,
@@ -354,8 +344,16 @@ def apply_hotspot_mask(
     xi = c.XI_XSC * y_component + c.XI_YSC * x_component
     # TODO, similarly with eta_ysc?
     eta = c.ETA_XSC * y_component + c.ETA_YSC * x_component
-    col = ((xi / 36000.0) / (c.DETSIZE / 2.0) * maskfill + 1.0) / 2.0 * npixx
-    row = ((eta / 36000.0) / (c.DETSIZE / 2.0) * maskfill + 1.0) / 2.0 * npixy
+    col = (
+        ((xi / 36000.0) / (c.DETSIZE / 2.0) * maskfill + 1.0)
+        * mask.shape[0]
+        / 2
+    )
+    row = (
+        ((eta / 36000.0) / (c.DETSIZE / 2.0) * maskfill + 1.0)
+        * mask.shape[1]
+        / 2
+    )
     cut = (
         (col > 0.0)
         & (col < 799.0)
@@ -820,13 +818,22 @@ def decode_telemetry(band, chunkbeg, chunkend, chunkid, eclipse, raw6hdulist):
 
 def unpack_raw6(chunkbeg, chunkend, chunkid, raw6hdulist):
     print_inline(chunkid + "Unpacking raw6 data...")
-    t = np.array(raw6hdulist[1].data.field("t")[chunkbeg:chunkend])
+    photonbyte_cols = [f"phb{byte + 1}" for byte in range(5)]
+    table_chunk = raw6hdulist[1][chunkbeg:chunkend][["t"] + photonbyte_cols]
+    t = table_chunk["t"]
+    photonbytes_as_short = table_chunk[photonbyte_cols].astype(
+        [(col, np.int16) for col in photonbyte_cols]
+    )
     photonbytes = {}
     for byte in range(5):
-        photonbytes[byte + 1] = np.array(
-            raw6hdulist[1].data.field(f"phb{byte + 1}")[chunkbeg:chunkend],
-            dtype=np.int16,
-        )
+        photonbytes[byte + 1] = photonbytes_as_short[photonbyte_cols[byte]]
+    # t = np.array(raw6hdulist[1].data.field("t")[chunkbeg:chunkend])
+    # photonbytes = {}
+    # for byte in range(5):
+    #     photonbytes[byte + 1] = np.array(
+    #         raw6hdulist[1].data.field(f"phb{byte + 1}")[chunkbeg:chunkend],
+    #         dtype=np.int16,
+    #     )
     return t, photonbytes
 
 
@@ -981,6 +988,8 @@ def retrieve_scstfile(band, eclipse, outbase, scstfile):
 
 
 def get_eclipse_from_header(eclipse, raw6file):
+    # note that astropy is much faster than fitsio for the specific purpose of
+    # skimming a FITS header from a compressed FITS file
     hdulist = pyfits.open(raw6file)
     hdr = hdulist[0].header
     hdulist.close()
@@ -1015,3 +1024,32 @@ def chunk_data(chunksz, data, nphots, copy=True):
         unpack_data_chunk(data, *indices, copy=copy)
         for indices in chunk_indices
     ]
+
+
+def load_cal_data(band, eclipse):
+    cal_data = NestingDict()
+    print_inline("Loading wiggle files...")
+    cal_data["wiggle"]["x"], _ = cal.wiggle(band, "x")
+    cal_data["wiggle"]["y"], _ = cal.wiggle(band, "y")
+    print_inline("Loading walk files...")
+    cal_data["walk"]["x"], _ = cal.walk(band, "x")
+    cal_data["walk"]["y"], _ = cal.walk(band, "y")
+    print_inline("Loading linearity files...")
+    cal_data["linearity"]["x"], _ = cal.linearity(band, "x")
+    cal_data["linearity"]["y"], _ = cal.linearity(band, "y")
+    # TODO: it looks like this always gets applied regardless of post-CSP
+    #  status.
+    # This is for the post-CSP stim distortion corrections.
+    print_inline("Loading distortion files...")
+    if eclipse > 37460:
+        print_inline(
+            " Using stim separation of : {stimsep}".format(stimsep=c.STIMSEP)
+        )
+    (
+        cal_data["distortion"]["x"],
+        cal_data["distortion"]["header"],
+    ) = cal.distortion(band, "x", eclipse, c.STIMSEP)
+    cal_data["distortion"]["y"], _ = cal.distortion(
+        band, "y", eclipse, c.STIMSEP
+    )
+    return cal_data

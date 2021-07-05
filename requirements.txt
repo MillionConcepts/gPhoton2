@@ -8,5 +8,6 @@ requests
 ffmpeg
 scipy
 sklearn
-pytables
+pyarrow
 ffmpeg
+fitsio

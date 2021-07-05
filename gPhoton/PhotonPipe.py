@@ -5,20 +5,19 @@
        raw spacecraft and detector telemetry. Generates time-tagged photon lists
        given mission-produced -raw6, -scst, and -asprta data.
 """
-
 from multiprocessing import Pool
 import os
 import time
 
 # Core and Third Party imports.
+import fitsio
 import pyarrow
 import pyarrow.parquet
-from astropy.io import fits as pyfits
 
 # gPhoton imports.
 import gPhoton.cal as cal
-import gPhoton.constants as c
 from gPhoton.CalUtils import find_fuv_offset
+import gPhoton.constants as c
 from gPhoton.MCUtils import print_inline
 from gPhoton._pipe_components import (
     retrieve_aspect_solution,
@@ -29,7 +28,7 @@ from gPhoton._pipe_components import (
     retrieve_scstfile,
     get_eclipse_from_header,
     perform_yac_correction,
-    NestingDict, chunk_data,
+    chunk_data, load_cal_data,
 )
 
 
@@ -99,39 +98,11 @@ def photonpipe(
     # download raw6 if local file is not passed
     if raw6file is None:
         raw6file = retrieve_raw6(eclipse, band, outbase)
-    # get / check eclipse # from raw6 header
+    # get / check eclipse # from raw6 header --
     eclipse = get_eclipse_from_header(eclipse, raw6file)
     print_inline("Processing eclipse {eclipse}".format(eclipse=eclipse))
 
-    cal_data = NestingDict()
-
-    print_inline("Loading wiggle files...")
-    cal_data["wiggle"]["x"], _ = cal.wiggle(band, "x")
-    cal_data["wiggle"]["y"], _ = cal.wiggle(band, "y")
-
-    print_inline("Loading walk files...")
-    cal_data["walk"]["x"], _ = cal.walk(band, "x")
-    cal_data["walk"]["y"], _ = cal.walk(band, "y")
-
-    print_inline("Loading linearity files...")
-    cal_data["linearity"]["x"], _ = cal.linearity(band, "x")
-    cal_data["linearity"]["y"], _ = cal.linearity(band, "y")
-
-    # TODO: it looks like this always gets applied regardless of post-CSP
-    #  status.
-    # This is for the post-CSP stim distortion corrections.
-    print_inline("Loading distortion files...")
-    if eclipse > 37460:
-        print_inline(
-            " Using stim separation of : {stimsep}".format(stimsep=c.STIMSEP)
-        )
-    (
-        cal_data["distortion"]["x"],
-        cal_data["distortion"]["header"],
-    ) = cal.distortion(band, "x", eclipse, c.STIMSEP)
-    cal_data["distortion"]["y"], _ = cal.distortion(
-        band, "y", eclipse, c.STIMSEP
-    )
+    cal_data = load_cal_data(band, eclipse)
 
     if band == "FUV":
         scstfile = retrieve_scstfile(band, eclipse, outbase, scstfile)
@@ -141,28 +112,15 @@ def photonpipe(
 
     print_inline("Loading mask file...")
     mask, maskinfo = cal.mask(band)
-    npixx = mask.shape[0]
-    npixy = mask.shape[1]
-    pixsz = maskinfo["CDELT2"]
-    maskfill = c.DETSIZE / (npixx * pixsz)
+    maskfill = c.DETSIZE / (mask.shape[0] * maskinfo["CDELT2"])
 
     aspect = retrieve_aspect_solution(aspfile, eclipse, retries, verbose)
 
-    print_inline("Loading raw6 file...")
-    raw6hdulist = pyfits.open(raw6file, memmap=1)
-    raw6htab = raw6hdulist[1].header
-    nphots = raw6htab["NAXIS2"]
-    if verbose > 1:
-        print("		" + str(nphots) + " events")
-
-    data = decode_telemetry(band, 0, None, "", eclipse, raw6hdulist)
-    raw6hdulist.close()
+    data, nphots = load_raw6(band, eclipse, raw6file, verbose)
     stims, stim_coefficients = create_ssd_from_decoded_data(
         data, band, eclipse, verbose, margin=20
     )
     # Post-CSP 'yac' corrections.
-    # TODO: how come these don't need to be applied to the ssd?
-    #  their positions are fully relative?
     if eclipse > 37460:
         perform_yac_correction(band, eclipse, stims, data)
     del stims
@@ -185,8 +143,6 @@ def photonpipe(
             dbscale,
             mask,
             maskfill,
-            npixx,
-            npixy,
             stim_coefficients,
             xoffset,
             yoffset,
@@ -223,5 +179,17 @@ def photonpipe(
         print("")
 
     return
+
+
+def load_raw6(band, eclipse, raw6file, verbose):
+    print_inline("Loading raw6 file...")
+    raw6hdulist = fitsio.FITS(raw6file)
+    raw6htab = raw6hdulist[1].read_header()
+    nphots = raw6htab["NAXIS2"]
+    if verbose > 1:
+        print("		" + str(nphots) + " events")
+    data = decode_telemetry(band, 0, None, "", eclipse, raw6hdulist)
+    raw6hdulist.close()
+    return data, nphots
 
 # ------------------------------------------------------------------------------
