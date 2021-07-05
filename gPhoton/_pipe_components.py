@@ -38,7 +38,7 @@ class NestingDict(defaultdict):
     __repr__ = dict.__repr__
 
 
-def handle_aspect_solutions(aspfile, eclipse, retries, verbose):
+def retrieve_aspect_solution(aspfile, eclipse, retries, verbose):
     print_inline("Loading aspect data...")
     if aspfile:
         (aspra, aspdec, asptwist, asptime, aspheader, aspflags) = load_aspect(
@@ -74,81 +74,54 @@ def handle_aspect_solutions(aspfile, eclipse, retries, verbose):
 
 
 def process_chunk(
-    aspdec,
-    aspflags,
-    aspra,
-    asptime,
-    asptwist,
+    aspect,
     band,
     cal_data,
     chunk,
     chunkid,
     disthead,
     dbscale,
-    eta_vec,
     mask,
     maskfill,
     npixx,
     npixy,
     stim_coef0,
     stim_coef1,
-    xi_vec,
     xoffset,
     yoffset,
 ):
-    q, t, x, xa, xb, y, ya, yamc, yb = (
-        chunk["q"],
-        chunk["t"],
-        chunk["x"],
-        chunk["xa"],
-        chunk["xb"],
-        chunk["y"],
-        chunk["ya"],
-        chunk["yamc"],
-        chunk["yb"],
-    )
     eta, flags, xi = apply_on_detector_corrections(
         band,
         cal_data,
+        chunk,
         chunkid,
         disthead,
         mask,
         maskfill,
         npixx,
         npixy,
-        q,
         stim_coef0,
         stim_coef1,
-        t,
-        x,
-        xa,
         xoffset,
-        y,
-        ya,
         yoffset,
     )
     dec, ra, flags = apply_aspect_solution(
-        aspdec,
-        aspflags,
-        aspra,
-        asptime,
-        asptwist,
+        aspect,
         chunkid,
         eta,
-        eta_vec,
         flags,
-        t,
+        chunk["t"],
         xi,
-        xi_vec,
     )
+
     return pyarrow.Table.from_arrays(
         arrays=[
-            np.array(t * dbscale, dtype="int64"),
-            x,
-            y,
-            xa,
-            ya,
-            q,
+            np.array(chunk["t"] * dbscale, dtype="int64"),
+            chunk["x"],
+            chunk["y"],
+            chunk["xa"],
+            chunk["ya"],
+            chunk["q"],
             xi,
             eta,
             ra,
@@ -172,19 +145,14 @@ def process_chunk(
 
 
 def apply_aspect_solution(
-    aspdec,
-    aspflags,
-    aspra,
-    asptime,
-    asptwist,
+    aspect,
     chunkid,
     eta,
-    eta_vec,
     flags,
     t,
     xi,
-    xi_vec,
 ):
+    aspdec, aspflags, aspra, asptime, asptwist, eta_vec, xi_vec = aspect
     # This gives the index of the aspect time that comes _before_
     # each photon time. Without the '-1' it will give the index
     # of the aspect time _after_ the photon time.
@@ -250,34 +218,42 @@ def find_null_indices(aspflags, aspect_slice, asptime, flags, ok_indices):
         & (flag_slice == 0)
         & (flag_slice != 7)
     )
-    # this final cut appears to sometimes exceed the range of the flags array?
-    # because it's the whole asptime situation?
-    flags[np.where(cut == False)[0]] = 12
+    # TODO: the original version of this was:
+    #  flags[np.where(cut == False)[0]] = 12. I'm pretty sure this is wrong,
+    #  because it appears to index locations not considered by the above logic,
+    #  and leads to different results at different chunk sizes.
+    flags[ok_indices][~cut] = 12
     off_detector_flags = [2, 5, 7, 8, 9, 10, 11, 12]
     null_ix = np.isin(flags, off_detector_flags)
     return null_ix, flags
 
 
 def apply_on_detector_corrections(
-    band,
-    cal_data,
-    chunkid,
-    disthead,
-    mask,
-    maskfill,
-    npixx,
-    npixy,
-    q,
-    stim_coef0,
-    stim_coef1,
-    t,
-    x,
-    xa,
-    xoffset,
-    y,
-    ya,
-    yoffset,
+        band,
+        cal_data,
+        chunk,
+        chunkid,
+        disthead,
+        mask,
+        maskfill,
+        npixx,
+        npixy,
+        stim_coef0,
+        stim_coef1,
+        xoffset,
+        yoffset,
 ):
+    q, t, x, xa, xb, y, ya, yamc, yb = (
+        chunk["q"],
+        chunk["t"],
+        chunk["x"],
+        chunk["xa"],
+        chunk["xb"],
+        chunk["y"],
+        chunk["ya"],
+        chunk["yamc"],
+        chunk["yb"],
+    )
     flags = np.zeros(len(t))
     fptrx, fptry = apply_wiggle_correction(chunkid, x, y)
     # This and other lines like it below are to verify that the

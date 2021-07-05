@@ -23,7 +23,7 @@ import gPhoton.constants as c
 from gPhoton.CalUtils import find_fuv_offset
 from gPhoton.MCUtils import print_inline
 from gPhoton._pipe_components import (
-    handle_aspect_solutions,
+    retrieve_aspect_solution,
     process_chunk,
     retrieve_raw6,
     decode_telemetry,
@@ -47,7 +47,8 @@ def photonpipe(
     retries=20,
     eclipse=None,
     overwrite=True,
-    minimize_memory_footprint=False
+    chunksz = 1000000,
+    threads=4
 ):
     """
     Apply static and sky calibrations to -raw6 GALEX data, producing fully
@@ -98,9 +99,6 @@ def photonpipe(
     # can be recorded as an int in the database.
     dbscale = 1000
 
-    # size of chunks, in photons, processed in process_chunk
-    chunksz = 10000000
-
     # download raw6 if local file is not passed
     if raw6file is None:
         raw6file = retrieve_raw6(eclipse, band, outbase)
@@ -148,15 +146,7 @@ def photonpipe(
     pixsz = maskinfo["CDELT2"]
     maskfill = c.DETSIZE / (npixx * pixsz)
 
-    (
-        aspdec,
-        aspflags,
-        aspra,
-        asptime,
-        asptwist,
-        eta_vec,
-        xi_vec,
-    ) = handle_aspect_solutions(aspfile, eclipse, retries, verbose)
+    aspect = retrieve_aspect_solution(aspfile, eclipse, retries, verbose)
 
     print_inline("Loading raw6 file...")
     raw6hdulist = pyfits.open(raw6file, memmap=1)
@@ -165,7 +155,7 @@ def photonpipe(
     if verbose > 1:
         print("		" + str(nphots) + " events")
 
-    data = decode_telemetry(band, 0, None, "entire", eclipse, raw6hdulist)
+    data = decode_telemetry(band, 0, None, "", eclipse, raw6hdulist)
     raw6hdulist.close()
     stims, stim_coef0, stim_coef1 = create_ssd_from_decoded_data(
         data, band, eclipse, verbose, margin=20
@@ -177,60 +167,48 @@ def photonpipe(
         perform_yac_correction(band, eclipse, stims, data)
     del stims
     results = {}
-    chunks = chunk_data(chunksz, data, minimize_memory_footprint, nphots)
+    chunks = chunk_data(chunksz, data, nphots)
     del data
     total_chunks = len(chunks)
-    pool = Pool(4)
+    if threads is not None:
+        pool = Pool(threads)
+    else:
+        pool = None
     for chunk_ix in reversed(range(total_chunks)): # popping from end of list
         chunk_title = (
             f"{str(chunk_ix + 1)} of {str(total_chunks)}:"
         )
-        results[chunk_ix] = pool.apply_async(process_chunk, (
-            aspdec,
-            aspflags,
-            aspra,
-            asptime,
-            asptwist,
+        process_args = (
+            aspect,
             band,
             cal_data,
             chunks.pop(),
             chunk_title,
             disthead,
             dbscale,
-            eta_vec,
             mask,
             maskfill,
             npixx,
             npixy,
             stim_coef0,
             stim_coef1,
-            xi_vec,
             xoffset,
-            yoffset,
-        ))
-    pool.close()
-    tables = {}
-    in_readiness = {
-        task: result.ready() for task, result in results.items()
-    }
-    for task in in_readiness:
-        if in_readiness[task]:
-            tables[task] = results[task].get()
-            del results[task]
-    while not all(in_readiness.values()):
-        in_readiness = {
-            task_ix: result.ready() for task_ix, result in results.items()
+            yoffset
+        )
+        if pool is None:
+            results[chunk_ix] = process_chunk(*process_args)
+        else:
+            results[chunk_ix] = pool.apply_async(process_chunk, process_args)
+    if pool is not None:
+        pool.close()
+        pool.join()
+        results = {
+            task: result.get() for task, result in results.items()
         }
-        for task in in_readiness:
-            if in_readiness[task]:
-                tables[task] = results[task].get()
-                # del results[task]
-        time.sleep(0.1)
-    pool.join()
-    chunk_indices = sorted(tables.keys())
-    proc_count = sum([len(table) for table in tables.values()])
+    chunk_indices = sorted(results.keys())
+    proc_count = sum([len(table) for table in results.values()])
     pyarrow.parquet.write_table(
-        pyarrow.concat_tables([tables[ix] for ix in chunk_indices]), outfile
+        pyarrow.concat_tables([results[ix] for ix in chunk_indices]), outfile
     )
 
     stopt = time.time()
@@ -253,28 +231,14 @@ def photonpipe(
     return
 
 
-def chunk_data(chunksz, data, minimize_memory_footprint, nphots):
-    chunks = []
-    if minimize_memory_footprint is True:
-        for chunk_ix in range(int(nphots / chunksz) + 1):
-            if len(data['t']) < chunksz:
-                end_ix = len(data['t'])
-            else:
-                end_ix = chunksz
-            chunks.append(unpack_data_chunk(data, 0, end_ix, copy=True))
-            for variable_name in data.keys():
-                data[variable_name] = data[variable_name][end_ix:].copy()
-    else:
-        chunk_indices = []
-        for chunk_ix in range(int(nphots / chunksz) + 1):
-            chunkbeg, chunkend = chunk_ix * chunksz, (chunk_ix + 1) * chunksz
-            if chunkend > nphots:
-                chunkend = None
-            chunk_indices.append((chunkbeg, chunkend))
+def chunk_data(chunksz, data, nphots):
+    chunk_indices = []
+    for chunk_ix in range(int(nphots / chunksz) + 1):
+        chunkbeg, chunkend = chunk_ix * chunksz, (chunk_ix + 1) * chunksz
+        if chunkend > nphots:
+            chunkend = None
+        chunk_indices.append((chunkbeg, chunkend))
+    return [unpack_data_chunk(data, *indices) for indices in chunk_indices]
 
-        chunks = [
-            unpack_data_chunk(data, *indices) for indices in chunk_indices
-        ]
-    return chunks
 
 # ------------------------------------------------------------------------------
