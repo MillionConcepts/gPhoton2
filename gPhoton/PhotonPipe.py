@@ -6,11 +6,9 @@
        given mission-produced -raw6, -scst, and -asprta data.
 """
 
+from multiprocessing import Pool
 import os
 import time
-from builtins import range
-from builtins import str
-from multiprocessing import Pool
 
 # Core and Third Party imports.
 import pyarrow
@@ -31,8 +29,7 @@ from gPhoton._pipe_components import (
     retrieve_scstfile,
     get_eclipse_from_header,
     perform_yac_correction,
-    unpack_data_chunk,
-    NestingDict,
+    NestingDict, chunk_data,
 )
 
 
@@ -47,8 +44,8 @@ def photonpipe(
     retries=20,
     eclipse=None,
     overwrite=True,
-    chunksz = 1000000,
-    threads=4
+    chunksz=1000000,
+    threads=4,
 ):
     """
     Apply static and sky calibrations to -raw6 GALEX data, producing fully
@@ -120,15 +117,18 @@ def photonpipe(
     cal_data["linearity"]["x"], _ = cal.linearity(band, "x")
     cal_data["linearity"]["y"], _ = cal.linearity(band, "y")
 
+    # TODO: it looks like this always gets applied regardless of post-CSP
+    #  status.
     # This is for the post-CSP stim distortion corrections.
     print_inline("Loading distortion files...")
     if eclipse > 37460:
         print_inline(
             " Using stim separation of : {stimsep}".format(stimsep=c.STIMSEP)
         )
-    cal_data["distortion"]["x"], disthead = cal.distortion(
-        band, "x", eclipse, c.STIMSEP
-    )
+    (
+        cal_data["distortion"]["x"],
+        cal_data["distortion"]["header"],
+    ) = cal.distortion(band, "x", eclipse, c.STIMSEP)
     cal_data["distortion"]["y"], _ = cal.distortion(
         band, "y", eclipse, c.STIMSEP
     )
@@ -157,7 +157,7 @@ def photonpipe(
 
     data = decode_telemetry(band, 0, None, "", eclipse, raw6hdulist)
     raw6hdulist.close()
-    stims, stim_coef0, stim_coef1 = create_ssd_from_decoded_data(
+    stims, stim_coefficients = create_ssd_from_decoded_data(
         data, band, eclipse, verbose, margin=20
     )
     # Post-CSP 'yac' corrections.
@@ -167,33 +167,29 @@ def photonpipe(
         perform_yac_correction(band, eclipse, stims, data)
     del stims
     results = {}
-    chunks = chunk_data(chunksz, data, nphots)
+    chunks = chunk_data(chunksz, data, nphots, copy=False)
     del data
     total_chunks = len(chunks)
     if threads is not None:
         pool = Pool(threads)
     else:
         pool = None
-    for chunk_ix in reversed(range(total_chunks)): # popping from end of list
-        chunk_title = (
-            f"{str(chunk_ix + 1)} of {str(total_chunks)}:"
-        )
+    for chunk_ix in reversed(range(total_chunks)):  # popping from end of list
+        chunk_title = f"{str(chunk_ix + 1)} of {str(total_chunks)}:"
         process_args = (
             aspect,
             band,
             cal_data,
             chunks.pop(),
             chunk_title,
-            disthead,
             dbscale,
             mask,
             maskfill,
             npixx,
             npixy,
-            stim_coef0,
-            stim_coef1,
+            stim_coefficients,
             xoffset,
-            yoffset
+            yoffset,
         )
         if pool is None:
             results[chunk_ix] = process_chunk(*process_args)
@@ -202,9 +198,7 @@ def photonpipe(
     if pool is not None:
         pool.close()
         pool.join()
-        results = {
-            task: result.get() for task, result in results.items()
-        }
+        results = {task: result.get() for task, result in results.items()}
     chunk_indices = sorted(results.keys())
     proc_count = sum([len(table) for table in results.values()])
     pyarrow.parquet.write_table(
@@ -229,16 +223,5 @@ def photonpipe(
         print("")
 
     return
-
-
-def chunk_data(chunksz, data, nphots):
-    chunk_indices = []
-    for chunk_ix in range(int(nphots / chunksz) + 1):
-        chunkbeg, chunkend = chunk_ix * chunksz, (chunk_ix + 1) * chunksz
-        if chunkend > nphots:
-            chunkend = None
-        chunk_indices.append((chunkbeg, chunkend))
-    return [unpack_data_chunk(data, *indices) for indices in chunk_indices]
-
 
 # ------------------------------------------------------------------------------

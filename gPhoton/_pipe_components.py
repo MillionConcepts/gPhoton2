@@ -79,14 +79,12 @@ def process_chunk(
     cal_data,
     chunk,
     chunkid,
-    disthead,
     dbscale,
     mask,
     maskfill,
     npixx,
     npixy,
-    stim_coef0,
-    stim_coef1,
+    stim_coefficients,
     xoffset,
     yoffset,
 ):
@@ -95,13 +93,11 @@ def process_chunk(
         cal_data,
         chunk,
         chunkid,
-        disthead,
         mask,
         maskfill,
         npixx,
         npixy,
-        stim_coef0,
-        stim_coef1,
+        stim_coefficients,
         xoffset,
         yoffset,
     )
@@ -233,13 +229,11 @@ def apply_on_detector_corrections(
         cal_data,
         chunk,
         chunkid,
-        disthead,
         mask,
         maskfill,
         npixx,
         npixy,
-        stim_coef0,
-        stim_coef1,
+        stim_coefficients,
         xoffset,
         yoffset,
 ):
@@ -301,14 +295,13 @@ def apply_on_detector_corrections(
     dx, dy = compute_detector_orientation(
         fptrx, fptry, cal_data["linearity"], ok_indices
     )
+
     xshift, yshift, flags, ok_indices = apply_stim_distortion_correction(
         chunkid,
-        disthead,
         cal_data["distortion"],
         flags,
         ok_indices,
-        stim_coef0,
-        stim_coef1,
+        stim_coefficients,
         t,
         xoffset,
         xp_as,
@@ -353,14 +346,14 @@ def apply_hotspot_mask(
     flip = 1.0
     if band == "FUV":
         flip = -1.0
+    # TODO: is this scaling wrong? looks like YSC is being applied to x
+    #  and vice versa?
     # TODO: is xi always 0? so can half of this be removed?
-    xi = c.XI_XSC * (flip * (yp_as + dy + yshift) * 10.0) + c.XI_YSC * (
-        flip * (xp_as + dx + xshift) * 10.0
-    )
+    y_component = (yp_as + dy + yshift) * flip * 10
+    x_component = (xp_as + dx + xshift) * flip * 10
+    xi = c.XI_XSC * y_component + c.XI_YSC * x_component
     # TODO, similarly with eta_ysc?
-    eta = c.ETA_XSC * (flip * (yp_as + dy + yshift) * 10.0) + c.ETA_YSC * (
-        flip * (xp_as + dx + xshift) * 10.0
-    )
+    eta = c.ETA_XSC * y_component + c.ETA_YSC * x_component
     col = ((xi / 36000.0) / (c.DETSIZE / 2.0) * maskfill + 1.0) / 2.0 * npixx
     row = ((eta / 36000.0) / (c.DETSIZE / 2.0) * maskfill + 1.0) / 2.0 * npixy
     cut = (
@@ -405,10 +398,12 @@ def compute_detector_orientation(fptrx, fptry, linearity, ok_indices):
 def make_corners(floor_x, floor_y, fptrx, fptry, ok_indices):
     blt = (fptrx - floor_x)[ok_indices]
     blu = (fptry - floor_y)[ok_indices]
+    inv_blt = 1 - blt
+    inv_blu = 1 - blu
     corners = (
-        (1 - blt) * (1 - blu),
-        blt * (1 - blu),
-        (1 - blt) * blu,
+        inv_blt * inv_blu,
+        blt * inv_blu,
+        inv_blt * blu,
         blt * blu,
     )
     return corners
@@ -738,12 +733,10 @@ def apply_yac_correction(band, eclipse, q, raw6file, x, xb, y, ya, yamc, yb):
 
 def apply_stim_distortion_correction(
     chunkid,
-    disthead,
     distortion,
     flags,
     ok_indices,
-    stim_coef0,
-    stim_coef1,
+    stim_coefficients,
     t,
     xoffset,
     xp_as,
@@ -762,17 +755,17 @@ def apply_stim_distortion_correction(
         cube_nc,
         cube_nr,
     ) = (
-        disthead["DC_X0"],
-        disthead["DC_DX"],
-        disthead["DC_Y0"],
-        disthead["DC_DY"],
-        disthead["DC_D0"],
-        disthead["DC_DD"],
-        disthead["NAXIS3"],
-        disthead["NAXIS1"],
-        disthead["NAXIS2"],
+        distortion["header"]["DC_X0"],
+        distortion["header"]["DC_DX"],
+        distortion["header"]["DC_Y0"],
+        distortion["header"]["DC_DY"],
+        distortion["header"]["DC_D0"],
+        distortion["header"]["DC_DD"],
+        distortion["header"]["NAXIS3"],
+        distortion["header"]["NAXIS1"],
+        distortion["header"]["NAXIS2"],
     )
-    ss = stim_coef0 + (t * stim_coef1)  # stim separation
+    ss = stim_coefficients[0] + (t * stim_coefficients[1])  # stim separation
     col, row, depth = np.zeros(len(t)), np.zeros(len(t)), np.zeros(len(t))
     col[ok_indices] = (xp_as[ok_indices] - cube_x0) / cube_dx
     row[ok_indices] = (yp_as[ok_indices] - cube_y0) / cube_dy
@@ -910,7 +903,7 @@ def create_ssd_from_decoded_data(data, band, eclipse, verbose, margin=90.001):
     if verbose > 1:
         print("	    stim_coef0, stim_coef1 = " + str(C) + ", " + str(m))
 
-    return stims, C, m
+    return stims, (C, m)
 
 
 def bitwise_decode_photonbytes(band, eclipse, photonbytes):
@@ -1009,3 +1002,16 @@ def unpack_data_chunk(data, chunkbeg, chunkend, copy=True):
         else:
             chunk[variable_name] = variable[chunkbeg:chunkend]
     return chunk
+
+
+def chunk_data(chunksz, data, nphots, copy=True):
+    chunk_indices = []
+    for chunk_ix in range(int(nphots / chunksz) + 1):
+        chunkbeg, chunkend = chunk_ix * chunksz, (chunk_ix + 1) * chunksz
+        if chunkend > nphots:
+            chunkend = None
+        chunk_indices.append((chunkbeg, chunkend))
+    return [
+        unpack_data_chunk(data, *indices, copy=copy)
+        for indices in chunk_indices
+    ]
