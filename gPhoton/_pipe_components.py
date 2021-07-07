@@ -339,6 +339,7 @@ def apply_hotspot_mask(
     # TODO: is this scaling wrong? looks like YSC is being applied to x
     #  and vice versa?
     # TODO: is xi always 0? so can half of this be removed?
+    #  probably? go look at the C code
     y_component = (yp_as + dy + yshift) * flip * 10
     x_component = (xp_as + dx + xshift) * flip * 10
     xi = c.XI_XSC * y_component + c.XI_YSC * x_component
@@ -675,9 +676,6 @@ def compute_stimstats_2(stims, band):
     return Mx, Bx, My, By, stimsep, yac
 
 
-# TODO: the original version of this relies on stims computed using a
-#  90-arcsecond window, while still using 20-arcsecond window in the rest of
-#  the function. is this right?
 def perform_yac_correction(band, eclipse, stims, data):
     Mx, Bx, My, By, stimsep, yactbl = compute_stimstats_2(stims, band)
     wig2, wig2data, wlk2, wlk2data, clk2, clk2data = post_csp_caldata()

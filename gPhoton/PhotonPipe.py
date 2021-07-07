@@ -28,7 +28,8 @@ from gPhoton._pipe_components import (
     retrieve_scstfile,
     get_eclipse_from_header,
     perform_yac_correction,
-    chunk_data, load_cal_data,
+    chunk_data,
+    load_cal_data,
 )
 
 
@@ -117,13 +118,17 @@ def photonpipe(
     aspect = retrieve_aspect_solution(aspfile, eclipse, retries, verbose)
 
     data, nphots = load_raw6(band, eclipse, raw6file, verbose)
-    stims, stim_coefficients = create_ssd_from_decoded_data(
+    _, stim_coefficients = create_ssd_from_decoded_data(
         data, band, eclipse, verbose, margin=20
     )
     # Post-CSP 'yac' corrections.
     if eclipse > 37460:
-        perform_yac_correction(band, eclipse, stims, data)
-    del stims
+        stims_for_yac, _ = create_ssd_from_decoded_data(
+            data, band, eclipse, verbose, margin=90.001
+        )
+        # impure function, modifies data inplace
+        perform_yac_correction(band, eclipse, stims_for_yac, data)
+        del stims_for_yac
     results = {}
     chunks = chunk_data(chunksz, data, nphots, copy=False)
     del data
@@ -191,5 +196,6 @@ def load_raw6(band, eclipse, raw6file, verbose):
     data = decode_telemetry(band, 0, None, "", eclipse, raw6hdulist)
     raw6hdulist.close()
     return data, nphots
+
 
 # ------------------------------------------------------------------------------
