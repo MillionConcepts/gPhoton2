@@ -238,7 +238,6 @@ def process_chunk3(
         cal_blocks, cal_arrays = get_arrays_from_shared_memory(cal_info)
         all_cal_blocks.append(cal_blocks)
         cal_data[cal_name] = cal_arrays
-    print('block done')
     eta, flags, xi = apply_on_detector_corrections(
         band,
         cal_data,
