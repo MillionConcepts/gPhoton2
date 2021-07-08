@@ -5,11 +5,14 @@
        raw spacecraft and detector telemetry. Generates time-tagged photon lists
        given mission-produced -raw6, -scst, and -asprta data.
 """
+from itertools import product
 from multiprocessing import Pool
 import os
 import time
 
 # Core and Third Party imports.
+from multiprocessing.shared_memory import SharedMemory
+
 import pyarrow
 import pyarrow.parquet
 
@@ -22,21 +25,22 @@ import gPhoton.constants as c
 from gPhoton.MCUtils import print_inline
 from gPhoton._pipe_components import (
     retrieve_aspect_solution,
-    process_chunk,
     retrieve_raw6,
     create_ssd_from_decoded_data,
     retrieve_scstfile,
     get_eclipse_from_header,
     perform_yac_correction,
-    chunk_data,
-    load_cal_data, load_raw6,
+    load_cal_data,
+    load_raw6,
+    process_chunk3,
+    send_to_shared_memory,
+    get_arrays_from_shared_memory,
 )
 
 
 # ------------------------------------------------------------------------------
-# import line_profiler
-# lp = line_profiler.LineProfiler()
-# @lp
+
+
 def photonpipe(
     outbase,
     band,
@@ -107,8 +111,15 @@ def photonpipe(
     eclipse = get_eclipse_from_header(eclipse, raw6file)
     print_inline("Processing eclipse {eclipse}".format(eclipse=eclipse))
 
+    # this can be further optimized by putting cal_data in shared memory
+    # but this benefit is probably negligible
     cal_data, distortion_cube = load_cal_data(band, eclipse)
-
+    cal_block_info = {}
+    for cal_name, cal_content in cal_data.items():
+        cal_block_info[cal_name] = send_to_shared_memory(
+            cal_content.values(), cal_content.keys()
+        )
+    del cal_data
     if band == "FUV":
         scstfile = retrieve_scstfile(band, eclipse, outbase, scstfile)
         xoffset, yoffset = find_fuv_offset(scstfile)
@@ -135,25 +146,24 @@ def photonpipe(
         perform_yac_correction(band, eclipse, stims_for_yac, data)
         del stims_for_yac
         del yac_coef
-    results = {}
-    chunks = chunk_data(chunksz, data, nphots, copy=True)
+    block_directory = slice_into_shared_chunks(chunksz, data, nphots)
+    total_chunks = len(block_directory)
     del data
-    total_chunks = len(chunks)
     if threads is not None:
         pool = Pool(threads)
     else:
         pool = None
+    results = {}
     for chunk_ix in reversed(range(total_chunks)):  # popping from end of list
         chunk_title = f"{str(chunk_ix + 1)} of {str(total_chunks)}:"
-        chunk = chunks.pop()
         process_args = (
             aspect,
             band,
-            cal_data,
+            cal_block_info,
             distortion_cube,
-            chunk,
             chunk_title,
             dbscale,
+            block_directory[chunk_ix],
             mask,
             maskfill,
             stim_coefficients,
@@ -161,25 +171,43 @@ def photonpipe(
             yoffset,
         )
         if pool is None:
-            results[chunk_ix] = process_chunk(*process_args)
+            results[chunk_ix] = process_chunk3(*process_args)
         else:
-            results[chunk_ix] = pool.apply_async(process_chunk, process_args)
-        del chunk
+            results[chunk_ix] = pool.apply_async(process_chunk3, process_args)
         del process_args
     if pool is not None:
         pool.close()
-        # while not all(res.ready() for res in results.values()):
-        #     a = _ProcessMemoryInfoProc().rss / 1024 ** 3
-        #     print(a)
-        #     time.sleep(0.1)
+        while not all(res.ready() for res in results.values()):
+            print(_ProcessMemoryInfoProc().rss / 1024 ** 3)
+            time.sleep(0.1)
         pool.join()
+        # lp.print_stats()
         results = {task: result.get() for task, result in results.items()}
+    all_cal_blocks = []
+    for cal_name, cal_info in cal_block_info.items():
+        cal_blocks, _ = get_arrays_from_shared_memory(cal_info)
+        all_cal_blocks += list(cal_blocks.values())
+    for block in all_cal_blocks:
+        block.close()
+        block.unlink()
     chunk_indices = sorted(results.keys())
-    proc_count = sum([len(table) for table in results.values()])
-    pyarrow.parquet.write_table(
-        pyarrow.concat_tables([results[ix] for ix in chunk_indices]), outfile
-    )
-
+    tables = []
+    all_blocks = []
+    for chunk_ix in chunk_indices:
+        print(f"making table {chunk_ix}")
+        blocks, chunk = get_arrays_from_shared_memory(results[chunk_ix])
+        tables.append(
+            pyarrow.Table.from_arrays(
+                arrays=list(chunk.values()), names=list(chunk.keys())
+            )
+        )
+        all_blocks += list(blocks.values())
+    proc_count = sum([len(table) for table in tables])
+    print("writing tables")
+    pyarrow.parquet.write_table(pyarrow.concat_tables(tables), outfile)
+    for block in all_blocks:
+        block.close()
+        block.unlink()
     stopt = time.time()
     # TODO: consider:  awswrangler.s3.to_parquet()
     print_inline("")
@@ -196,7 +224,39 @@ def photonpipe(
             print("		WARNING: MISSING EVENTS!")
         print(f"rate		=	{str(nphots / (stopt - startt))} photons/sec.")
         print("")
-    # lp.print_stats()
     return
+
+
+def slice_into_shared_chunks(chunksz, data, nphots):
+    variable_names = [key for key in data.keys()]
+    chunk_slices = make_chunk_slices(chunksz, nphots)
+    total_chunks = len(chunk_slices)
+    block_directory = {}
+    for chunk_ix in range(total_chunks):
+        block_directory = slice_chunk_into_memory(
+            block_directory, chunk_ix, data, chunk_slices, variable_names
+        )
+    return block_directory
+
+
+def make_chunk_slices(chunksz, nphots):
+    table_indices = []
+    total_chunks = range(int(nphots / chunksz) + 1)
+    for chunk_ix in total_chunks:
+        chunkbeg, chunkend = chunk_ix * chunksz, (chunk_ix + 1) * chunksz
+        if chunkend > nphots:
+            chunkend = None
+        table_indices.append((chunkbeg, chunkend))
+    return table_indices
+
+
+def slice_chunk_into_memory(block_directory, chunk_ix, data, table_indices,
+                            variable_names):
+    arrays = [
+        array[slice(*table_indices[chunk_ix])] for array in data.values()
+    ]
+    block_info = send_to_shared_memory(arrays, variable_names)
+    block_directory[chunk_ix] = block_info
+    return block_directory
 
 # ------------------------------------------------------------------------------

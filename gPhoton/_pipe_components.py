@@ -2,11 +2,14 @@ import os
 from collections import defaultdict
 from functools import reduce
 from itertools import product
+from multiprocessing.shared_memory import SharedMemory
 from operator import or_
 
+import fitsio
 import numpy as np
 import pyarrow
 from astropy.io import fits as pyfits
+from pyarrow import plasma, ipc
 
 from gPhoton import cal as cal, constants as c
 from gPhoton.CalUtils import (
@@ -23,6 +26,8 @@ from gPhoton.FileUtils import load_aspect, web_query_aspect, download_data
 from gPhoton.MCUtils import print_inline
 from gPhoton.gnomonic import gnomfwd_simple, gnomrev_simple
 
+import memory_profiler
+import line_profiler
 
 class NestingDict(defaultdict):
     """
@@ -77,6 +82,7 @@ def process_chunk(
     aspect,
     band,
     cal_data,
+        distortion_cube,
     chunk,
     chunkid,
     dbscale,
@@ -91,6 +97,7 @@ def process_chunk(
         cal_data,
         chunk,
         chunkid,
+        distortion_cube,
         mask,
         maskfill,
         stim_coefficients,
@@ -105,7 +112,6 @@ def process_chunk(
         chunk["t"],
         xi,
     )
-
     return pyarrow.Table.from_arrays(
         arrays=[
             np.array(chunk["t"] * dbscale, dtype="int64"),
@@ -134,6 +140,173 @@ def process_chunk(
             "flags",
         ],
     )
+
+    # import line_profiler
+    # lp = line_profiler.LineProfiler()
+    # @lp
+def process_chunk2(
+    aspect,
+    band,
+    cal_data,
+        distortion_cube,
+    chunkid,
+    dbscale,
+    index_data,
+    mask,
+    maskfill,
+    stim_coefficients,
+    xoffset,
+    yoffset,
+):
+    client = plasma.connect("/tmp/plasma1")
+    view = client.get_buffers(index_data["object_ids"])
+    chunk = {
+        name: ipc.read_tensor(view[ix]).to_numpy()
+        for ix, name in enumerate(index_data['variables'])
+    }
+    client.disconnect()
+    eta, flags, xi = apply_on_detector_corrections(
+        band,
+        cal_data,
+        chunk,
+        chunkid,
+        distortion_cube,
+        mask,
+        maskfill,
+        stim_coefficients,
+        xoffset,
+        yoffset,
+    )
+    dec, ra, flags = apply_aspect_solution(
+        aspect,
+        chunkid,
+        eta,
+        flags,
+        chunk["t"],
+        xi,
+    )
+    # and to be really fast this needs to be turned back into
+    # a series of vectors and put in plasma
+    return pyarrow.Table.from_arrays(
+        arrays=[
+            np.array(chunk["t"] * dbscale, dtype="int64"),
+            chunk["x"],
+            chunk["y"],
+            chunk["xa"],
+            chunk["ya"],
+            chunk["q"],
+            xi,
+            eta,
+            ra,
+            dec,
+            flags,
+        ],
+        names=[
+            "t",
+            "x",
+            "y",
+            "xa",
+            "ya",
+            "q",
+            "xi",
+            "eta",
+            "ra",
+            "dec",
+            "flags",
+        ],
+    )
+
+
+def process_chunk3(
+    aspect,
+    band,
+    cal_block_info,
+    distortion_cube,
+    chunkid,
+    dbscale,
+    block_info,
+    mask,
+    maskfill,
+    stim_coefficients,
+    xoffset,
+    yoffset,
+):
+    chunk_blocks, chunk = get_arrays_from_shared_memory(block_info)
+    cal_data = {}
+    all_cal_blocks = []
+    for cal_name, cal_info in cal_block_info.items():
+        cal_blocks, cal_arrays = get_arrays_from_shared_memory(cal_info)
+        all_cal_blocks.append(cal_blocks)
+        cal_data[cal_name] = cal_arrays
+    print('block done')
+    eta, flags, xi = apply_on_detector_corrections(
+        band,
+        cal_data,
+        chunk,
+        chunkid,
+        distortion_cube,
+        mask,
+        maskfill,
+        stim_coefficients,
+        xoffset,
+        yoffset,
+    )
+    dec, ra, flags = apply_aspect_solution(
+        aspect,
+        chunkid,
+        eta,
+        flags,
+        chunk["t"],
+        xi,
+    )
+    # and to be really fast this might need to be turned back into
+    # a series of arrays and put in shared memory?
+    processed_block_info = send_to_shared_memory(
+        arrays = [
+            np.array(chunk["t"] * dbscale, dtype="int64"),
+            chunk["x"],
+            chunk["y"],
+            chunk["xa"],
+            chunk["ya"],
+            chunk["q"],
+            xi,
+            eta,
+            ra,
+            dec,
+            flags,
+        ],
+        names=[
+            "t",
+            "x",
+            "y",
+            "xa",
+            "ya",
+            "q",
+            "xi",
+            "eta",
+            "ra",
+            "dec",
+            "flags",
+        ],
+    )
+    for block in chunk_blocks.values():
+        block.close()
+        block.unlink()
+    return processed_block_info
+
+
+def get_arrays_from_shared_memory(block_info) -> tuple[dict, dict]:
+    blocks = {
+        variable: SharedMemory(name=info['name'])
+        for variable, info in block_info.items()
+    }
+    chunk = {
+        variable: np.ndarray(
+            info['shape'], dtype=info['dtype'], buffer=blocks[variable].buf
+        )
+        for variable, info in block_info.items()
+    }
+    return blocks, chunk
 
 
 def apply_aspect_solution(
@@ -210,10 +383,6 @@ def find_null_indices(aspflags, aspect_slice, asptime, flags, ok_indices):
         & (flag_slice == 0)
         & (flag_slice != 7)
     )
-    # TODO: the original version of this was:
-    #  flags[np.where(cut == False)[0]] = 12. I'm pretty sure this is wrong,
-    #  because it appears to index locations not considered by the above logic,
-    #  and leads to different results at different chunk sizes.
     flags[ok_indices][~cut] = 12
     off_detector_flags = [2, 5, 7, 8, 9, 10, 11, 12]
     null_ix = np.isin(flags, off_detector_flags)
@@ -225,6 +394,7 @@ def apply_on_detector_corrections(
     cal_data,
     chunk,
     chunkid,
+    distortion_cube,
     mask,
     maskfill,
     stim_coefficients,
@@ -293,6 +463,7 @@ def apply_on_detector_corrections(
     xshift, yshift, flags, ok_indices = apply_stim_distortion_correction(
         chunkid,
         cal_data["distortion"],
+        distortion_cube,
         flags,
         ok_indices,
         stim_coefficients,
@@ -730,6 +901,7 @@ def apply_yac_correction(band, eclipse, q, raw6file, x, xb, y, ya, yamc, yb):
 def apply_stim_distortion_correction(
     chunkid,
     distortion,
+    distortion_cube,
     flags,
     ok_indices,
     stim_coefficients,
@@ -750,17 +922,7 @@ def apply_stim_distortion_correction(
         cube_nd,
         cube_nc,
         cube_nr,
-    ) = (
-        distortion["header"]["DC_X0"],
-        distortion["header"]["DC_DX"],
-        distortion["header"]["DC_Y0"],
-        distortion["header"]["DC_DY"],
-        distortion["header"]["DC_D0"],
-        distortion["header"]["DC_DD"],
-        distortion["header"]["NAXIS3"],
-        distortion["header"]["NAXIS1"],
-        distortion["header"]["NAXIS2"],
-    )
+    ) = distortion_cube
     ss = stim_coefficients[0] + (t * stim_coefficients[1])  # stim separation
     col, row, depth = np.zeros(len(t)), np.zeros(len(t)), np.zeros(len(t))
     col[ok_indices] = (xp_as[ok_indices] - cube_x0) / cube_dx
@@ -807,10 +969,11 @@ def apply_stim_distortion_correction(
 
 
 def decode_telemetry(band, chunkbeg, chunkend, chunkid, eclipse, raw6hdulist):
-    t, photonbytes = unpack_raw6(chunkbeg, chunkend, chunkid, raw6hdulist)
-    data = bitwise_decode_photonbytes(band, eclipse, photonbytes)
-    data["t"] = t.byteswap().newbyteorder()
-    # data["t"] = t
+    data = bitwise_decode_photonbytes(
+        band, unpack_raw6(chunkbeg, chunkend, chunkid, raw6hdulist)
+    )
+    data = center_and_scale(band, data, eclipse)
+    data["t"] = data["t"].byteswap().newbyteorder()
     return data
 
 
@@ -818,7 +981,6 @@ def unpack_raw6(chunkbeg, chunkend, chunkid, raw6hdulist):
     print_inline(chunkid + "Unpacking raw6 data...")
     photonbyte_cols = [f"phb{byte + 1}" for byte in range(5)]
     table_chunk = raw6hdulist[1][chunkbeg:chunkend][["t"] + photonbyte_cols]
-    t = table_chunk["t"]
     photonbytes_as_short = table_chunk[photonbyte_cols].astype(
         [(col, np.int16) for col in photonbyte_cols]
     )
@@ -832,7 +994,8 @@ def unpack_raw6(chunkbeg, chunkend, chunkid, raw6hdulist):
     #         raw6hdulist[1].data.field(f"phb{byte + 1}")[chunkbeg:chunkend],
     #         dtype=np.int16,
     #     )
-    return t, photonbytes
+    photonbytes["t"] = table_chunk["t"]
+    return photonbytes
 
 
 def create_ssd_from_decoded_data(data, band, eclipse, verbose, margin=90.001):
@@ -911,14 +1074,10 @@ def create_ssd_from_decoded_data(data, band, eclipse, verbose, margin=90.001):
     return stims, (C, m)
 
 
-def bitwise_decode_photonbytes(band, eclipse, photonbytes):
+def bitwise_decode_photonbytes(band, photonbytes):
     print_inline("Band is {band}.".format(band=band))
-    data = {}
-    (xclk, yclk, xcen, ycen, xscl, yscl, xslp, yslp) = clk_cen_scl_slp(
-        band, eclipse
-    )
+    data = {"t": photonbytes["t"]}
     # Bitwise "decoding" of the raw6 telemetry.
-    data["q"] = ((photonbytes[4] & 3) << 3) + ((photonbytes[5] & 224) >> 5)
     data["xb"] = photonbytes[1] >> 5
     data["xamc"] = (
         np.array(((photonbytes[1] & 31) << 7), dtype="int16")
@@ -931,32 +1090,45 @@ def bitwise_decode_photonbytes(band, eclipse, photonbytes):
         + np.array(((photonbytes[4] & 252) >> 2), dtype="int16")
         - np.array(((photonbytes[3] & 32) << 7), dtype="int16")
     )
+    data["q"] = ((photonbytes[4] & 3) << 3) + ((photonbytes[5] & 224) >> 5)
     data["xa"] = (
         ((photonbytes[5] & 16) >> 4)
         + ((photonbytes[5] & 3) << 3)
         + ((photonbytes[5] & 12) >> 1)
     )
+    return data
+
+
+def center_and_scale(band, data, eclipse):
+    (xclk, yclk, xcen, ycen, xscl, yscl, xslp, yslp) = clk_cen_scl_slp(
+        band, eclipse
+    )
     xraw0 = data["xb"] * xclk + data["xamc"]
     yraw0 = data["yb"] * yclk + data["yamc"]
     data["ya"] = (
-        np.array(
-            (
-                (((yraw0 / (2 * yclk) - xraw0 / (2 * xclk)) + 10) * 32)
-                + data["xa"]
-            ),
-            dtype="int64",
-        )
-        % 32
+            np.array(
+                (
+                        (((yraw0 / (2 * yclk) - xraw0 / (2 * xclk)) + 10) * 32)
+                        + data["xa"]
+                ),
+                dtype="int64",
+            )
+            % 32
     )
     xraw = (
-        xraw0 + np.array((((data["xa"] + 7) % 32) - 16), dtype="int64") * xslp
+            xraw0 + np.array((((data["xa"] + 7) % 32) - 16),
+                             dtype="int64") * xslp
     )
-    yraw = (
-        yraw0 + np.array((((data["ya"] + 7) % 32) - 16), dtype="int64") * yslp
-    )
-    # Centering and scaling.
+    del xraw0
     data["x"] = (xraw - xcen) * xscl
+    del xraw
+    yraw = (
+            yraw0 + np.array((((data["ya"] + 7) % 32) - 16),
+                             dtype="int64") * yslp
+    )
+    del yraw0
     data["y"] = (yraw - ycen) * yscl
+    del yraw
     return data
 
 
@@ -1045,9 +1217,47 @@ def load_cal_data(band, eclipse):
         )
     (
         cal_data["distortion"]["x"],
-        cal_data["distortion"]["header"],
+        distortion_header
     ) = cal.distortion(band, "x", eclipse, c.STIMSEP)
     cal_data["distortion"]["y"], _ = cal.distortion(
         band, "y", eclipse, c.STIMSEP
     )
-    return cal_data
+    distortion_cube = (
+        distortion_header["DC_X0"],
+        distortion_header["DC_DX"],
+        distortion_header["DC_Y0"],
+        distortion_header["DC_DY"],
+        distortion_header["DC_D0"],
+        distortion_header["DC_DD"],
+        distortion_header["NAXIS3"],
+        distortion_header["NAXIS1"],
+        distortion_header["NAXIS2"],
+    )
+    return cal_data, distortion_cube
+
+
+def load_raw6(band, eclipse, raw6file, verbose):
+    print_inline("Loading raw6 file...")
+    raw6hdulist = fitsio.FITS(raw6file)
+    raw6htab = raw6hdulist[1].read_header()
+    nphots = raw6htab["NAXIS2"]
+    if verbose > 1:
+        print("		" + str(nphots) + " events")
+    data = decode_telemetry(band, 0, None, "", eclipse, raw6hdulist)
+    raw6hdulist.close()
+    return data, nphots
+
+
+def send_to_shared_memory(arrays, names):
+    block_info = NestingDict()
+    for array, variable in zip(arrays, names):
+        block = SharedMemory(create=True, size=array.size * array.itemsize)
+        shared_array = np.ndarray(
+            array.shape, dtype=array.dtype, buffer=block.buf
+        )
+        shared_array[:] = array[:]
+        block_info[variable]['name'] = block.name
+        block_info[variable]['dtype'] = array.dtype
+        block_info[variable]['shape'] = array.shape
+        block.close()
+    return block_info

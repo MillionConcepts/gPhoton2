@@ -14,6 +14,8 @@ import pyarrow
 import pyarrow.parquet
 
 # gPhoton imports.
+import sh
+from pyarrow import Tensor, plasma, ipc, FixedSizeBufferWriter
 from pympler.process import _ProcessMemoryInfoProc
 
 import gPhoton.cal as cal
@@ -22,21 +24,18 @@ import gPhoton.constants as c
 from gPhoton.MCUtils import print_inline
 from gPhoton._pipe_components import (
     retrieve_aspect_solution,
-    process_chunk,
     retrieve_raw6,
     create_ssd_from_decoded_data,
     retrieve_scstfile,
     get_eclipse_from_header,
     perform_yac_correction,
-    chunk_data,
-    load_cal_data, load_raw6,
+    load_cal_data, load_raw6, process_chunk2,
 )
 
 
 # ------------------------------------------------------------------------------
-# import line_profiler
-# lp = line_profiler.LineProfiler()
-# @lp
+
+
 def photonpipe(
     outbase,
     band,
@@ -136,24 +135,65 @@ def photonpipe(
         del stims_for_yac
         del yac_coef
     results = {}
-    chunks = chunk_data(chunksz, data, nphots, copy=True)
-    del data
-    total_chunks = len(chunks)
+    variable_names = [
+        key for key in data.keys()
+    ]
+    table_indices = []
+    total_chunks = range(int(nphots / chunksz) + 1)
+    for chunk_ix in total_chunks:
+        chunkbeg, chunkend = chunk_ix * chunksz, (chunk_ix + 1) * chunksz
+        if chunkend > nphots:
+            chunkend = None
+        table_indices.append((chunkbeg, chunkend))
+    total_chunks = len(table_indices)
+    client = plasma.connect(f"/tmp/plasma1")
+    object_ids = {}
+    for chunk_ix in range(total_chunks):
+        tensors = [
+            Tensor.from_numpy(array[slice(*table_indices[chunk_ix])]) for array
+            in data.values()
+        ]
+        object_ids[chunk_ix] = [
+            plasma.ObjectID.from_random()
+            for _ in tensors
+        ]
+        tensor_sizes = [
+            ipc.get_tensor_size(tensor)
+            for tensor in tensors
+        ]
+        buffers = [
+            client.create(object_id, tensor_size)
+            for object_id, tensor_size in
+            zip(object_ids[chunk_ix], tensor_sizes)
+        ]
+        streams = [
+            FixedSizeBufferWriter(buffer) for buffer in buffers
+        ]
+        for tensor, stream, object_id in zip(tensors, streams,
+                                             object_ids[chunk_ix]):
+            ipc.write_tensor(tensor, stream)
+            client.seal(object_id)
+            del tensor
+        del tensors
+    client.disconnect()  # drop references from main thread to plasma objects
     if threads is not None:
         pool = Pool(threads)
     else:
         pool = None
     for chunk_ix in reversed(range(total_chunks)):  # popping from end of list
         chunk_title = f"{str(chunk_ix + 1)} of {str(total_chunks)}:"
-        chunk = chunks.pop()
+        index_data = {
+            'object_ids': object_ids[chunk_ix],
+            'variables': variable_names
+        }
         process_args = (
             aspect,
             band,
             cal_data,
             distortion_cube,
-            chunk,
             chunk_title,
             dbscale,
+            index_data,
             mask,
             maskfill,
             stim_coefficients,
@@ -161,17 +201,13 @@ def photonpipe(
             yoffset,
         )
         if pool is None:
-            results[chunk_ix] = process_chunk(*process_args)
+            results[chunk_ix] = process_chunk2(*process_args)
         else:
-            results[chunk_ix] = pool.apply_async(process_chunk, process_args)
-        del chunk
+            results[chunk_ix] = pool.apply_async(process_chunk2, process_args)
         del process_args
+    del cal_data
     if pool is not None:
         pool.close()
-        # while not all(res.ready() for res in results.values()):
-        #     a = _ProcessMemoryInfoProc().rss / 1024 ** 3
-        #     print(a)
-        #     time.sleep(0.1)
         pool.join()
         results = {task: result.get() for task, result in results.items()}
     chunk_indices = sorted(results.keys())
@@ -196,7 +232,6 @@ def photonpipe(
             print("		WARNING: MISSING EVENTS!")
         print(f"rate		=	{str(nphots / (stopt - startt))} photons/sec.")
         print("")
-    # lp.print_stats()
     return
 
 # ------------------------------------------------------------------------------
