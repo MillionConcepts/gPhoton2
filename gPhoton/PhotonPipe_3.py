@@ -178,7 +178,7 @@ def photonpipe(
     if pool is not None:
         pool.close()
         while not all(res.ready() for res in results.values()):
-            print(_ProcessMemoryInfoProc().rss / 1024 ** 3)
+            # print(_ProcessMemoryInfoProc().rss / 1024 ** 3)
             time.sleep(0.1)
         pool.join()
         # lp.print_stats()
@@ -194,7 +194,6 @@ def photonpipe(
     tables = []
     all_blocks = []
     for chunk_ix in chunk_indices:
-        print(f"making table {chunk_ix}")
         blocks, chunk = get_arrays_from_shared_memory(results[chunk_ix])
         tables.append(
             pyarrow.Table.from_arrays(
