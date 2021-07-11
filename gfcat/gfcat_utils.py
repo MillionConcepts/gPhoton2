@@ -48,7 +48,7 @@ def eclipse_to_urls(eclipse, mast_url="http://galex.stsci.edu/gPhoton/RAW6/"):
     }
 
 
-def eclipse_to_files(eclipse, data_directory="/Volumes/BigDataDisk/gPhotonData/GTDS"):
+def eclipse_to_files(eclipse, data_directory="data"):
     eclipse_path = "{d}/e{e}/".format(d=data_directory, e=eclipse)
     eclipse_base = "{ep}e{e}".format(ep=eclipse_path, e=eclipse)
     return {
@@ -58,10 +58,12 @@ def eclipse_to_files(eclipse, data_directory="/Volumes/BigDataDisk/gPhotonData/G
 
 
 def download_raw6(
-    eclipse, band, force=False, data_directory="/Volumes/BigDataDisk/gPhotonData/GTDS"
+    eclipse, band, force=False, data_directory="data",dryrun=False
 ):
     url = eclipse_to_urls(eclipse)[band]["raw6_url"]
     filepath = eclipse_to_files(eclipse, data_directory=data_directory)[band]["raw6"]
+    if dryrun:
+        return filepath
     if os.path.exists(filepath) and not force:
         print("{fn} already exists.".format(fn=filepath))
         print("\tUse keyword `force` to re-download.")
@@ -96,8 +98,39 @@ def download_raw6(
     return filepath
 
 
+def calibrate_photons(event_data, band):
+    flat, _ = cal.flat(band)
+    col, row = ct.xieta2colrow(np.array(event_data["xi"]), np.array(event_data["eta"]), band)
 
-    return image
+    # Use only data that is on the detector.
+    ix = np.where((col > 0) & (col < 800) & (row > 0) & (row < 800))
+    event_data["t"] = pd.Series(np.array(event_data.iloc[ix]["t"]) / 1000.0)
+    event_data["ra"] = pd.Series(np.array(event_data.iloc[ix]["ra"]))
+    event_data["dec"] = pd.Series(np.array(event_data.iloc[ix]["dec"]))
+    event_data["flags"] = pd.Series(np.array(event_data.iloc[ix]["flags"]))
+    event_data["col"] = pd.Series(col[ix])
+    event_data["row"] = pd.Series(row[ix])
+    flat = flat[
+        np.array(event_data["col"], dtype="int16"), np.array(event_data["row"], dtype="int16")
+    ]
+    event_data["flat"] = pd.Series(flat)
+    scale = gt.compute_flat_scale(np.array(event_data.iloc[ix]["t"]) / 1000.0, band)
+    event_data["scale"] = pd.Series(scale)
+    response = np.array(event_data["flat"]) * np.array(event_data["scale"])
+    event_data["response"] = pd.Series(response)
+    event_data["flags"] = pd.Series(np.array(event_data.iloc[ix]["flags"]))
+
+    # define the hotspot mask
+    mask, maskinfo = cal.mask(band)
+    npixx, npixxy = mask.shape
+    pixsz, detsz = maskinfo["CDELT2"], 1.25
+    maskfill = detsz / (npixx * pixsz)
+
+    event_data["mask"] = pd.Series(
+        (mask[np.array(col[ix], dtype="int64"), np.array(row[ix], dtype="int64")] == 0)
+    )
+
+    return event_data
 
 
 def compute_shutter(events, trange, shutgap=0.05):
@@ -213,7 +246,7 @@ def make_qa_plots(fn):
 
 
 def make_gap_qa_plots(eclipse, sourceid, imfile=None,
-    data_directory="/Volumes/BigDataDisk/gPhotonData/GTDS",rerun=False):
+    data_directory="data",rerun=False):
     warnings.filterwarnings("ignore", category=RuntimeWarning)
     warnings.filterwarnings("ignore", category=UserWarning)
     photonfile = "{data_directory}/e{eclipse}/e{eclipse}-{b}d.h5".format(
@@ -347,7 +380,7 @@ def make_images(
     band,
     pixsz=0.000416666666666667,
     imsz=[3200, 3200],
-    data_directory="/Volumes/BigDataDisk/gPhotonData/GTDS",
+    data_directory="data",
     detrad_pix=350,
     bins=["", 120],
 ):
@@ -358,20 +391,6 @@ def make_images(
     if os.path.exists(os.path.dirname(photonfile) + "/No{band}".format(band=band)):
         print("No data.")
         return
-
- #   if (
- #       os.path.exists(photonfile.replace(".h5", "-cnt.fits"))
- #       or os.path.exists(photonfile.replace(".h5", "-cnt.fits.gz"))
- #   ) & (
- #       os.path.exists(photonfile.replace(".h5", "-mov.fits"))
- #       or os.path.exists(photonfile.replace(".h5", "-mov.fits"))
- #   ):
- #       print(
- #           "{band} images already exist for e{eclipse}.".format(
- #               band=band, eclipse=eclipse
- #           )
- #       )
- #       return
 
     xcalfilename = photonfile.replace(".h5", "-xcal.h5")
     print("Reading data from {xcalfilename}".format(xcalfilename=xcalfilename))
@@ -503,7 +522,7 @@ def make_images(
 
 
 def make_photometry(
-    eclipse, band, rerun=False, data_directory="/Volumes/BigDataDisk/gPhotonData/GTDS"
+    eclipse, band, rerun=False, data_directory="data"
 ):
     photonfile = "{data_directory}/e{eclipse}/e{eclipse}-{b}d.h5".format(
         data_directory=data_directory, eclipse=eclipse, b="n" if band=="NUV" else "f"
@@ -592,7 +611,7 @@ def screen_variables(
     eclipse,
     band,
     skip_static=True,
-    data_directory="/Volumes/BigDataDisk/gPhotonData/GTDS",
+    data_directory="data",
     rerun=False,plot=False,
     run_gaperture=False,refine=True,
 ):
@@ -725,7 +744,7 @@ def test_photometry(
     band,
     nsamples,
     random_state=None,
-    data_directory="/Volumes/BigDataDisk/gPhotonData/GTDS",
+    data_directory="data",
 ):
     photonfile = "{data_directory}/e{eclipse}/e{eclipse}-{b}d.h5".format(
         data_directory=data_directory, eclipse=eclipse, b="n" if band=="NUV" else "f"
@@ -787,12 +806,12 @@ def test_photometry(
 
 def varplot(eclipse, band):
     exptime = pd.read_csv(
-        "/Volumes/BigDataDisk/gPhotonData/GTDS/e{e}/e{e}-{b}d-exptime.csv".format(
+        "data/e{e}/e{e}-{b}d-exptime.csv".format(
             e=eclipse, b="n" if band=="NUV" else "f"
         )
     )
     photom = pd.read_csv(
-        "/Volumes/BigDataDisk/gPhotonData/GTDS/e{e}/e{e}-{b}d-photom.csv".format(
+        "data/e{e}/e{e}-{b}d-photom.csv".format(
             e=eclipse, b="n" if band=="NUV" else "f"
         ),
         index_col="id",

@@ -14,7 +14,7 @@ from gfcat.gfcat_utils import (
     make_photometry,
     download_raw6,
 )
-from gPhoton import PhotonPipe
+from gPhoton.PhotonPipe import photonpipe
 
 
 # WARNING: TURNING OFF WARNINGS
@@ -27,30 +27,24 @@ bucketname = "gfcat-test"
 def recalibrate(
     eclipse,
     band,
-    data_directory="/Volumes/BigDataDisk/gPhotonData/GTDS",
+    data_directory='data',
     rerun=False,
     retain=False,
+    ext = 'parquet'
 ):
-    photonfile = "{d}/e{e}/e{e}-{b}d.h5".format(
-        d=data_directory, e=eclipse, b="n" if band is "NUV" else "f"
-    )
+    photonfile = f"{data_directory}/e{eclipse}/e{eclipse}-{band[0].lower()}d.{ext}"
 
     if not os.path.exists(os.path.dirname(photonfile)):
-        print("Creating {dirname}".format(dirname=os.path.dirname(photonfile)))
+        print(f"Creating {os.path.dirname(photonfile)}")
         os.makedirs(os.path.dirname(photonfile))
 
     # AWS: Check for a photometry file, indicating doneness.
     if not rerun:
-        cmd = "aws s3 mv s3://{bn}/data/e{e}/e{e}-{b}d-photom.csv {d}/e{e}/".format(
-            bn=bucketname,
-            d=data_directory,
-            e=eclipse,
-            b="n" if band is "NUV" else "f",
-        )
+        cmd = f"aws s3 mv s3://{bucketname}/data/e{eclipse}/e{eclipse}-{band[0].lower()}d-photom.csv {data_directory}/e{eclipse}/"
         print("Checking for doneness...")
         print("\ttry: {cmd}".format(cmd=cmd))
         os.system(cmd)
-        if os.path.exists(photonfile.replace(".h5", "-photom.csv")):
+        if os.path.exists(raw6file.replace("-raw6.fits.gz", "-photom.csv")):
             print("\tPhotometry already exists for this visit / band.")
             if not retain:
                 shutil.rmtree("{d}/e{e}/".format(d=data_directory, e=eclipse))
@@ -122,7 +116,7 @@ def recalibrate(
 
     if not os.path.exists(photonfile):
         try:
-            PhotonPipe.photonpipe(
+            photonpipe(
                 raw6file.split(".")[0][:-5], band, raw6file=raw6file, verbose=2
             )
         except:
@@ -138,7 +132,7 @@ def recalibrate(
             ).touch()
             ### UGLY dupe of code below
             # Remove the very large calibrated photon files to avoid incurring s3 storage costs.
-            print("Deleting the calibrated photon (*.h5) files.")
+            print("Deleting the calibrated photon (*.{ext}) files.")
             try:
                 os.remove(photonfile)
                 os.remove(xcalfilename)
@@ -158,20 +152,20 @@ def recalibrate(
                 print("Emptying {d}/e{e}/".format(d=data_directory, e=eclipse))
                 shutil.rmtree("{d}/e{e}/".format(d=data_directory, e=eclipse))
             return
-    xcalfilename = photonfile.replace(".h5", "-xcal.h5")
+    xcalfilename = photonfile.replace(f".{ext}", f"-xcal.{ext}")
 
     if not os.path.exists(xcalfilename):
         mc.print_inline("Calibrating...")
         try:
-            events = calibrate_photons(photonfile, band)
+            event_data = calibrate_photons(pd.read_parquet(photonfile), band)
             print("Calibrated.    ")
-            if len(events):
+            if len(event_data):
                 print(
                     "Writing {xcalfilename}".format(xcalfilename=xcalfilename)
                 )
                 with pd.HDFStore(xcalfilename) as store:
-                    store.append("events", events)
-                trange = [events["t"].min(), events["t"].max()]
+                    store.append("events", event_data)
+                trange = [event_data["t"].min(), event_data["t"].max()]
                 if trange[1] - trange[0] == 0:
                     print("\t\tZero exposure time.")
                     pathlib.Path(
@@ -203,7 +197,7 @@ def recalibrate(
     make_photometry(eclipse, band, rerun=rerun, data_directory=data_directory)
 
     # Remove the very large calibrated photon files to avoid incurring s3 storage costs.
-    print("Deleting the calibrated photon (*.h5) files.")
+    print("Deleting the calibrated photon (*.{ext}) files.")
     try:
         os.remove(photonfile)
         os.remove(xcalfilename)

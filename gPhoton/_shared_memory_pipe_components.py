@@ -91,3 +91,10 @@ def slice_chunk_into_memory(
     )
     block_directory[chunk_ix] = block_info
     return block_directory
+
+
+def send_cals_to_shared_memory(cal_data):
+    cal_block_info = {}
+    for cal_name, cal_content in cal_data.items():
+        cal_block_info[cal_name] = send_to_shared_memory(cal_content)
+    return cal_block_info
