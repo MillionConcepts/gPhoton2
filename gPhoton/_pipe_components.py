@@ -382,7 +382,7 @@ def find_null_indices(aspflags, aspect_slice, asptime, flags, ok_indices):
         & (flag_slice == 0)
         & (flag_slice != 7)
     )
-    flags[ok_indices][~cut] = 12
+    flags[ok_indices[~cut]] = 12
     off_detector_flags = [2, 5, 7, 8, 9, 10, 11, 12]
     null_ix = np.isin(flags, off_detector_flags)
     return null_ix, flags
