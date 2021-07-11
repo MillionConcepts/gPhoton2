@@ -52,14 +52,17 @@ if rawexpt<600:
 # Download the raw6file from MAST for real
 raw6file = download_raw6(eclipse, band, data_directory=data_directory)
 photonfile = raw6file.replace('-raw6.fits.gz','.parquet')
-if not os.path.exists(photonfile):
+try:
+    event_data = pd.read_parquet(photonfile)
+except FileNotFoundError:
     photonfile = photonpipe(raw6file.split(".")[0][:-5], band, raw6file=raw6file, verbose=2, overwrite=False)
     print('Calibrating photon list...')
-    event_data = calibrate_photons(pd.read_parquet(photonfile), band)
-    event_data.to_parquet(photonfile)
-    if (not (0 in np.unique(event_data['flags'].values)) or not np.isfinite(event_data["ra"]).any()):
-        print("There is no unflagged data in this visit.")
-        # TODO: Set a flag to halt processing at this point
+    #event_data = calibrate_photons(pd.read_parquet(photonfile), band)
+    #event_data.to_parquet(photonfile)
+    event_data = pd.read_parquet(photonfile)
+if (not (0 in np.unique(event_data['flags'].values)) or not np.isfinite(event_data["ra"]).any()):
+    print("There is no unflagged data in this visit.")
+    # TODO: Set a flag to halt processing at this point
 
 def optimize_wcs(event_data):
     pixsz = 0.000416666666666667 # degrees per pixel
@@ -82,7 +85,7 @@ def make_frame(foc,weights,wcs):
     )
     return frame
 
-def make_images(photonfile,depth=[None,30])
+def make_images(photonfile,depth=[None,30]):
     event_data = pd.read_parquet(photonfile)[['ra', 'dec', 't', 'response', 'flags', 'col', 'row']]
 
     # Only deal with data actually on the 800x800 detector grid
@@ -137,7 +140,8 @@ def make_images(photonfile,depth=[None,30])
                 flagmovie += [flagmap]
                 edgemovie += [edgemap]
         mc.print_inline('')
+    return cntmovie,flagmovie,edgemovie
 
-        # TODO: Write the count map.
+        # TODO: Write the images.
 
 make_photometry(eclipse, band, rerun=rerun, data_directory=data_directory)

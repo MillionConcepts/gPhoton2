@@ -109,12 +109,14 @@ def photonpipe(
             "This incurs a performance cost to no end."
         )
 
-    outfile = "{outbase}-xcal.parquet".format(outbase=outbase)
+    outfile = "{outbase}.parquet".format(outbase=outbase)
     if os.path.exists(outfile):
         if overwrite:
+            print(f"{outfile} already exists... deleting")
             os.remove(outfile)
         else:
-            print("{of} already exists... aborting run".format(of=outfile))
+            print(f"{outfile} already exists... aborting run")
+            return outfile
 
     startt = time.time()
 
@@ -236,6 +238,6 @@ def photonpipe(
                   "[probably rejected not-on-detector events]")
         print(f"rate		=	{str(nphots / (stopt - startt))} photons/sec.")
         print("")
-    return
+    return outfile
 
 # ------------------------------------------------------------------------------
