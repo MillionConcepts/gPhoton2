@@ -5,19 +5,18 @@
        raw spacecraft and detector telemetry. Generates time-tagged photon lists
        given mission-produced -raw6, -scst, and -asprta data.
 """
-from itertools import product
 from multiprocessing import Pool
 import os
 import time
+import warnings
 
 # Core and Third Party imports.
-from multiprocessing.shared_memory import SharedMemory
-
+import numpy as np
 import pyarrow
-import pyarrow.parquet
+from pyarrow import parquet
 
 # gPhoton imports.
-from pympler.process import _ProcessMemoryInfoProc
+import gPhoton.curvetools as ct
 
 import gPhoton.cal as cal
 from gPhoton.CalUtils import find_fuv_offset
@@ -32,15 +31,24 @@ from gPhoton._pipe_components import (
     perform_yac_correction,
     load_cal_data,
     load_raw6,
-    process_chunk3,
-    send_to_shared_memory,
-    get_arrays_from_shared_memory,
+    process_chunk_in_shared_memory,
+    chunk_data,
+    process_chunk_in_unshared_memory,
 )
 
 
 # ------------------------------------------------------------------------------
 
+from gPhoton._shared_memory_pipe_components import (
+    get_arrays_from_children,
+    unlink_cal_blocks,
+    send_to_shared_memory,
+    slice_into_shared_chunks,
+)
+from gPhoton.calibrate_photons import calibrate_photons
 
+# from memory_profiler import profile
+# @profile
 def photonpipe(
     outbase,
     band,
@@ -53,6 +61,7 @@ def photonpipe(
     overwrite=True,
     chunksz=1000000,
     threads=4,
+    share_memory=None,
 ):
     """
     Apply static and sky calibrations to -raw6 GALEX data, producing fully
@@ -90,8 +99,19 @@ def photonpipe(
 
     :type retries: int
     """
+    if share_memory is None:
+        if threads is not None:
+            share_memory = True
+        else:
+            share_memory = False
 
-    outfile = "{outbase}.parquet".format(outbase=outbase)
+    if (share_memory is True) and (threads is None):
+        warnings.warn(
+            "Using shared memory without multithreading. "
+            "This incurs a performance cost to no end."
+        )
+
+    outfile = "{outbase}-xcal.parquet".format(outbase=outbase)
     if os.path.exists(outfile):
         if overwrite:
             os.remove(outfile)
@@ -100,10 +120,6 @@ def photonpipe(
 
     startt = time.time()
 
-    # Scale factor for the time column in the output csv so that it
-    # can be recorded as an int in the database.
-    dbscale = 1000
-
     # download raw6 if local file is not passed
     if raw6file is None:
         raw6file = retrieve_raw6(eclipse, band, outbase)
@@ -111,15 +127,6 @@ def photonpipe(
     eclipse = get_eclipse_from_header(eclipse, raw6file)
     print_inline("Processing eclipse {eclipse}".format(eclipse=eclipse))
 
-    # this can be further optimized by putting cal_data in shared memory
-    # but this benefit is probably negligible
-    cal_data, distortion_cube = load_cal_data(band, eclipse)
-    cal_block_info = {}
-    for cal_name, cal_content in cal_data.items():
-        cal_block_info[cal_name] = send_to_shared_memory(
-            cal_content.values(), cal_content.keys()
-        )
-    del cal_data
     if band == "FUV":
         scstfile = retrieve_scstfile(band, eclipse, outbase, scstfile)
         xoffset, yoffset = find_fuv_offset(scstfile)
@@ -132,6 +139,10 @@ def photonpipe(
 
     aspect = retrieve_aspect_solution(aspfile, eclipse, retries, verbose)
 
+    cal_data, distortion_cube = load_cal_data(band, eclipse)
+    if share_memory is True:
+        cal_data = send_cals_to_shared_memory(cal_data)
+
     data, nphots = load_raw6(band, eclipse, raw6file, verbose)
     stims, stim_coefficients = create_ssd_from_decoded_data(
         data, band, eclipse, verbose, margin=20
@@ -142,12 +153,16 @@ def photonpipe(
         stims_for_yac, yac_coef = create_ssd_from_decoded_data(
             data, band, eclipse, verbose, margin=90.001
         )
-        # impure function, modifies data inplace
-        perform_yac_correction(band, eclipse, stims_for_yac, data)
-        del stims_for_yac
-        del yac_coef
-    block_directory = slice_into_shared_chunks(chunksz, data, nphots)
-    total_chunks = len(block_directory)
+        data = perform_yac_correction(band, eclipse, stims_for_yac, data)
+        del stims_for_yac, yac_coef
+    if share_memory is True:
+        chunks = slice_into_shared_chunks(chunksz, data, nphots)
+        total_chunks = len(chunks)
+        chunk_function = process_chunk_in_shared_memory
+    else:
+        chunks = chunk_data(chunksz, data, nphots, copy=True)
+        total_chunks = len(chunks)
+        chunk_function = process_chunk_in_unshared_memory
     del data
     if threads is not None:
         pool = Pool(threads)
@@ -155,15 +170,13 @@ def photonpipe(
         pool = None
     results = {}
     for chunk_ix in reversed(range(total_chunks)):  # popping from end of list
-        chunk_title = f"{str(chunk_ix + 1)} of {str(total_chunks)}:"
         process_args = (
             aspect,
             band,
-            cal_block_info,
+            cal_data,
             distortion_cube,
-            chunk_title,
-            dbscale,
-            block_directory[chunk_ix],
+            chunks[chunk_ix],
+            f"{str(chunk_ix + 1)} of {str(total_chunks)}:",
             mask,
             maskfill,
             stim_coefficients,
@@ -171,42 +184,43 @@ def photonpipe(
             yoffset,
         )
         if pool is None:
-            results[chunk_ix] = process_chunk3(*process_args)
+            results[chunk_ix] = chunk_function(*process_args)
         else:
-            results[chunk_ix] = pool.apply_async(process_chunk3, process_args)
+            results[chunk_ix] = pool.apply_async(chunk_function, process_args)
         del process_args
     if pool is not None:
         pool.close()
-        while not all(res.ready() for res in results.values()):
-            # print(_ProcessMemoryInfoProc().rss / 1024 ** 3)
-            time.sleep(0.1)
+        # profiling code
+        # while not all(res.ready() for res in results.values()):
+        #     print(_ProcessMemoryInfoProc().rss / 1024 ** 3)
+        #     time.sleep(0.1)
         pool.join()
-        # lp.print_stats()
         results = {task: result.get() for task, result in results.items()}
-    all_cal_blocks = []
-    for cal_name, cal_info in cal_block_info.items():
-        cal_blocks, _ = get_arrays_from_shared_memory(cal_info)
-        all_cal_blocks += list(cal_blocks.values())
-    for block in all_cal_blocks:
-        block.close()
-        block.unlink()
     chunk_indices = sorted(results.keys())
-    tables = []
-    all_blocks = []
-    for chunk_ix in chunk_indices:
-        blocks, chunk = get_arrays_from_shared_memory(results[chunk_ix])
-        tables.append(
-            pyarrow.Table.from_arrays(
-                arrays=list(chunk.values()), names=list(chunk.keys())
-            )
+    array_dict = {}
+    if share_memory is True:
+        unlink_cal_blocks(cal_data)
+        memory_dicts, child_dicts = get_arrays_from_children(
+            chunk_indices, results
         )
-        all_blocks += list(blocks.values())
-    proc_count = sum([len(table) for table in tables])
-    print("writing tables")
-    pyarrow.parquet.write_table(pyarrow.concat_tables(tables), outfile)
-    for block in all_blocks:
-        block.close()
-        block.unlink()
+    else:
+        child_dicts = [results[ix] for ix in chunk_indices]
+        memory_dicts = []
+    for name in child_dicts[0].keys():
+        array_dict[name] = np.hstack(
+            [child_dict[name] for child_dict in child_dicts]
+        )
+        for memory_dict in memory_dicts:
+            memory_dict[name].close()
+            memory_dict[name].unlink()
+    proc_count = len(array_dict["t"])
+    # noinspection PyArgumentList
+    parquet.write_table(
+        pyarrow.Table.from_arrays(
+            list(array_dict.values()), names=list(array_dict.keys())
+        ),
+        outfile
+    )
     stopt = time.time()
     # TODO: consider:  awswrangler.s3.to_parquet()
     print_inline("")
@@ -220,42 +234,18 @@ def photonpipe(
         )
         print(f"	processed	=	{str(proc_count)} of {str(nphots)} events.")
         if proc_count < nphots:
-            print("		WARNING: MISSING EVENTS!")
+            print("		WARNING: MISSING EVENTS! "
+                  "[probably rejected not-on-detector events]")
         print(f"rate		=	{str(nphots / (stopt - startt))} photons/sec.")
         print("")
     return
 
 
-def slice_into_shared_chunks(chunksz, data, nphots):
-    variable_names = [key for key in data.keys()]
-    chunk_slices = make_chunk_slices(chunksz, nphots)
-    total_chunks = len(chunk_slices)
-    block_directory = {}
-    for chunk_ix in range(total_chunks):
-        block_directory = slice_chunk_into_memory(
-            block_directory, chunk_ix, data, chunk_slices, variable_names
-        )
-    return block_directory
+def send_cals_to_shared_memory(cal_data):
+    cal_block_info = {}
+    for cal_name, cal_content in cal_data.items():
+        cal_block_info[cal_name] = send_to_shared_memory(cal_content)
+    return cal_block_info
 
-
-def make_chunk_slices(chunksz, nphots):
-    table_indices = []
-    total_chunks = range(int(nphots / chunksz) + 1)
-    for chunk_ix in total_chunks:
-        chunkbeg, chunkend = chunk_ix * chunksz, (chunk_ix + 1) * chunksz
-        if chunkend > nphots:
-            chunkend = None
-        table_indices.append((chunkbeg, chunkend))
-    return table_indices
-
-
-def slice_chunk_into_memory(block_directory, chunk_ix, data, table_indices,
-                            variable_names):
-    arrays = [
-        array[slice(*table_indices[chunk_ix])] for array in data.values()
-    ]
-    block_info = send_to_shared_memory(arrays, variable_names)
-    block_directory[chunk_ix] = block_info
-    return block_directory
 
 # ------------------------------------------------------------------------------

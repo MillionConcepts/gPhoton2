@@ -14,15 +14,13 @@ import pyarrow
 import pyarrow.parquet
 
 # gPhoton imports.
-from pympler.process import _ProcessMemoryInfoProc
-
 import gPhoton.cal as cal
 from gPhoton.CalUtils import find_fuv_offset
 import gPhoton.constants as c
 from gPhoton.MCUtils import print_inline
 from gPhoton._pipe_components import (
     retrieve_aspect_solution,
-    process_chunk,
+    process_chunk_in_unshared_memory,
     retrieve_raw6,
     create_ssd_from_decoded_data,
     retrieve_scstfile,
@@ -73,10 +71,6 @@ def photonpipe(
     :param aspfile: Name of aspect file to use.
 
     :type aspfile: int
-
-    :param nullfile: Name of output file to record NULL lines.
-
-    :type nullfile: int
 
     :param verbose: Verbosity level, to be detailed later.
 
@@ -161,9 +155,9 @@ def photonpipe(
             yoffset,
         )
         if pool is None:
-            results[chunk_ix] = process_chunk(*process_args)
+            results[chunk_ix] = process_chunk_in_unshared_memory(*process_args)
         else:
-            results[chunk_ix] = pool.apply_async(process_chunk, process_args)
+            results[chunk_ix] = pool.apply_async(process_chunk_in_unshared_memory, process_args)
         del chunk
         del process_args
     if pool is not None:
@@ -179,7 +173,6 @@ def photonpipe(
     pyarrow.parquet.write_table(
         pyarrow.concat_tables([results[ix] for ix in chunk_indices]), outfile
     )
-
     stopt = time.time()
     # TODO: consider:  awswrangler.s3.to_parquet()
     print_inline("")

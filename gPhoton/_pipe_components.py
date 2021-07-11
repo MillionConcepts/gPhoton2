@@ -1,17 +1,12 @@
 import os
-from collections import defaultdict
-from functools import reduce
 from itertools import product
-from multiprocessing.shared_memory import SharedMemory
-from operator import or_
 
 import fitsio
 import numpy as np
-import pyarrow
 from astropy.io import fits as pyfits
-from pyarrow import plasma, ipc
 
 from gPhoton import cal as cal, constants as c
+import gPhoton.curvetools as ct
 from gPhoton.CalUtils import (
     compute_stimstats,
     post_csp_caldata,
@@ -22,25 +17,27 @@ from gPhoton.CalUtils import (
     avg_stimpos,
     rtaph_yap,
 )
+import gPhoton.galextools as gt
 from gPhoton.FileUtils import load_aspect, web_query_aspect, download_data
-from gPhoton.MCUtils import print_inline
+from gPhoton.MCUtils import print_inline, NestingDict
+from gPhoton._numbafied_pipe_components import (
+    interpolate_aspect_solutions,
+    find_null_indices,
+    unfancy_hotspot_portion,
+    make_corners,
+    or_reduce_minus_999,
+    init_wiggle_arrays,
+    float_between_wiggled_points,
+    center_scale_step_1,
+    plus7_mod32_minus16,
+    unfancy_distortion_component,
+    sum_corners,
+)
+from gPhoton._shared_memory_pipe_components import (
+    get_arrays_from_shared_memory,
+    send_to_shared_memory,
+)
 from gPhoton.gnomonic import gnomfwd_simple, gnomrev_simple
-
-import memory_profiler
-import line_profiler
-
-class NestingDict(defaultdict):
-    """
-    shorthand for automatically-nesting dictionary -- i.e.,
-    insert a series of keys at any depth into a NestingDict
-    and it automatically creates all needed levels above.
-    """
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.default_factory = NestingDict
-
-    __repr__ = dict.__repr__
 
 
 def retrieve_aspect_solution(aspfile, eclipse, retries, verbose):
@@ -78,21 +75,21 @@ def retrieve_aspect_solution(aspfile, eclipse, retries, verbose):
     return aspdec, aspflags, aspra, asptime, asptwist, eta_vec, xi_vec
 
 
-def process_chunk(
+def process_chunk_in_unshared_memory(
     aspect,
     band,
     cal_data,
-        distortion_cube,
+    distortion_cube,
     chunk,
     chunkid,
-    dbscale,
     mask,
     maskfill,
     stim_coefficients,
     xoffset,
     yoffset,
 ):
-    eta, flags, xi = apply_on_detector_corrections(
+    dec, eta, flags, ra, xi = apply_all_corrections(
+        aspect,
         band,
         cal_data,
         chunk,
@@ -104,67 +101,46 @@ def process_chunk(
         xoffset,
         yoffset,
     )
-    dec, ra, flags = apply_aspect_solution(
-        aspect,
-        chunkid,
-        eta,
-        flags,
-        chunk["t"],
-        xi,
-    )
-    return pyarrow.Table.from_arrays(
-        arrays=[
-            np.array(chunk["t"] * dbscale, dtype="int64"),
-            chunk["x"],
-            chunk["y"],
-            chunk["xa"],
-            chunk["ya"],
-            chunk["q"],
-            xi,
-            eta,
-            ra,
-            dec,
-            flags,
-        ],
-        names=[
-            "t",
-            "x",
-            "y",
-            "xa",
-            "ya",
-            "q",
-            "xi",
-            "eta",
-            "ra",
-            "dec",
-            "flags",
-        ],
-    )
-
+    (
+        detector_col,
+        detector_flat,
+        detector_mask,
+        response,
+        detector_row,
+        scale,
+        detector_t,
+        detector_indices,
+    ) = calibrate_photons_inline(band, cal_data, chunk, eta, mask, xi)
+    return {
+            "t": detector_t,
+            "ra": ra[detector_indices],
+            "dec": dec[detector_indices],
+            "flags": flags[detector_indices],
+            "col": detector_col,
+            "row": detector_row,
+            "flat": detector_flat,
+            "scale": scale,
+            "response": response,
+            "mask": detector_mask,
+        }
     # import line_profiler
     # lp = line_profiler.LineProfiler()
     # @lp
-def process_chunk2(
+
+
+def apply_all_corrections(
     aspect,
     band,
     cal_data,
-        distortion_cube,
+    chunk,
     chunkid,
-    dbscale,
-    index_data,
+    distortion_cube,
     mask,
     maskfill,
     stim_coefficients,
     xoffset,
     yoffset,
 ):
-    client = plasma.connect("/tmp/plasma1")
-    view = client.get_buffers(index_data["object_ids"])
-    chunk = {
-        name: ipc.read_tensor(view[ix]).to_numpy()
-        for ix, name in enumerate(index_data['variables'])
-    }
-    client.disconnect()
     eta, flags, xi = apply_on_detector_corrections(
         band,
         cal_data,
@@ -185,46 +161,16 @@ def process_chunk2(
         chunk["t"],
         xi,
     )
-    # and to be really fast this needs to be turned back into
-    # a series of vectors and put in plasma
-    return pyarrow.Table.from_arrays(
-        arrays=[
-            np.array(chunk["t"] * dbscale, dtype="int64"),
-            chunk["x"],
-            chunk["y"],
-            chunk["xa"],
-            chunk["ya"],
-            chunk["q"],
-            xi,
-            eta,
-            ra,
-            dec,
-            flags,
-        ],
-        names=[
-            "t",
-            "x",
-            "y",
-            "xa",
-            "ya",
-            "q",
-            "xi",
-            "eta",
-            "ra",
-            "dec",
-            "flags",
-        ],
-    )
+    return dec, eta, flags, ra, xi
 
 
-def process_chunk3(
+def process_chunk_in_shared_memory(
     aspect,
     band,
     cal_block_info,
     distortion_cube,
-    chunkid,
-    dbscale,
     block_info,
+    chunk_title,
     mask,
     maskfill,
     stim_coefficients,
@@ -238,11 +184,12 @@ def process_chunk3(
         cal_blocks, cal_arrays = get_arrays_from_shared_memory(cal_info)
         all_cal_blocks.append(cal_blocks)
         cal_data[cal_name] = cal_arrays
-    eta, flags, xi = apply_on_detector_corrections(
+    dec, eta, flags, ra, xi = apply_all_corrections(
+        aspect,
         band,
         cal_data,
         chunk,
-        chunkid,
+        chunk_title,
         distortion_cube,
         mask,
         maskfill,
@@ -250,43 +197,29 @@ def process_chunk3(
         xoffset,
         yoffset,
     )
-    dec, ra, flags = apply_aspect_solution(
-        aspect,
-        chunkid,
-        eta,
-        flags,
-        chunk["t"],
-        xi,
-    )
-    # and to be really fast this might need to be turned back into
-    # a series of arrays and put in shared memory?
+    (
+        detector_col,
+        detector_flat,
+        detector_mask,
+        response,
+        detector_row,
+        scale,
+        detector_t,
+        detector_indices,
+    ) = calibrate_photons_inline(band, cal_data, chunk, eta, mask, xi)
     processed_block_info = send_to_shared_memory(
-        arrays = [
-            np.array(chunk["t"] * dbscale, dtype="int64"),
-            chunk["x"],
-            chunk["y"],
-            chunk["xa"],
-            chunk["ya"],
-            chunk["q"],
-            xi,
-            eta,
-            ra,
-            dec,
-            flags,
-        ],
-        names=[
-            "t",
-            "x",
-            "y",
-            "xa",
-            "ya",
-            "q",
-            "xi",
-            "eta",
-            "ra",
-            "dec",
-            "flags",
-        ],
+        {
+            "t": detector_t,
+            "ra": ra[detector_indices],
+            "dec": dec[detector_indices],
+            "flags": flags[detector_indices],
+            "col": detector_col,
+            "row": detector_row,
+            "flat": detector_flat,
+            "scale": scale,
+            "response": response,
+            "mask": detector_mask,
+        }
     )
     for block in chunk_blocks.values():
         block.close()
@@ -294,18 +227,34 @@ def process_chunk3(
     return processed_block_info
 
 
-def get_arrays_from_shared_memory(block_info) -> tuple[dict, dict]:
-    blocks = {
-        variable: SharedMemory(name=info['name'])
-        for variable, info in block_info.items()
-    }
-    chunk = {
-        variable: np.ndarray(
-            info['shape'], dtype=info['dtype'], buffer=blocks[variable].buf
-        )
-        for variable, info in block_info.items()
-    }
-    return blocks, chunk
+def calibrate_photons_inline(band, cal_data, chunk, eta, mask, xi):
+    print_inline("Applying detector-space calibrations.")
+    col, row, ok_indices = select_on_detector_indices(xi, eta, band)
+    col_ix, row_ix = col.astype(np.int16), row.astype(np.int16)
+    detector_mask = mask[col_ix, row_ix] == 0
+    detector_flat = cal_data["flat"]["array"][col_ix, row_ix]
+    del col_ix, row_ix
+    t = chunk["t"][ok_indices]
+    scale = gt.compute_flat_scale(t, band)
+    response = detector_flat * scale
+    return (
+        col,
+        detector_flat,
+        detector_mask,
+        response,
+        row,
+        scale,
+        t,
+        ok_indices,
+    )
+
+
+def select_on_detector_indices(xi, eta, band):
+    col, row = ct.xieta2colrow(xi, eta, band)
+    ix = np.where((col > 0) & (col < 800) & (row > 0) & (row < 800))
+    detector_col = col[ix]
+    detector_row = row[ix]
+    return detector_col, detector_row, ix
 
 
 def apply_aspect_solution(
@@ -333,8 +282,9 @@ def apply_aspect_solution(
     flags[~cut] = 7
     ok_indices = np.nonzero(cut)[0]
     aspect_slice = aspix[ok_indices]
+    print_inline(chunkid + "Interpolating aspect solutions...")
     deta, dxi = interpolate_aspect_solutions(
-        aspect_slice, asptime, chunkid, eta_vec, ok_indices, t, xi_vec
+        aspect_slice, asptime, eta_vec, ok_indices, t, xi_vec
     )
     print_inline(chunkid + "Mapping to sky...")
     ra, dec = np.zeros(len(t)), np.zeros(len(t))
@@ -353,39 +303,6 @@ def apply_aspect_solution(
     ra[null_ix] = np.nan
     dec[null_ix] = np.nan
     return dec, ra, flags
-
-
-def interpolate_aspect_solutions(
-    aspect_slice, asptime, chunkid, eta_vec, ok_indices, t, xi_vec
-):
-    print_inline(chunkid + "Interpolating aspect solutions...")
-    dxi, deta = np.zeros(len(t)), np.zeros(len(t))
-    aspect_ratio = t[ok_indices] - asptime[aspect_slice] / (
-        asptime[aspect_slice + 1] - asptime[aspect_slice]
-    )
-    dxi[ok_indices] = (
-        xi_vec[aspect_slice + 1] - xi_vec[aspect_slice]
-    ) * aspect_ratio
-    deta[ok_indices] = (
-        eta_vec[aspect_slice + 1] - eta_vec[aspect_slice]
-    ) * aspect_ratio
-    return deta, dxi
-
-
-def find_null_indices(aspflags, aspect_slice, asptime, flags, ok_indices):
-    flag_slice = flags[ok_indices]
-    cut = (
-        ((asptime[aspect_slice + 1] - asptime[aspect_slice]) == 1)
-        & (aspflags[aspect_slice] % 2 == 0)
-        & (aspflags[aspect_slice + 1] % 2 == 0)
-        & (aspflags[aspect_slice - 1] % 2 == 0)
-        & (flag_slice == 0)
-        & (flag_slice != 7)
-    )
-    flags[ok_indices][~cut] = 12
-    off_detector_flags = [2, 5, 7, 8, 9, 10, 11, 12]
-    null_ix = np.isin(flags, off_detector_flags)
-    return null_ix, flags
 
 
 def apply_on_detector_corrections(
@@ -411,19 +328,20 @@ def apply_on_detector_corrections(
         chunk["yamc"],
         chunk["yb"],
     )
-    flags = np.zeros(len(t))
+    flags = np.zeros(len(t), dtype=np.uint8)
     fptrx, fptry = apply_wiggle_correction(chunkid, x, y)
     # This and other lines like it below are to verify that the
     # event is still on the detector.
     cut = (fptrx > 0.0) & (fptrx < 479.0) & (fptry > 0.0) & (fptry < 479.0)
     flags[~cut] = 8
     ok_indices = np.nonzero(cut)[0]
+    print_inline(chunkid + "Applying walk correction...")
     fptrx, fptry, xdig, ydig = wiggle_and_dig(
-        chunkid,
         fptrx,
         fptry,
         ok_indices,
-        cal_data["wiggle"],
+        cal_data["wiggle"]["x"],  # unpacking for numba
+        cal_data["wiggle"]["y"],
         x,
         xa,
         y,
@@ -458,7 +376,6 @@ def apply_on_detector_corrections(
     dx, dy = compute_detector_orientation(
         fptrx, fptry, cal_data["linearity"], ok_indices
     )
-
     xshift, yshift, flags, ok_indices = apply_stim_distortion_correction(
         chunkid,
         cal_data["distortion"],
@@ -502,38 +419,11 @@ def apply_hotspot_mask(
     yshift,
 ):
     print_inline(chunkid + "Applying hotspot mask...")
-    # The detectors aren't oriented the same way.
-    flip = 1.0
-    if band == "FUV":
-        flip = -1.0
-    # TODO: is this scaling wrong? looks like YSC is being applied to x
-    #  and vice versa?
-    # TODO: is xi always 0? so can half of this be removed?
-    #  probably? go look at the C code
-    y_component = (yp_as + dy + yshift) * flip * 10
-    x_component = (xp_as + dx + xshift) * flip * 10
-    xi = c.XI_XSC * y_component + c.XI_YSC * x_component
-    # TODO, similarly with eta_ysc?
-    eta = c.ETA_XSC * y_component + c.ETA_YSC * x_component
-    col = (
-        ((xi / 36000.0) / (c.DETSIZE / 2.0) * maskfill + 1.0)
-        * mask.shape[0]
-        / 2
+    # TODO: this is for numba. consider replacing fancy indexing in mask below
+    #  with a for-loop to numba-fy the rest of the function.
+    col, cut, eta, ok_indices, row, xi = unfancy_hotspot_portion(
+        band, dx, dy, flags, mask, maskfill, xp_as, xshift, yp_as, yshift
     )
-    row = (
-        ((eta / 36000.0) / (c.DETSIZE / 2.0) * maskfill + 1.0)
-        * mask.shape[1]
-        / 2
-    )
-    cut = (
-        (col > 0.0)
-        & (col < 799.0)
-        & (row > 0.0)
-        & (row < 799.0)
-        & (flags == 0)
-    )
-    flags[~cut] = 16
-    ok_indices = np.nonzero(cut)[0]
     cut[ok_indices] = (
         mask[
             np.array(col[ok_indices], dtype="int64"),
@@ -560,22 +450,7 @@ def compute_detector_orientation(fptrx, fptry, linearity, ok_indices):
         fptrx.shape,
         ok_indices,
     )
-
     return dx, dy
-
-
-def make_corners(floor_x, floor_y, fptrx, fptry, ok_indices):
-    blt = (fptrx - floor_x)[ok_indices]
-    blu = (fptry - floor_y)[ok_indices]
-    inv_blt = 1 - blt
-    inv_blu = 1 - blu
-    corners = (
-        inv_blt * inv_blu,
-        blt * inv_blu,
-        inv_blt * blu,
-        blt * blu,
-    )
-    return corners
 
 
 def post_wiggle_update_indices_and_flags(
@@ -600,15 +475,10 @@ def post_wiggle_update_indices_and_flags(
     return flags, ok_indices
 
 
-def sum_corners(cal, cal_indices, corners):
-    wr = cal.ravel()
-    return sum([corners[ix] * wr[cal_indices[ix]] for ix in range(4)])
-
-
 def scale_corners(cal_x, cal_y, cal_indices, corners, base_shape, ok_indices):
     out_x, out_y = np.zeros(base_shape), np.zeros(base_shape)
-    out_x[ok_indices] = sum_corners(cal_x, cal_indices, corners)
-    out_y[ok_indices] = sum_corners(cal_y, cal_indices, corners)
+    out_x[ok_indices] = sum_corners(cal_x, *cal_indices, corners)
+    out_y[ok_indices] = sum_corners(cal_y, *cal_indices, corners)
     return out_x, out_y
 
 
@@ -659,35 +529,27 @@ def make_cal_indices(shape, ok_indices, index_arrays):
 
 
 def check_walk_flags(walk_indices, walk_x, walk_y):
-    return reduce(
-        or_,
-        [
-            walk[walk_indices[ix]] != -999
-            for walk, ix in product((walk_x.ravel(), walk_y.ravel()), range(4))
-        ],
-    )
+    x = None
+    for walk, ix in product((walk_x.ravel(), walk_y.ravel()), range(4)):
+        x = or_reduce_minus_999(walk, walk_indices[ix], x)
+    return x
 
 
-def wiggle_and_dig(chunkid, fptrx, fptry, ix, wiggle, x, xa, y, ya):
+def wiggle_and_dig(fptrx, fptry, ix, wig_x, wig_y, x, xa, y, ya):
     # floating point corrections...?
+
     floor_x = np.array(fptrx, dtype="int64")
     floor_y = np.array(fptry, dtype="int64")
-    blt = (fptrx - floor_x)[ix]
-    blu = (fptry - floor_y)[ix]
-    floor_x = floor_x[ix]
-    floor_y = floor_y[ix]
-    xa_ix = xa[ix]
-    ya_ix = ya[ix]
-    wigx, wigy = np.zeros_like(fptrx), np.zeros_like(fptrx)
-    wigx[ix] = (1 - blt) * (wiggle["x"][xa_ix, floor_x]) + blt * (
-        wiggle["x"][xa_ix, floor_x + 1]
+    blt, blu, floor_x, floor_y, wigx, wigy, xa_ix, ya_ix = init_wiggle_arrays(
+        floor_x, floor_y, fptrx, fptry, ix, xa, ya
     )
-    wigy[ix] = (1 - blu) * (wiggle["y"][ya_ix, floor_y]) + blu * (
-        wiggle["y"][ya_ix, floor_y + 1]
-    )
+    # avoiding advanced indexing for numba...
+    thing_x = float_between_wiggled_points(blt, floor_x, wig_x, xa_ix)
+    thing_y = float_between_wiggled_points(blu, floor_y, wig_y, ya_ix)
+    wigx[ix] = thing_x
+    wigy[ix] = thing_y
     xdig = x + wigx / (10.0 * c.ASPUM)
     ydig = y + wigy / (10.0 * c.ASPUM)
-    print_inline(chunkid + "Applying walk correction...")
     xdig_as = xdig * c.ASPUM
     ydig_as = ydig * c.ASPUM
     fptrx = xdig_as / 10.0 + 240.0
@@ -869,6 +731,7 @@ def perform_yac_correction(band, eclipse, stims, data):
     corrected_y += yac
     data["x"] = corrected_x
     data["y"] = corrected_y
+    return data
 
 
 def apply_yac_correction(band, eclipse, q, raw6file, x, xb, y, ya, yamc, yb):
@@ -922,34 +785,22 @@ def apply_stim_distortion_correction(
         cube_nc,
         cube_nr,
     ) = distortion_cube
-    ss = stim_coefficients[0] + (t * stim_coefficients[1])  # stim separation
-    col, row, depth = np.zeros(len(t)), np.zeros(len(t)), np.zeros(len(t))
-    col[ok_indices] = (xp_as[ok_indices] - cube_x0) / cube_dx
-    row[ok_indices] = (yp_as[ok_indices] - cube_y0) / cube_dy
-    depth[ok_indices] = (ss[ok_indices] - cube_d0) / cube_dd
-    # [Future]: This throws an error sometimes like the following, may need
-    # fixing...
-    """PhotonPipe.py:262: RuntimeWarning: invalid value encountered in
-                less depth[((depth < 0)).nonzero()[0]] = 0.
-                PhotonPipe.py:263: RuntimeWarning: invalid value encountered in
-                greater_equal depth[((depth >= cube_nd)).nonzero()[0]] = -1.
-                ERROR: IndexError: index -9223372036854775808 is out of 
-                bounds for
-                axis 0 with size 17 [PhotonPipe]
-                depth[((depth < 0)).nonzero()[0]] = 0.
-                depth[((depth >= cube_nd)).nonzero()[0]] = -1.
-                """
-    cut = (
-        (col > -1)
-        & (col < cube_nc)
-        & (row > -1)
-        & (row < cube_nr)
-        & (flags == 0)
-        & (np.array(depth, dtype="int64") <= 16)
+    col, depth, ok_indices, row, xshift, yshift = unfancy_distortion_component(
+        cube_x0,
+        cube_dx,
+        cube_y0,
+        cube_dy,
+        cube_d0,
+        cube_dd,
+        cube_nc,
+        cube_nr,
+        flags,
+        ok_indices,
+        stim_coefficients,
+        t,
+        xp_as,
+        yp_as,
     )
-    flags[~cut] = 11
-    ok_indices = np.nonzero(cut)[0]
-    xshift, yshift = np.zeros(len(t)), np.zeros(len(t))
     raveled_ix = np.ravel_multi_index(
         np.array(
             [
@@ -986,13 +837,6 @@ def unpack_raw6(chunkbeg, chunkend, chunkid, raw6hdulist):
     photonbytes = {}
     for byte in range(5):
         photonbytes[byte + 1] = photonbytes_as_short[photonbyte_cols[byte]]
-    # t = np.array(raw6hdulist[1].data.field("t")[chunkbeg:chunkend])
-    # photonbytes = {}
-    # for byte in range(5):
-    #     photonbytes[byte + 1] = np.array(
-    #         raw6hdulist[1].data.field(f"phb{byte + 1}")[chunkbeg:chunkend],
-    #         dtype=np.int16,
-    #     )
     photonbytes["t"] = table_chunk["t"]
     return photonbytes
 
@@ -1102,28 +946,25 @@ def center_and_scale(band, data, eclipse):
     (xclk, yclk, xcen, ycen, xscl, yscl, xslp, yslp) = clk_cen_scl_slp(
         band, eclipse
     )
-    xraw0 = data["xb"] * xclk + data["xamc"]
-    yraw0 = data["yb"] * yclk + data["yamc"]
-    data["ya"] = (
-            np.array(
-                (
-                        (((yraw0 / (2 * yclk) - xraw0 / (2 * xclk)) + 10) * 32)
-                        + data["xa"]
-                ),
-                dtype="int64",
-            )
-            % 32
+    xraw0, ya, yraw0 = center_scale_step_1(
+        data["xa"],
+        data["yb"],
+        data["xb"],
+        xclk,
+        yclk,
+        data["xamc"],
+        data["yamc"],
     )
+    data["ya"] = np.array(ya, dtype="int64") % 32
+    del ya
     xraw = (
-            xraw0 + np.array((((data["xa"] + 7) % 32) - 16),
-                             dtype="int64") * xslp
+        xraw0 + np.array(plus7_mod32_minus16(data["xa"]), dtype="int64") * xslp
     )
     del xraw0
     data["x"] = (xraw - xcen) * xscl
     del xraw
     yraw = (
-            yraw0 + np.array((((data["ya"] + 7) % 32) - 16),
-                             dtype="int64") * yslp
+        yraw0 + np.array(plus7_mod32_minus16(data["ya"]), dtype="int64") * yslp
     )
     del yraw0
     data["y"] = (yraw - ycen) * yscl
@@ -1206,6 +1047,12 @@ def load_cal_data(band, eclipse):
     print_inline("Loading linearity files...")
     cal_data["linearity"]["x"], _ = cal.linearity(band, "x")
     cal_data["linearity"]["y"], _ = cal.linearity(band, "y")
+    print_inline("Loading wiggle files...")
+    cal_data["wiggle"]["x"], _ = cal.wiggle(band, "x")
+    cal_data["wiggle"]["y"], _ = cal.wiggle(band, "y")
+    print_inline("Loading flat field...")
+    cal_data["flat"]["array"], _ = cal.flat(band)
+
     # TODO: it looks like this always gets applied regardless of post-CSP
     #  status.
     # This is for the post-CSP stim distortion corrections.
@@ -1214,10 +1061,9 @@ def load_cal_data(band, eclipse):
         print_inline(
             " Using stim separation of : {stimsep}".format(stimsep=c.STIMSEP)
         )
-    (
-        cal_data["distortion"]["x"],
-        distortion_header
-    ) = cal.distortion(band, "x", eclipse, c.STIMSEP)
+    (cal_data["distortion"]["x"], distortion_header) = cal.distortion(
+        band, "x", eclipse, c.STIMSEP
+    )
     cal_data["distortion"]["y"], _ = cal.distortion(
         band, "y", eclipse, c.STIMSEP
     )
@@ -1245,18 +1091,3 @@ def load_raw6(band, eclipse, raw6file, verbose):
     data = decode_telemetry(band, 0, None, "", eclipse, raw6hdulist)
     raw6hdulist.close()
     return data, nphots
-
-
-def send_to_shared_memory(arrays, names):
-    block_info = NestingDict()
-    for array, variable in zip(arrays, names):
-        block = SharedMemory(create=True, size=array.size * array.itemsize)
-        shared_array = np.ndarray(
-            array.shape, dtype=array.dtype, buffer=block.buf
-        )
-        shared_array[:] = array[:]
-        block_info[variable]['name'] = block.name
-        block_info[variable]['dtype'] = array.dtype
-        block_info[variable]['shape'] = array.shape
-        block.close()
-    return block_info

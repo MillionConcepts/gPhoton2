@@ -2,12 +2,15 @@ numpy
 pandas
 sqlalchemy
 photutils
-gPhoton
 astropy
 requests
 ffmpeg
 scipy
-sklearn
+scikit-learn
 pyarrow
 ffmpeg
 fitsio
+numba
+pympler
+
+recommended: icc_rt (install from -c numba or -c intel)

@@ -8,11 +8,15 @@ from __future__ import absolute_import, division, print_function
 # Core and Third Party imports.
 import numpy as np
 
+from numba import jit, njit
+
 # ------------------------------------------------------------------------------
 R2D = 180./3.141592658979
 # ------------------------------------------------------------------------------
 
 # ------------------------------------------------------------------------------
+
+@njit(cache=True)
 def gnomrev_simple(xi, eta, ra0, dec0, crota, cdelt, cenpix):
     """
     A reverse gnomonic projection.
@@ -86,6 +90,7 @@ def gnomrev_simple(xi, eta, ra0, dec0, crota, cdelt, cenpix):
 # ------------------------------------------------------------------------------
 
 # ------------------------------------------------------------------------------
+@njit(cache=True)
 def gnomfwd_simple(ra, dec, ra0, dec0, crota, cdelt, cenpix):
     """
     A forward gnomonic projection.
