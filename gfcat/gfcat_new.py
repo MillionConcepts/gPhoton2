@@ -96,7 +96,7 @@ def make_frame(foc, weights, wcs):
 
 def make_images(photonfile, depth=[None, 30]):
     event_data = parquet.read_table(
-        photonfile, "ra", "dec", "t", "response", "flags", "col", "row"
+        photonfile, columns=["ra", "dec", "t", "response", "flags", "col", "row"]
     ).to_pandas()
     # Only deal with data actually on the 800x800 detector grid
     # MICHAEL: this is probably easier as as something like: event_data.dropna(subset='response')
