@@ -1,32 +1,27 @@
 import os
-import pathlib
-import shutil
-import sys
-import warnings
+
+from fast_histogram import histogram2d
 import numpy as np
-
 import pandas as pd
+from pyarrow import parquet
 
-from gfcat.gfcat_utils import (
+from gfcat_utils import (
     obstype_from_eclipse,
-    mc,
-    calibrate_photons,
-    make_images,
     make_photometry,
     download_raw6,
     make_wcs,
     compute_exptime,
 )
+import gPhoton.constants as c
 from gPhoton.PhotonPipe import photonpipe
 from gPhoton import cal
 from gPhoton import MCUtils as mc
 
-from fast_histogram import histogram2d
 
 bucketname = "gfcat-test"
 eclipse = 23456
 band = 'NUV'
-data_directory = 'data'
+data_directory = '../test_data'
 rerun = False
 retain = False
 ext = 'parquet'
@@ -49,29 +44,35 @@ if nlegs>0:
 if rawexpt<600:
     print(f"Skipping visit with {rawexpt}s depth.")
 
+def get_parquet_stats(fn, columns, row_group=0):
+    group = parquet.read_metadata(fn).row_group(row_group)
+    statistics = {}
+    for column in group.to_dict()['columns']:
+        if column['path_in_schema'] in columns:
+            statistics[column['path_in_schema']] = column['statistics']
+    return statistics
+
+
 # Download the raw6file from MAST for real
 raw6file = download_raw6(eclipse, band, data_directory=data_directory)
-photonfile = raw6file.replace('-raw6.fits.gz','.parquet')
-try:
-    event_data = pd.read_parquet(photonfile)
-except FileNotFoundError:
-    photonfile = photonpipe(raw6file.split(".")[0][:-5], band, raw6file=raw6file, verbose=2, overwrite=False)
+photonfile = raw6file.replace('-raw6.fits.gz', '.parquet')
+if not os.path.exists(photonfile):
+    photonpipe(photonfile, band, raw6file=raw6file, verbose=2, overwrite=False)
     print('Calibrating photon list...')
-    #event_data = calibrate_photons(pd.read_parquet(photonfile), band)
-    #event_data.to_parquet(photonfile)
-    event_data = pd.read_parquet(photonfile)
-if (not (0 in np.unique(event_data['flags'].values)) or not np.isfinite(event_data["ra"]).any()):
+file_stats = get_parquet_stats(photonfile, ['flags', 'ra'])
+if (file_stats['flags']['min'] != 0) or (file_stats['ra']['max'] is None):
     print("There is no unflagged data in this visit.")
     # TODO: Set a flag to halt processing at this point
 
+
 def optimize_wcs(event_data):
-    pixsz = 0.000416666666666667 # degrees per pixel
-    ra_range = event_data['ra'].min(),event_data['ra'].max()
-    dec_range = event_data['dec'].min(),event_data['dec'].max()
+    ra_range = event_data['ra'].min(), event_data['ra'].max()
+    dec_range = event_data['dec'].min(), event_data['dec'].max()
     center_skypos = (np.mean(ra_range),np.mean(dec_range))
-    imsz = (int(np.ceil((ra_range[1]-ra_range[0])/pixsz)),
-            int(np.ceil((dec_range[1]-dec_range[0])/pixsz)))
-    return make_wcs(center_skypos,imsz=imsz,pixsz=pixsz)
+    imsz = (int(np.ceil((ra_range[1]-ra_range[0])/c.DEGPERPIXEL)),
+            int(np.ceil((dec_range[1]-dec_range[0])/c.DEGPERPIXEL)))
+    return make_wcs(center_skypos,imsz=imsz,pixsz=c.DEGPERPIXEL)
+
 
 def make_frame(foc,weights,wcs):
     imsz = (int((wcs.wcs.crpix[0] - 0.5) * 2),
@@ -84,6 +85,7 @@ def make_frame(foc,weights,wcs):
         weights=weights,
     )
     return frame
+
 
 def make_images(photonfile,depth=[None,30]):
     event_data = pd.read_parquet(photonfile)[['ra', 'dec', 't', 'response', 'flags', 'col', 'row']]
@@ -143,5 +145,7 @@ def make_images(photonfile,depth=[None,30]):
     return cntmovie,flagmovie,edgemovie
 
         # TODO: Write the images.
+
+make_images(photonfile)
 
 make_photometry(eclipse, band, rerun=rerun, data_directory=data_directory)

@@ -1,24 +1,29 @@
-name: glcat2
+name: glcat
 channels:
   - numba
   - conda-forge
 dependencies:
+  - python=3.9
   - pyarrow
-  - pympler
   - fitsio
   - sqlalchemy
   - astropy
-  - line_profiler
-  - memory_profiler
   - numpy
   - scikit-learn
   - pandas
   - requests
   - scipy
   - ffmpeg
-  - python=3.9
   - photutils
-  - icc_rt
   - numba
+  - fast-histogram
   - jupyter
-prefix: /home/michael/miniconda3/envs/glcat2
+  # for regression testing
+  - pytables
+  # profiling
+  - pympler
+  - line_profiler
+  - memory_profiler
+  # non-mandatory, some performance improvements to numba
+  - icc_rt
+prefix: /home/michael/miniconda3/envs/glcat

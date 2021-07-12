@@ -41,7 +41,7 @@ def find_null_indices(aspflags, aspect_slice, asptime, flags, ok_indices):
 
 
 def unfancy_hotspot_portion(
-    band, dx, dy, flags, mask, maskfill, xp_as, xshift, yp_as, yshift
+    band, dx, dy, flags, xp_as, xshift, yp_as, yshift
 ):
     flip = 1.0
     if band == "FUV":
@@ -54,16 +54,7 @@ def unfancy_hotspot_portion(
     xi = c.XI_XSC * y_component + c.XI_YSC * x_component
     # TODO, similarly with eta_ysc?
     eta = c.ETA_XSC * y_component + c.ETA_YSC * x_component
-    col = (
-        ((xi / 36000.0) / (c.DETSIZE / 2.0) * maskfill + 1.0)
-        * mask.shape[0]
-        / 2
-    )
-    row = (
-        ((eta / 36000.0) / (c.DETSIZE / 2.0) * maskfill + 1.0)
-        * mask.shape[1]
-        / 2
-    )
+    col, row = xi_eta_to_col_row(xi, eta)
     cut = (
         (col > 0.0)
         & (col < 799.0)
@@ -73,7 +64,21 @@ def unfancy_hotspot_portion(
     )
     flags[~cut] = 16
     ok_indices = np.nonzero(cut)[0]
-    return col, cut, eta, ok_indices, row, xi
+    return col, row, xi, eta, cut, ok_indices
+
+
+def xi_eta_to_col_row(xi, eta):
+    col = (
+            ((xi / 36000.0) / (c.DETSIZE / 2.0) * c.FILL_VALUE + 1.0)
+            * c.PIXELS_PER_AXIS
+            / 2
+    )
+    row = (
+            ((eta / 36000.0) / (c.DETSIZE / 2.0) * c.FILL_VALUE + 1.0)
+            * c.PIXELS_PER_AXIS
+            / 2
+    )
+    return col, row
 
 
 def make_corners(floor_x, floor_y, fptrx, fptry, ok_indices):
@@ -106,9 +111,6 @@ def or_reduce_minus_999(walk, walk_ix, x):
     return x | (walk[walk_ix] != -999)
 
 
-
-
-
 def init_wiggle_arrays(floor_x, floor_y, fptrx, fptry, ix, xa, ya):
     wigx, wigy = np.zeros_like(fptrx), np.zeros_like(fptrx)
     blt = (fptrx - floor_x)[ix]
@@ -120,9 +122,22 @@ def init_wiggle_arrays(floor_x, floor_y, fptrx, fptry, ix, xa, ya):
     return blt, blu, floor_x, floor_y, wigx, wigy, xa_ix, ya_ix
 
 
-def unfancy_distortion_component(cube_x0, cube_dx, cube_y0, cube_dy, cube_d0,
-                                 cube_dd, cube_nc, cube_nr, flags, ok_indices,
-                                 stim_coefficients, t, xp_as, yp_as):
+def unfancy_distortion_component(
+    cube_x0,
+    cube_dx,
+    cube_y0,
+    cube_dy,
+    cube_d0,
+    cube_dd,
+    cube_nc,
+    cube_nr,
+    flags,
+    ok_indices,
+    stim_coefficients,
+    t,
+    xp_as,
+    yp_as,
+):
     ss = stim_coefficients[0] + (t * stim_coefficients[1])  # stim separation
     col, row, depth = np.zeros(len(t)), np.zeros(len(t)), np.zeros(len(t))
     col[ok_indices] = (xp_as[ok_indices] - cube_x0) / cube_dx

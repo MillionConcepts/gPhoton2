@@ -17,9 +17,7 @@ from pyarrow import parquet
 
 # gPhoton imports.
 
-import gPhoton.cal as cal
 from gPhoton.CalUtils import find_fuv_offset
-import gPhoton.constants as c
 from gPhoton.MCUtils import print_inline
 from gPhoton._pipe_components import (
     retrieve_aspect_solution,
@@ -39,14 +37,13 @@ from gPhoton._pipe_components import (
 # ------------------------------------------------------------------------------
 
 from gPhoton._shared_memory_pipe_components import (
-    get_arrays_from_children,
     unlink_cal_blocks,
-    slice_into_shared_chunks, send_cals_to_shared_memory,
+    slice_into_shared_chunks,
+    send_cals_to_shared_memory,
+    get_column_from_shared_memory,
 )
 
 
-# from memory_profiler import profile
-# @profile
 def photonpipe(
     outbase,
     band,
@@ -79,7 +76,7 @@ def photonpipe(
 
     :param outbase: Base of the output file names.
 
-    :type outbase: str
+    :type outbase: str, pathlib.Path
 
     :param aspfile: Name of aspect file to use.
 
@@ -98,10 +95,7 @@ def photonpipe(
     :type retries: int
     """
     if share_memory is None:
-        if threads is not None:
-            share_memory = True
-        else:
-            share_memory = False
+        share_memory = threads is not None
 
     if (share_memory is True) and (threads is None):
         warnings.warn(
@@ -133,13 +127,9 @@ def photonpipe(
     else:
         xoffset, yoffset = 0.0, 0.0
 
-    print_inline("Loading mask file...")
-    mask, maskinfo = cal.mask(band)
-    maskfill = c.DETSIZE / (mask.shape[0] * maskinfo["CDELT2"])
-
     aspect = retrieve_aspect_solution(aspfile, eclipse, retries, verbose)
 
-    cal_data, distortion_cube = load_cal_data(band, eclipse)
+    cal_data = load_cal_data(band, eclipse)
     if share_memory is True:
         cal_data = send_cals_to_shared_memory(cal_data)
 
@@ -174,11 +164,8 @@ def photonpipe(
             aspect,
             band,
             cal_data,
-            distortion_cube,
             chunks[chunk_ix],
             f"{str(chunk_ix + 1)} of {str(total_chunks)}:",
-            mask,
-            maskfill,
             stim_coefficients,
             xoffset,
             yoffset,
@@ -200,26 +187,40 @@ def photonpipe(
     array_dict = {}
     if share_memory is True:
         unlink_cal_blocks(cal_data)
-        memory_dicts, child_dicts = get_arrays_from_children(
-            chunk_indices, results
-        )
+        for name in results[0].keys():
+            array_dict[name] = get_column_from_shared_memory(
+                results, name, unlink=True
+            )
     else:
         child_dicts = [results[ix] for ix in chunk_indices]
-        memory_dicts = []
-    for name in child_dicts[0].keys():
-        array_dict[name] = np.hstack(
-            [child_dict[name] for child_dict in child_dicts]
-        )
-        for memory_dict in memory_dicts:
-            memory_dict[name].close()
-            memory_dict[name].unlink()
+        # TODO: this is memory-greedy.
+        for name in child_dicts[0].keys():
+            array_dict[name] = np.hstack(
+                [child_dict[name] for child_dict in child_dicts]
+            )
+        del child_dicts
     proc_count = len(array_dict["t"])
     # noinspection PyArgumentList
     parquet.write_table(
         pyarrow.Table.from_arrays(
             list(array_dict.values()), names=list(array_dict.keys())
         ),
-        outfile
+        outfile,
+        version="2.0",
+        use_dictionary=[
+            "t",
+            "flags",
+            "y",
+            "xa",
+            "xb",
+            "ya",
+            "yb",
+            "yamc",
+            "xamc",
+            "q",
+            "mask",
+            "detrad"
+        ],
     )
     stopt = time.time()
     # TODO: consider:  awswrangler.s3.to_parquet()
@@ -234,10 +235,10 @@ def photonpipe(
         )
         print(f"	processed	=	{str(proc_count)} of {str(nphots)} events.")
         if proc_count < nphots:
-            print("		WARNING: MISSING EVENTS! "
-                  "[probably rejected not-on-detector events]")
+            print("		WARNING: MISSING EVENTS! ")
         print(f"rate		=	{str(nphots / (stopt - startt))} photons/sec.")
         print("")
     return outfile
+
 
 # ------------------------------------------------------------------------------

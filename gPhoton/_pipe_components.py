@@ -6,7 +6,6 @@ import numpy as np
 from astropy.io import fits as pyfits
 
 from gPhoton import cal as cal, constants as c
-import gPhoton.curvetools as ct
 from gPhoton.CalUtils import (
     compute_stimstats,
     post_csp_caldata,
@@ -79,53 +78,23 @@ def process_chunk_in_unshared_memory(
     aspect,
     band,
     cal_data,
-    distortion_cube,
     chunk,
     chunkid,
-    mask,
-    maskfill,
     stim_coefficients,
     xoffset,
     yoffset,
 ):
-    dec, eta, flags, ra, xi = apply_all_corrections(
+    chunk = apply_all_corrections(
         aspect,
         band,
         cal_data,
         chunk,
         chunkid,
-        distortion_cube,
-        mask,
-        maskfill,
         stim_coefficients,
         xoffset,
         yoffset,
     )
-    (
-        detector_col,
-        detector_flat,
-        detector_mask,
-        response,
-        detector_row,
-        scale,
-        detector_t,
-        detector_indices,
-    ) = calibrate_photons_inline(band, cal_data, chunk, eta, mask, xi)
-    return {
-            "t": detector_t,
-            "ra": ra[detector_indices],
-            "dec": dec[detector_indices],
-            "flags": flags[detector_indices],
-            "col": detector_col,
-            "row": detector_row,
-            "flat": detector_flat,
-            "scale": scale,
-            "response": response,
-            "mask": detector_mask,
-        }
-    # import line_profiler
-    # lp = line_profiler.LineProfiler()
-    # @lp
+    return chunk | calibrate_photons_inline(band, cal_data, chunk)
 
 
 def apply_all_corrections(
@@ -134,45 +103,29 @@ def apply_all_corrections(
     cal_data,
     chunk,
     chunkid,
-    distortion_cube,
-    mask,
-    maskfill,
     stim_coefficients,
     xoffset,
     yoffset,
 ):
-    eta, flags, xi = apply_on_detector_corrections(
+    chunk |= apply_on_detector_corrections(
         band,
         cal_data,
         chunk,
         chunkid,
-        distortion_cube,
-        mask,
-        maskfill,
         stim_coefficients,
         xoffset,
         yoffset,
     )
-    dec, ra, flags = apply_aspect_solution(
-        aspect,
-        chunkid,
-        eta,
-        flags,
-        chunk["t"],
-        xi,
-    )
-    return dec, eta, flags, ra, xi
+    chunk |= apply_aspect_solution(aspect, chunk, chunkid)
+    return chunk
 
 
 def process_chunk_in_shared_memory(
     aspect,
     band,
     cal_block_info,
-    distortion_cube,
     block_info,
     chunk_title,
-    mask,
-    maskfill,
     stim_coefficients,
     xoffset,
     yoffset,
@@ -184,96 +137,62 @@ def process_chunk_in_shared_memory(
         cal_blocks, cal_arrays = get_arrays_from_shared_memory(cal_info)
         all_cal_blocks.append(cal_blocks)
         cal_data[cal_name] = cal_arrays
-    dec, eta, flags, ra, xi = apply_all_corrections(
+    chunk = apply_all_corrections(
         aspect,
         band,
         cal_data,
         chunk,
         chunk_title,
-        distortion_cube,
-        mask,
-        maskfill,
         stim_coefficients,
         xoffset,
         yoffset,
     )
-    (
-        detector_col,
-        detector_flat,
-        detector_mask,
-        response,
-        detector_row,
-        scale,
-        detector_t,
-        detector_indices,
-    ) = calibrate_photons_inline(band, cal_data, chunk, eta, mask, xi)
-    processed_block_info = send_to_shared_memory(
-        {
-            "t": detector_t,
-            "ra": ra[detector_indices],
-            "dec": dec[detector_indices],
-            "flags": flags[detector_indices],
-            "col": detector_col,
-            "row": detector_row,
-            "flat": detector_flat,
-            "scale": scale,
-            "response": response,
-            "mask": detector_mask,
-        }
-    )
+    chunk |= calibrate_photons_inline(band, cal_data, chunk)
+    processed_block_info = send_to_shared_memory(chunk)
     for block in chunk_blocks.values():
         block.close()
         block.unlink()
     return processed_block_info
 
 
-def calibrate_photons_inline(band, cal_data, chunk, eta, mask, xi):
+def calibrate_photons_inline(band, cal_data, chunk):
     print_inline("Applying detector-space calibrations.")
-    col, row, ok_indices = select_on_detector_indices(xi, eta, band)
-    col_ix, row_ix = col.astype(np.int16), row.astype(np.int16)
-    detector_mask = mask[col_ix, row_ix] == 0
-    detector_flat = cal_data["flat"]["array"][col_ix, row_ix]
+    col, row = chunk["col"], chunk["row"]
+    det_indices = np.where((col > 0) & (col < 800) & (row > 0) & (row < 800))
+    col_ix = col[det_indices].astype(np.int32)
+    row_ix = row[det_indices].astype(np.int32)
+    det_columns = {
+        "mask": cal_data["mask"]["array"][col_ix, row_ix] == 0,
+        "flat": cal_data["flat"]["array"][col_ix, row_ix],
+        "scale": gt.compute_flat_scale(chunk["t"][det_indices], band),
+        "detrad": np.sqrt((col_ix - 400) ** 2 + (row_ix - 400) ** 2),
+    }
     del col_ix, row_ix
-    t = chunk["t"][ok_indices]
-    scale = gt.compute_flat_scale(t, band)
-    response = detector_flat * scale
-    return (
-        col,
-        detector_flat,
-        detector_mask,
-        response,
-        row,
-        scale,
-        t,
-        ok_indices,
-    )
-
-
-def select_on_detector_indices(xi, eta, band):
-    col, row = ct.xieta2colrow(xi, eta, band)
-    ix = np.where((col > 0) & (col < 800) & (row > 0) & (row < 800))
-    detector_col = col[ix]
-    detector_row = row[ix]
-    return detector_col, detector_row, ix
+    det_columns["response"] = det_columns["flat"] * det_columns["scale"]
+    output_columns = {"col": col, "row": row}
+    for field, values in det_columns.items():
+        output_columns[field] = np.full(
+            chunk["t"].size, np.nan, dtype=values.dtype
+        )
+        output_columns[field][det_indices] = values
+    return output_columns
 
 
 def apply_aspect_solution(
     aspect,
+    chunk,
     chunkid,
-    eta,
-    flags,
-    t,
-    xi,
 ):
     aspdec, aspflags, aspra, asptime, asptwist, eta_vec, xi_vec = aspect
     # This gives the index of the aspect time that comes _before_
     # each photon time. Without the '-1' it will give the index
     # of the aspect time _after_ the photon time.
     print_inline(chunkid + "Mapping photon times to aspect times...")
-    aspix = np.digitize(t, asptime) - 1
+    aspix = np.digitize(chunk["t"], asptime) - 1
     print_inline(chunkid + "Applying dither correction...")
     # Use only photons that are bracketed by valid aspect solutions
     # and have been not themselves been flagged as invalid.
+    flags = chunk["flags"]
     cut = (
         (aspix > 0)
         & (aspix < (len(asptime) - 1))
@@ -284,13 +203,13 @@ def apply_aspect_solution(
     aspect_slice = aspix[ok_indices]
     print_inline(chunkid + "Interpolating aspect solutions...")
     deta, dxi = interpolate_aspect_solutions(
-        aspect_slice, asptime, eta_vec, ok_indices, t, xi_vec
+        aspect_slice, asptime, eta_vec, ok_indices, chunk["t"], xi_vec
     )
     print_inline(chunkid + "Mapping to sky...")
-    ra, dec = np.zeros(len(t)), np.zeros(len(t))
+    ra, dec = np.zeros(chunk["t"].shape), np.zeros(chunk["t"].shape)
     ra[ok_indices], dec[ok_indices] = gnomrev_simple(
-        xi[ok_indices] + dxi[ok_indices],
-        eta[ok_indices] + deta[ok_indices],
+        chunk["xi"][ok_indices] + dxi[ok_indices],
+        chunk["eta"][ok_indices] + deta[ok_indices],
         aspra[aspect_slice],
         aspdec[aspect_slice],
         -asptwist[aspect_slice],
@@ -302,7 +221,7 @@ def apply_aspect_solution(
     )
     ra[null_ix] = np.nan
     dec[null_ix] = np.nan
-    return dec, ra, flags
+    return {"ra": ra, "dec": dec, "flags": flags}
 
 
 def apply_on_detector_corrections(
@@ -310,9 +229,6 @@ def apply_on_detector_corrections(
     cal_data,
     chunk,
     chunkid,
-    distortion_cube,
-    mask,
-    maskfill,
     stim_coefficients,
     xoffset,
     yoffset,
@@ -379,7 +295,6 @@ def apply_on_detector_corrections(
     xshift, yshift, flags, ok_indices = apply_stim_distortion_correction(
         chunkid,
         cal_data["distortion"],
-        distortion_cube,
         flags,
         ok_indices,
         stim_coefficients,
@@ -389,20 +304,19 @@ def apply_on_detector_corrections(
         yoffset,
         yp_as,
     )
-    eta, xi, flags = apply_hotspot_mask(
+    xi, eta, col, row, flags = apply_hotspot_mask(
         band,
         chunkid,
         dx,
         dy,
         flags,
-        mask,
-        maskfill,
+        cal_data["mask"]["array"],
         xp_as,
         xshift,
         yp_as,
         yshift,
     )
-    return eta, flags, xi
+    return {"xi": xi, "eta": eta, "col": col, "row": row, "flags": flags}
 
 
 def apply_hotspot_mask(
@@ -412,7 +326,6 @@ def apply_hotspot_mask(
     dy,
     flags,
     mask,
-    maskfill,
     xp_as,
     xshift,
     yp_as,
@@ -420,19 +333,25 @@ def apply_hotspot_mask(
 ):
     print_inline(chunkid + "Applying hotspot mask...")
     # TODO: this is for numba. consider replacing fancy indexing in mask below
-    #  with a for-loop to numba-fy the rest of the function.
-    col, cut, eta, ok_indices, row, xi = unfancy_hotspot_portion(
-        band, dx, dy, flags, mask, maskfill, xp_as, xshift, yp_as, yshift
+    #  with a for-loop to numba-fy the rest of the function...although casting
+    #  to int is weirdly slow in numpy, so maybe not.
+    col, row, xi, eta, cut, ok_indices = unfancy_hotspot_portion(
+        band,
+        dx,
+        dy,
+        flags,
+        xp_as,
+        xshift,
+        yp_as,
+        yshift,
     )
-    cut[ok_indices] = (
-        mask[
-            np.array(col[ok_indices], dtype="int64"),
-            np.array(row[ok_indices], dtype="int64"),
-        ]
-        == 1.0
-    )
+    # TODO: this slice / cast is being computed both here and in
+    #  calibrate_photons_inline()
+    col_ix = col[ok_indices].astype(np.int32)
+    row_ix = row[ok_indices].astype(np.int32)
+    cut[ok_indices] = (mask[col_ix, row_ix] == 1.0)
     flags[~cut] = 6
-    return eta, xi, flags
+    return xi, eta, col, row, flags
 
 
 def compute_detector_orientation(fptrx, fptry, linearity, ok_indices):
@@ -763,7 +682,6 @@ def apply_yac_correction(band, eclipse, q, raw6file, x, xb, y, ya, yamc, yb):
 def apply_stim_distortion_correction(
     chunkid,
     distortion,
-    distortion_cube,
     flags,
     ok_indices,
     stim_coefficients,
@@ -784,7 +702,7 @@ def apply_stim_distortion_correction(
         cube_nd,
         cube_nc,
         cube_nr,
-    ) = distortion_cube
+    ) = distortion["header"]  # unpacking for numba compiler introspection
     col, depth, ok_indices, row, xshift, yshift = unfancy_distortion_component(
         cube_x0,
         cube_dx,
@@ -956,19 +874,19 @@ def center_and_scale(band, data, eclipse):
         data["yamc"],
     )
     data["ya"] = np.array(ya, dtype="int64") % 32
-    del ya
+    # del ya
     xraw = (
         xraw0 + np.array(plus7_mod32_minus16(data["xa"]), dtype="int64") * xslp
     )
-    del xraw0
+    # del xraw0
     data["x"] = (xraw - xcen) * xscl
-    del xraw
+    # del xraw
     yraw = (
         yraw0 + np.array(plus7_mod32_minus16(data["ya"]), dtype="int64") * yslp
     )
-    del yraw0
+    # del yraw0
     data["y"] = (yraw - ycen) * yscl
-    del yraw
+    # del yraw
     return data
 
 
@@ -1038,47 +956,44 @@ def chunk_data(chunksz, data, nphots, copy=True):
 
 def load_cal_data(band, eclipse):
     cal_data = NestingDict()
-    print_inline("Loading wiggle files...")
-    cal_data["wiggle"]["x"], _ = cal.wiggle(band, "x")
-    cal_data["wiggle"]["y"], _ = cal.wiggle(band, "y")
-    print_inline("Loading walk files...")
-    cal_data["walk"]["x"], _ = cal.walk(band, "x")
-    cal_data["walk"]["y"], _ = cal.walk(band, "y")
-    print_inline("Loading linearity files...")
-    cal_data["linearity"]["x"], _ = cal.linearity(band, "x")
-    cal_data["linearity"]["y"], _ = cal.linearity(band, "y")
-    print_inline("Loading wiggle files...")
-    cal_data["wiggle"]["x"], _ = cal.wiggle(band, "x")
-    cal_data["wiggle"]["y"], _ = cal.wiggle(band, "y")
+    for cal_type in ("wiggle", "walk", "linearity"):
+        print_inline(f"Loading {cal_type} files...")
+        cal_data[cal_type]["x"], _ = getattr(cal, cal_type)(band, "x")
+        cal_data[cal_type]["y"], _ = getattr(cal, cal_type)(band, "y")
     print_inline("Loading flat field...")
     cal_data["flat"]["array"], _ = cal.flat(band)
-
-    # TODO: it looks like this always gets applied regardless of post-CSP
-    #  status.
+    print_inline("Loading mask...")
+    print_inline("Loading mask file...")
+    cal_data["mask"]["array"], _ = cal.mask(band)
+    cal_data["mask"]["array"] = cal_data["mask"]["array"].astype(np.uint8)
     # This is for the post-CSP stim distortion corrections.
+    # TODO: it gets applied elsewhere, too. change feedback?
     print_inline("Loading distortion files...")
     if eclipse > 37460:
-        print_inline(
-            " Using stim separation of : {stimsep}".format(stimsep=c.STIMSEP)
-        )
-    (cal_data["distortion"]["x"], distortion_header) = cal.distortion(
+        print_inline(f" Using stim separation of : {c.STIMSEP}")
+    cal_data["distortion"]["x"], distortion_header = cal.distortion(
         band, "x", eclipse, c.STIMSEP
     )
     cal_data["distortion"]["y"], _ = cal.distortion(
         band, "y", eclipse, c.STIMSEP
     )
-    distortion_cube = (
-        distortion_header["DC_X0"],
-        distortion_header["DC_DX"],
-        distortion_header["DC_Y0"],
-        distortion_header["DC_DY"],
-        distortion_header["DC_D0"],
-        distortion_header["DC_DD"],
-        distortion_header["NAXIS3"],
-        distortion_header["NAXIS1"],
-        distortion_header["NAXIS2"],
+    cal_data["distortion"]["header"] = np.array(
+        [
+            distortion_header[field]
+            for field in (
+                "DC_X0",
+                "DC_DX",
+                "DC_Y0",
+                "DC_DY",
+                "DC_D0",
+                "DC_DD",
+                "NAXIS3",
+                "NAXIS1",
+                "NAXIS2",
+            )
+        ]
     )
-    return cal_data, distortion_cube
+    return cal_data
 
 
 def load_raw6(band, eclipse, raw6file, verbose):

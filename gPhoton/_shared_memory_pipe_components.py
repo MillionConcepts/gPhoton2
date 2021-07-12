@@ -5,14 +5,19 @@ import numpy as np
 from gPhoton.MCUtils import NestingDict
 
 
-def get_arrays_from_children(chunk_indices, results):
-    array_dicts = []
-    data_blocks = []
-    for chunk_ix in chunk_indices:
-        blocks, chunk = get_arrays_from_shared_memory(results[chunk_ix])
-        array_dicts.append(chunk)
-        data_blocks.append(blocks)
-    return data_blocks, array_dicts
+def get_column_from_shared_memory(results, column_name, unlink=True):
+    column_info = {
+        chunk_ix: results[chunk_ix][column_name]
+        for chunk_ix in sorted(results.keys())
+    }
+    blocks, column_slices = get_arrays_from_shared_memory(column_info)
+    column = np.hstack(list(column_slices.values()))
+    del column_slices
+    if unlink is True:
+        for block in blocks.values():
+            block.close()
+            block.unlink()
+    return column
 
 
 def unlink_cal_blocks(cal_data):
