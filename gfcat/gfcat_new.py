@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 from pyarrow import parquet
 
-from gfcat_utils import (
+from gfcat.gfcat_utils import (
     obstype_from_eclipse,
     make_photometry,
     download_raw6,
@@ -21,7 +21,7 @@ from gPhoton import MCUtils as mc
 bucketname = "gfcat-test"
 eclipse = 23456
 band = "NUV"
-data_directory = "../test_data"
+data_directory = "data"
 rerun = False
 retain = False
 ext = "parquet"
@@ -60,7 +60,7 @@ def get_parquet_stats(fn, columns, row_group=0):
 raw6file = download_raw6(eclipse, band, data_directory=data_directory)
 photonfile = raw6file.replace("-raw6.fits.gz", ".parquet")
 if not os.path.exists(photonfile):
-    photonpipe(photonfile, band, raw6file=raw6file, verbose=2, overwrite=False)
+    photonpipe(raw6file.split(".")[0][:-5], band, raw6file=raw6file, verbose=2, overwrite=False)
     print("Calibrating photon list...")
 file_stats = get_parquet_stats(photonfile, ["flags", "ra"])
 if (file_stats["flags"]["min"] != 0) or (file_stats["ra"]["max"] is None):
@@ -178,6 +178,6 @@ def make_images(photonfile, depth=[None, 30]):
     # TODO: Write the images.
 
 
-make_images(photonfile)
+make_images(photonfile,depth=[None])
 
 make_photometry(eclipse, band, rerun=rerun, data_directory=data_directory)
