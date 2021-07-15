@@ -159,12 +159,13 @@ def photonpipe(
     else:
         pool = None
     results = {}
-    for chunk_ix in reversed(range(total_chunks)):  # popping from end of list
+    for chunk_ix in reversed(range(total_chunks)):
+        chunk = chunks.pop()
         process_args = (
             aspect,
             band,
             cal_data,
-            chunks[chunk_ix],
+            chunk,
             f"{str(chunk_ix + 1)} of {str(total_chunks)}:",
             stim_coefficients,
             xoffset,
@@ -175,6 +176,7 @@ def photonpipe(
         else:
             results[chunk_ix] = pool.apply_async(chunk_function, process_args)
         del process_args
+        del chunk
     if pool is not None:
         pool.close()
         # profiling code
@@ -183,6 +185,7 @@ def photonpipe(
         #     time.sleep(0.1)
         pool.join()
         results = {task: result.get() for task, result in results.items()}
+    # make sure this remains in order
     chunk_indices = sorted(results.keys())
     array_dict = {}
     if share_memory is True:

@@ -161,6 +161,8 @@ def calibrate_photons_inline(band, cal_data, chunk):
     det_indices = np.where((col > 0) & (col < 800) & (row > 0) & (row < 800))
     col_ix = col[det_indices].astype(np.int32)
     row_ix = row[det_indices].astype(np.int32)
+    # TODO: do we use the integer index or the fractional number
+    #  for detrad calc?
     det_columns = {
         "mask": cal_data["mask"]["array"][col_ix, row_ix] == 0,
         "flat": cal_data["flat"]["array"][col_ix, row_ix],
