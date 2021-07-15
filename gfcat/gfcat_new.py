@@ -1,6 +1,6 @@
 import os
 
-from fast_histogram import histogram2d
+import fast_histogram as fh
 import numpy as np
 import pandas as pd
 from pyarrow import parquet
@@ -84,7 +84,7 @@ def make_frame(foc, weights, wcs):
         int((wcs.wcs.crpix[0] - 0.5) * 2),
         int((wcs.wcs.crpix[1] - 0.5) * 2),
     )
-    frame = histogram2d(
+    frame = fh.histogram2d(
         foc[:, 1] - 0.5,
         foc[:, 0] - 0.5,
         bins=imsz,
@@ -96,38 +96,31 @@ def make_frame(foc, weights, wcs):
 
 def make_images(photonfile, depth=[None, 30]):
     event_data = parquet.read_table(
-        photonfile, columns=["ra", "dec", "t", "response", "flags", "col", "row"]
+        photonfile, columns=["ra", "dec", "t", "response", "flags", "col", "row", "mask", "detrad"]
     ).to_pandas()
     # Only deal with data actually on the 800x800 detector grid
     # MICHAEL: this is probably easier as as something like: event_data.dropna(subset='response')
-    detector_radius = np.sqrt(
-        (event_data.col.values - 400) ** 2 + (event_data.row.values - 400) ** 2
-    )
-    ix = np.where(np.isfinite(detector_radius) & (detector_radius < 400))
+    #detector_radius = np.sqrt(
+    #    (event_data.col.values - 400) ** 2 + (event_data.row.values - 400) ** 2
+    #)
+    ix = np.where(np.isfinite(event_data["detrad"]values) & (event_data["detrad"]values < 400))
 
-    wcs = optimize_wcs(event_data.iloc[ix])
+    wcs = optimize_wcs(event_data[['ra','dec']].iloc[ix])
 
     # This is a bottleneck, so only do it once.
     foc = wcs.sip_pix2foc(
         wcs.wcs_world2pix(event_data[["ra", "dec"]].values, 1), 1
-    )  # This is a bottleneck.
+    )  # This is a bottleneck. Takes ~17s.
     weights = 1.0 / event_data["response"].values
 
     trange = (
-        event_data.iloc[ix]["t"].min(),
-        event_data.iloc[ix]["t"].max(),
+        event_data["t"].iloc[ix].min(),
+        event_data["t"].iloc[ix].max(),
     )
 
-    mask, maskinfo = cal.mask(band)
-    mask_ix = np.where(
-        mask[
-            np.array(event_data.col.values[ix], dtype="int64"),
-            np.array(event_data.row.values[ix], dtype="int64"),
-        ]
-        == 0
-    )
+    mask_ix = np.where(event_data['mask'].values)
 
-    edge_ix = np.where(detector_radius[ix] > 350)
+    edge_ix = np.where(event_data["detrad"]values > 350)
     # NOTE: 1m45s runtime up to this point
 
     for framesize in depth:
@@ -145,8 +138,8 @@ def make_images(photonfile, depth=[None, 30]):
             exptimes += [compute_exptime(event_data, band, tranges[-1])]
 
             tix = np.where(
-                (event_data.t.values[ix] >= t0)
-                & (event_data.t.values[ix] < t1)
+                (event_data["t"].values[ix] >= t0)
+                & (event_data["t"].values[ix] < t1)
             )
             cntmap = make_frame(foc[ix][tix], weights[ix][tix], wcs)
             tix = np.where(
@@ -178,6 +171,6 @@ def make_images(photonfile, depth=[None, 30]):
     # TODO: Write the images.
 
 
-make_images(photonfile,depth=[None])
+cnt,flg,edg=make_images(photonfile,depth=[None])
 
 make_photometry(eclipse, band, rerun=rerun, data_directory=data_directory)
