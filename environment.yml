@@ -26,4 +26,7 @@ dependencies:
   - memory_profiler
   # non-mandatory, some performance improvements to numba
   - icc_rt
+  # testing
+  - zstandard
+  - python-snappy
 prefix: /home/michael/miniconda3/envs/glcat

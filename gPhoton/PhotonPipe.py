@@ -147,11 +147,9 @@ def photonpipe(
         del stims_for_yac, yac_coef
     if share_memory is True:
         chunks = slice_into_shared_chunks(chunksz, data, nphots)
-        total_chunks = len(chunks)
         chunk_function = process_chunk_in_shared_memory
     else:
         chunks = chunk_data(chunksz, data, nphots, copy=True)
-        total_chunks = len(chunks)
         chunk_function = process_chunk_in_unshared_memory
     del data
     if threads is not None:
@@ -159,14 +157,15 @@ def photonpipe(
     else:
         pool = None
     results = {}
-    for chunk_ix in reversed(range(total_chunks)):
-        chunk = chunks.pop()
+    chunk_indices = list(chunks.keys())
+    for chunk_ix in chunk_indices:
+        chunk = chunks.pop(chunk_ix)
         process_args = (
             aspect,
             band,
             cal_data,
             chunk,
-            f"{str(chunk_ix + 1)} of {str(total_chunks)}:",
+            f"{str(chunk_ix + 1)} of {str(len(chunk_indices))}:",
             stim_coefficients,
             xoffset,
             yoffset,
@@ -203,27 +202,32 @@ def photonpipe(
             )
         del child_dicts
     proc_count = len(array_dict["t"])
+
+    variables_for_which_dictionary_compression_is_useful = [
+                         "t",
+                         "flags",
+                         "y",
+                         "xa",
+                         "xb",
+                         "ya",
+                         "yb",
+                         "yamc",
+                         "xamc",
+                         "q",
+                         "mask",
+                         "detrad"
+                     ]
+    if band == "FUV":
+        variables_for_which_dictionary_compression_is_useful += "x"
+
     # noinspection PyArgumentList
     parquet.write_table(
         pyarrow.Table.from_arrays(
             list(array_dict.values()), names=list(array_dict.keys())
         ),
         outfile,
+        use_dictionary=variables_for_which_dictionary_compression_is_useful,
         version="2.0",
-        use_dictionary=[
-            "t",
-            "flags",
-            "y",
-            "xa",
-            "xb",
-            "ya",
-            "yb",
-            "yamc",
-            "xamc",
-            "q",
-            "mask",
-            "detrad"
-        ],
     )
     stopt = time.time()
     # TODO: consider:  awswrangler.s3.to_parquet()

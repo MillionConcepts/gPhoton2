@@ -158,21 +158,25 @@ def process_chunk_in_shared_memory(
 def calibrate_photons_inline(band, cal_data, chunk):
     print_inline("Applying detector-space calibrations.")
     col, row = chunk["col"], chunk["row"]
+    # compute all data on detector to allow maximally flexible selection of
+    # edge radii downstream
     det_indices = np.where((col > 0) & (col < 800) & (row > 0) & (row < 800))
     col_ix = col[det_indices].astype(np.int32)
     row_ix = row[det_indices].astype(np.int32)
-    # TODO: do we use the integer index or the fractional number
-    #  for detrad calc?
-    det_columns = {
+    # fields that are only meaningful / calculable on the detector
+    det_fields = {
         "mask": cal_data["mask"]["array"][col_ix, row_ix] == 0,
         "flat": cal_data["flat"]["array"][col_ix, row_ix],
         "scale": gt.compute_flat_scale(chunk["t"][det_indices], band),
-        "detrad": np.sqrt((col_ix - 400) ** 2 + (row_ix - 400) ** 2),
     }
     del col_ix, row_ix
-    det_columns["response"] = det_columns["flat"] * det_columns["scale"]
-    output_columns = {"col": col, "row": row}
-    for field, values in det_columns.items():
+    det_fields["response"] = det_fields["flat"] * det_fields["scale"]
+    output_columns = {
+        "col": col,
+        "row": row,
+        "detrad": np.sqrt((col - 400) ** 2 + (row - 400) ** 2)
+    }
+    for field, values in det_fields.items():
         output_columns[field] = np.full(
             chunk["t"].size, np.nan, dtype=values.dtype
         )
@@ -944,16 +948,16 @@ def unpack_data_chunk(data, chunkbeg, chunkend, copy=True):
 
 
 def chunk_data(chunksz, data, nphots, copy=True):
-    chunk_indices = []
+    chunk_slices = []
     for chunk_ix in range(int(nphots / chunksz) + 1):
         chunkbeg, chunkend = chunk_ix * chunksz, (chunk_ix + 1) * chunksz
         if chunkend > nphots:
             chunkend = None
-        chunk_indices.append((chunkbeg, chunkend))
-    return [
-        unpack_data_chunk(data, *indices, copy=copy)
-        for indices in chunk_indices
-    ]
+        chunk_slices.append((chunkbeg, chunkend))
+    return {
+        chunk_ix: unpack_data_chunk(data, *indices, copy=copy)
+        for chunk_ix, indices in enumerate(chunk_slices)
+    }
 
 
 def load_cal_data(band, eclipse):

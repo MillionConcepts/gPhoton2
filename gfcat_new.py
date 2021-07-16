@@ -1,12 +1,23 @@
+import gzip
+from collections.abc import Mapping, Sequence
 import os
+from io import BytesIO
+from statistics import mode
+from typing import Optional, Union
 
 import fast_histogram as fh
+import astropy.io.fits as pyfits
+import fitsio
 import numpy as np
 import pandas as pd
+import astropy.wcs.wcs
+from more_itertools import windowed
 from pyarrow import parquet
 from memory_profiler import profile
+from zstandard import ZstdCompressor
 
 from gPhoton.MCUtils import NestingDict
+from gPhoton.imagetools import define_wcs
 from gfcat.gfcat_utils import (
     obstype_from_eclipse,
     make_photometry,
@@ -16,8 +27,52 @@ from gfcat.gfcat_utils import (
 )
 import gPhoton.constants as c
 from gPhoton.PhotonPipe import photonpipe
-from gPhoton import cal
+from gPhoton import cal, __version__
 from gPhoton import MCUtils as mc
+
+
+# bucketname = "gfcat-test"
+# data_directory = "../test_data"
+# rerun = False
+# retain = False
+# ext = "parquet"
+#
+# eclipse_directory = f"{data_directory}/e{eclipse}"
+# try:
+#     os.makedirs(eclipse_directory)
+# except FileExistsError:
+#     pass
+#
+# # Use `dryrun=True` to just get the raw6 filepath
+# raw6file = download_raw6(
+#     eclipse, band, data_directory=data_directory, dryrun=True
+# )
+#
+# obstype, rawexpt, nlegs = obstype_from_eclipse(eclipse)
+#
+# if not obstype in ["MIS", "DIS"]:
+#     print(f"Skipping {obstype} mode visit.")
+# if nlegs > 0:
+#     print(f"Skipping multi-leg visit.")
+# if rawexpt < 600:
+#     print(f"Skipping visit with {rawexpt}s depth.")
+#
+# # Download the raw6file from MAST for real
+# raw6file = download_raw6(eclipse, band, data_directory=data_directory)
+# photonfile = raw6file.replace("-raw6.fits.gz", ".parquet")
+# if not os.path.exists(photonfile):
+#     photonpipe(
+#         raw6file.split(".")[0][:-5],
+#         band,
+#         raw6file=raw6file,
+#         verbose=2,
+#         overwrite=False,
+#     )
+#     print("Calibrating photon list...")
+# file_stats = get_parquet_stats(photonfile, ["flags", "ra"])
+# if (file_stats["flags"]["min"] != 0) or (file_stats["ra"]["max"] is None):
+#     print("There is no unflagged data in this visit.")
+# #     # TODO: Set a flag to halt processing at this point
 
 
 def get_parquet_stats(fn, columns, row_group=0):
@@ -31,8 +86,8 @@ def get_parquet_stats(fn, columns, row_group=0):
 
 # @profile
 def optimize_wcs(radec):
-    real_ra = radec[:, 0][~np.isnan(radec[:, 0])]
-    real_dec = radec[:, 1][~np.isnan(radec[:, 1])]
+    real_ra = radec[:, 0][np.isfinite(radec[:, 0])]
+    real_dec = radec[:, 1][np.isfinite(radec[:, 1])]
     ra_range = real_ra.min(), real_ra.max()
     dec_range = real_dec.min(), real_dec.max()
     center_skypos = (np.mean(ra_range), np.mean(dec_range))
@@ -40,6 +95,7 @@ def optimize_wcs(radec):
         int(np.ceil((ra_range[1] - ra_range[0]) / c.DEGPERPIXEL)),
         int(np.ceil((dec_range[1] - dec_range[0]) / c.DEGPERPIXEL)),
     )
+    # imsz = (3200, 3200)
     return make_wcs(center_skypos, imsz=imsz, pixsz=c.DEGPERPIXEL)
 
 
@@ -58,21 +114,24 @@ def make_frame(foc, weights, wcs):
     return frame
 
 
-def optimize_compute_shutter(events, trange, shutgap=0.05):
-    t0 = events[:, 0]
-    flags = events[:, 1]
-    ix = np.where((t0 >= trange[0]) & (t0 < trange[1]) & (flags == 0))
-    t = np.sort([trange[0]] + list(np.unique(t0[ix])) + [trange[1]])
+def optimize_compute_shutter(timeslice, flagslice, trange, shutgap=0.05):
+    ix = np.where(flagslice == 0)
+    t = np.hstack([trange[0], np.unique(timeslice[ix]), +trange[1]])
     ix = np.where(t[1:] - t[:-1] >= shutgap)
     shutter = np.array(t[1:] - t[:-1])[ix].sum()
     return shutter
 
 
-def optimize_compute_exptime(events, band, trange):
+def optimize_compute_exptime(
+    events: np.ndarray, band: str, trange: Sequence[int]
+) -> float:
     rawexpt = trange[1] - trange[0]
     times = events[:, 0]
     tix = np.where((times >= trange[0]) & (times < trange[1]))
-    shutter = optimize_compute_shutter(events, trange)
+    timeslice = times[tix]
+    shutter = optimize_compute_shutter(
+        timeslice, flagslice=events[:, 1][tix], trange=trange
+    )
 
     # Calculate deadtime
     model = {
@@ -86,7 +145,7 @@ def optimize_compute_exptime(events, band, trange):
 
     if rawexpt == 0:
         return rawexpt
-    gcr = len(times[tix]) / rawexpt
+    gcr = len(timeslice) / rawexpt
     feeclkratio = 0.966
     refrate = model[band][1] / feeclkratio
     scr = model[band][0] * gcr + model[band][1]
@@ -106,27 +165,28 @@ def table_values(table, columns):
     return np.array([table[column].to_numpy() for column in columns]).T
 
 
-def make_images(photonfile, depth=(None, 30), band="NUV"):
-    exposure_arrays, indexed, trange, wcs = prep_image_inputs(photonfile)
-    # TODO: is this supposed to write each framesize out mid-loop?
+# @profile
+def make_images(photonfile, depth: (None, 30), band="NUV"):
+    exposure_array, indexed, trange, wcs = prep_image_inputs(photonfile)
+    # TODO: write each framesize out mid_loop
+    movies, tranges, exptimes = {}, [], []
     for framesize in depth:
-        cntmovie, edgemovie, flagmovie = make_frames_at_depth(
+        movies, tranges, exptimes = make_frames_at_depth(
             framesize,
-            exposure_arrays,
+            exposure_array,
             indexed,
             trange,
             wcs,
             band,
         )
         mc.print_inline("")
-    # noinspection PyUnboundLocalVariable
-    return cntmovie, flagmovie, edgemovie
+    return movies, wcs, tranges, exptimes
 
     # TODO: Write the images.
 
 
 def prep_image_inputs(photonfile):
-    event_table, exposure_arrays = load_image_tables(photonfile)
+    event_table, exposure_array = load_image_tables(photonfile)
     foc, wcs = generate_wcs_components(event_table)
     weights = 1.0 / event_table["response"].to_numpy()
     mask_ix = np.where(event_table["mask"].to_numpy())
@@ -137,7 +197,7 @@ def prep_image_inputs(photonfile):
         np.min(event_table["t"].to_numpy()),
         np.max(event_table["t"].to_numpy()),
     )
-    return exposure_arrays, indexed, trange, wcs
+    return exposure_array, indexed, trange, wcs
 
 
 def generate_indexed_values(edge_ix, foc, mask_ix, t, weights):
@@ -151,39 +211,45 @@ def generate_indexed_values(edge_ix, foc, mask_ix, t, weights):
 
 
 def make_frames_at_depth(
-    framesize,
-    exposure_arrays,
-    indexed,
-    trange,
-    wcs,
-    band,
-):
+    framesize: Optional[int],
+    exposure_array: np.ndarray,
+    indexed: dict,
+    total_trange: tuple[int, int],
+    wcs: astropy.wcs.wcs.WCS,
+    band: str,
+) -> tuple[dict[str, list[np.ndarray]], list, list]:
+    """
+    :param framesize: framesize in seconds; None for full range
+    :param exposure_array: t and flags, _including_ off-detector, for exptime
+    :param indexed: weights, t, and foc indexed against det, edge, and mask
+    :param total_trange: (time minimum, time maximum) for on-detector events
+    :param wcs: wcs object
+    :param band: "FUV" or "NUV"
+    """
+    interval = total_trange[1] - total_trange[0]
     t0s = np.arange(
-        trange[0],
-        trange[1],
-        framesize if framesize else trange[1] - trange[0],
+        total_trange[0],
+        total_trange[1] + framesize
+        if framesize is not None
+        else total_trange[1] + interval,
+        framesize
+        if framesize is not None
+        else total_trange[1] - total_trange[0],
     )
-    cntmovie, flagmovie, edgemovie = [], [], []
-    exptimes, tranges = [], []
-    for i, t0 in enumerate(t0s):  # NOTE: 15s per loop
+    tranges = list(windowed(t0s, 2))
+
+    movies = {"cnt": [], "flag": [], "edge": []}
+    exptimes = []
+    for i, t0 in enumerate(tranges):  # NOTE: 15s per loop
         mc.print_inline(f"Integrating frame {i + 1} of {len(t0s)}")
-        # TODO: what are we doing with tranges and exptimes?
-        t1 = t0 + (framesize if framesize else trange[1] - trange[0])
-        trange = (t0, t1)
-        tranges += [trange]
-        exptimes += [
-            optimize_compute_exptime(exposure_arrays, band, tranges[-1])
-        ]
+        trange = tranges[i]
+        exptimes += [optimize_compute_exptime(exposure_array, band, trange)]
+        # noinspection PyTypeChecker
         cntmap, edgemap, flagmap = make_maps(indexed, trange, wcs)
-        if len(t0s) == 1:
-            cntmovie = cntmap
-            flagmovie = flagmap
-            edgemovie = edgemap
-        else:
-            cntmovie += [cntmap]
-            flagmovie += [flagmap]
-            edgemovie += [edgemap]
-    return cntmovie, edgemovie, flagmovie
+        movies["cnt"] += [cntmap]
+        movies["flag"] += [flagmap]
+        movies["edge"] += [edgemap]
+    return movies, tranges, exptimes
 
 
 def where_between(whatever, t0, t1):
@@ -233,56 +299,106 @@ def load_image_tables(photonfile):
         ],
     )
     # Only deal with data actually on the 800x800 detector grid
-    exposure_arrays = table_values(event_table, ["t", "flags"])
+    exposure_array = table_values(event_table, ["t", "flags"])
     event_table = select_on_detector(event_table)
-    return event_table, exposure_arrays
+    return event_table, exposure_array
 
 
-#
-bucketname = "gfcat-test"
-eclipse = 23456
-band = "NUV"
-data_directory = "../test_data"
-rerun = False
-retain = False
-ext = "parquet"
+def populate_fits_header(header, band, wcs, tranges, exptimes):
+    header["CDELT1"], header["CDELT2"] = wcs.wcs.cdelt
+    header["CTYPE1"], header["CTYPE2"] = wcs.wcs.ctype
+    header["CRPIX1"], header["CRPIX2"] = wcs.wcs.crpix
+    header["CRVAL1"], header["CRVAL2"] = wcs.wcs.crval
+    header["EQUINOX"], header["EPOCH"] = 2000.0, 2000.0
+    header["BAND"] = 1 if band == "NUV" else 2
+    header["VERSION"] = "v{v}".format(v=__version__)
+    header["EXPSTART"] = np.array(tranges).min()
+    header["EXPEND"] = np.array(tranges).max()
+    header["EXPTIME"] = sum(t1 - t0 for (t0, t1) in tranges)
+    header["N_FRAME"] = len(tranges)
+    for i, trange in enumerate(tranges):
+        header["T0_{i}".format(i=i)] = trange[0]
+        header["T1_{i}".format(i=i)] = trange[1]
+        header["EXPT_{i}".format(i=i)] = exptimes[i]
+    return header
 
-eclipse_directory = f"{data_directory}/e{eclipse}"
-try:
-    os.makedirs(eclipse_directory)
-except FileExistsError:
-    pass
 
-# Use `dryrun=True` to just get the raw6 filepath
-raw6file = download_raw6(
-    eclipse, band, data_directory=data_directory, dryrun=True
-)
+# debug function
+def unequally_stepped(array, rtol=1e-5, atol=1e-8):
+    diff = array[1:] - array[:-1]
+    unequal = np.where(~np.isclose(diff, mode(diff), rtol=rtol, atol=atol))
+    return unequal, diff[unequal]
 
-obstype, rawexpt, nlegs = obstype_from_eclipse(eclipse)
 
-if not obstype in ["MIS", "DIS"]:
-    print(f"Skipping {obstype} mode visit.")
-if nlegs > 0:
-    print(f"Skipping multi-leg visit.")
-if rawexpt < 600:
-    print(f"Skipping visit with {rawexpt}s depth.")
+def write_gzip(
+    whatever,
+    outfile,
+    compoptions=None,
+    writemethod="writeto",
+    writeoptions=None,
+):
+    if writeoptions is None:
+        writeoptions = {}
+    if compoptions is None:
+        compoptions = {}
+    gzipped = gzip.open(outfile, mode="wb", **compoptions)
+    getattr(whatever, writemethod)(gzipped, **writeoptions)
+    gzipped.close()
 
-# Download the raw6file from MAST for real
-raw6file = download_raw6(eclipse, band, data_directory=data_directory)
-photonfile = raw6file.replace("-raw6.fits.gz", ".parquet")
-if not os.path.exists(photonfile):
-    photonpipe(
-        raw6file.split(".")[0][:-5],
-        band,
-        raw6file=raw6file,
-        verbose=2,
-        overwrite=False,
+
+def write_zstd(
+    whatever,
+    out_fn,
+    compoptions=None,
+    writemethod="writeto",
+    writeoptions=None,
+):
+    if writeoptions is None:
+        writeoptions = {}
+    if compoptions is None:
+        compoptions = {}
+    outfile = open(out_fn, mode="wb")
+    zstdbuf = BytesIO()
+    getattr(whatever, writemethod)(zstdbuf, **writeoptions)
+    zstdbuf.seek(0)
+    zcomp = ZstdCompressor(write_dict_id=True, **compoptions)
+    zcomp.copy_stream(zstdbuf, outfile)
+    outfile.close()
+
+
+def write_fits_movie(
+    band, depth, eclipse, exptimes, movie, movie_type, tranges, wcs
+):
+    movie_hdu = pyfits.PrimaryHDU(movie)
+    movie_hdu.header = populate_fits_header(
+        movie_hdu.header, band, wcs, tranges, exptimes
     )
-    print("Calibrating photon list...")
-file_stats = get_parquet_stats(photonfile, ["flags", "ra"])
-if (file_stats["flags"]["min"] != 0) or (file_stats["ra"]["max"] is None):
-    print("There is no unflagged data in this visit.")
-#     # TODO: Set a flag to halt processing at this point
+    # TODO: nicer depth filenaming in the inner loop
+    movie_fn = (
+        f"test_data/e{eclipse}/e{eclipse}t{depth[0]}-{movie_type}.fits.zstd"
+    )
+    # TODO: add metadata table with per-frame info
+    write_zstd(movie_hdu, movie_fn)
 
 
-cnt, flg, edg = make_images(photonfile, depth=[None])
+def do_this(eclipse, band, depths):
+    photonfile = f"test_data/e{eclipse}/e{eclipse}-nd.parquet"
+    movies, wcs, tranges, exptimes = make_images(photonfile, depth=depths)
+    # cnt =
+    # flag = movies["flag"]
+    # edge = movies["edge"]
+    # del movies
+    for movie_type in ("cnt", "flag", "edge"):
+        write_fits_movie(
+            band,
+            depths,
+            eclipse,
+            exptimes,
+            movies.pop(movie_type),
+            movie_type,
+            tranges,
+            wcs,
+        )
+
+
+do_this(12000, "NUV", [None])
