@@ -5,18 +5,33 @@
 """
 
 from __future__ import absolute_import, division, print_function
+
 # Core and Third Party imports.
+import gzip
+from collections import defaultdict
+from io import BytesIO
+from itertools import product
+from statistics import mode
+
+import fitsio
+import zstandard
 from astropy.time import Time
 import scipy.stats
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+
 # gPhoton imports.
+from pyarrow import parquet
+from zstandard import ZstdCompressor
+from astropy.io import fits as pyfits
+
+
 import gPhoton.galextools as gt
 import gPhoton.dbasetools as dt
 
 # ------------------------------------------------------------------------------
-def read_lc(csvfile, comment='|'):
+def read_lc(csvfile, comment="|"):
     """
     Read a light curve csv file from gAperture.
 
@@ -32,6 +47,8 @@ def read_lc(csvfile, comment='|'):
     """
 
     return pd.io.parsers.read_csv(csvfile, comment=comment)
+
+
 # ------------------------------------------------------------------------------
 
 # ------------------------------------------------------------------------------
@@ -39,7 +56,7 @@ def plot_lc(data_frame):
     """
     Plots a lightcurve from a CSV file data_frame - pandas DataFrame from
         read_lc()
-	"""
+    """
 
     plt.plot(data_frame.index.values, data_frame["flux"], "ko")
 
@@ -47,13 +64,15 @@ def plot_lc(data_frame):
 
     # @CHASE - Don't need a return here?@
     return
+
+
 # ------------------------------------------------------------------------------
 
 # ------------------------------------------------------------------------------
-def model_errors(catmag, band, sigma=3., mode='mag', trange=[1, 1600]):
+def model_errors(catmag, band, sigma=3.0, mode="mag", trange=[1, 1600]):
     """
     Give upper and lower expected bounds as a function of the nominal
-	    magnitude of a source. Very useful for identifying outliers.
+            magnitude of a source. Very useful for identifying outliers.
 
     :param catmag: Nominal AB magnitude of the source.
 
@@ -78,9 +97,9 @@ def model_errors(catmag, band, sigma=3., mode='mag', trange=[1, 1600]):
 
     :returns: tuple -- A two-element tuple containing the lower and upper
         bounds, respectively.
-	"""
+    """
 
-    if mode != 'cps' and mode != 'mag':
+    if mode != "cps" and mode != "mag":
         print('mode must be set to "cps" or "mag"')
         exit(0)
 
@@ -88,19 +107,21 @@ def model_errors(catmag, band, sigma=3., mode='mag', trange=[1, 1600]):
 
     cnt = gt.mag2counts(catmag, band)
 
-    ymin = (cnt*x/x)-sigma*np.sqrt(cnt*x)/x
+    ymin = (cnt * x / x) - sigma * np.sqrt(cnt * x) / x
 
-    ymax = (cnt*x/x)+sigma*np.sqrt(cnt*x)/x
+    ymax = (cnt * x / x) + sigma * np.sqrt(cnt * x) / x
 
-    if mode == 'mag':
+    if mode == "mag":
         ymin = gt.counts2mag(ymin, band)
         ymax = gt.counts2mag(ymax, band)
 
     return ymin, ymax
+
+
 # ------------------------------------------------------------------------------
 
 # ------------------------------------------------------------------------------
-def data_errors(catmag, band, t, sigma=3., mode='mag'):
+def data_errors(catmag, band, t, sigma=3.0, mode="mag"):
     """
     Given an array (of counts or mags), return an array of n-sigma error values.
 
@@ -129,25 +150,27 @@ def data_errors(catmag, band, t, sigma=3., mode='mag'):
         uncertainty, respectively.
     """
 
-    if mode != 'cps' and mode != 'mag':
+    if mode != "cps" and mode != "mag":
         print('mode must be set to "cps" or "mag"')
         exit(0)
 
     cnt = gt.mag2counts(catmag, band)
 
-    ymin = (cnt*t/t)-sigma*np.sqrt(cnt*t)/t
+    ymin = (cnt * t / t) - sigma * np.sqrt(cnt * t) / t
 
-    ymax = (cnt*t/t)+sigma*np.sqrt(cnt*t)/t
+    ymax = (cnt * t / t) + sigma * np.sqrt(cnt * t) / t
 
-    if mode == 'mag':
+    if mode == "mag":
         ymin = gt.counts2mag(ymin, band)
         ymax = gt.counts2mag(ymax, band)
 
     return ymin, ymax
+
+
 # ------------------------------------------------------------------------------
 
 # ------------------------------------------------------------------------------
-def dmag_errors(t, band, sigma=3., mode='mag', mags=np.arange(13, 24, 0.1)):
+def dmag_errors(t, band, sigma=3.0, mode="mag", mags=np.arange(13, 24, 0.1)):
     """
     Given an exposure time, give dmag error bars at a range of magnitudes.
 
@@ -176,17 +199,19 @@ def dmag_errors(t, band, sigma=3., mode='mag', mags=np.arange(13, 24, 0.1)):
         their lower and upper uncertainties, respectively.
     """
 
-    cnts = gt.mag2counts(mags, band)*t
+    cnts = gt.mag2counts(mags, band) * t
 
-    ymin = (cnts-sigma/np.sqrt(cnts))/t
+    ymin = (cnts - sigma / np.sqrt(cnts)) / t
 
-    ymax = (cnts+sigma/np.sqrt(cnts))/t
+    ymax = (cnts + sigma / np.sqrt(cnts)) / t
 
-    if mode == 'mag':
-        ymin = mags-gt.counts2mag(ymin, band)
-        ymax = mags-gt.counts2mag(ymax, band)
+    if mode == "mag":
+        ymin = mags - gt.counts2mag(ymin, band)
+        ymax = mags - gt.counts2mag(ymax, band)
 
     return mags, ymin, ymax
+
+
 # ------------------------------------------------------------------------------
 
 # ------------------------------------------------------------------------------
@@ -204,8 +229,9 @@ def calculate_jd(galex_time):
 
     if np.isfinite(galex_time):
         # Convert the GALEX timestamp to a Unix timestamp.
-        this_unix_time = Time(galex_time + 315964800., format="unix",
-                              scale="utc")
+        this_unix_time = Time(
+            galex_time + 315964800.0, format="unix", scale="utc"
+        )
 
         # Convert the Unix timestamp to a Julian date, measured in the
         # TDB standard.
@@ -214,6 +240,8 @@ def calculate_jd(galex_time):
         this_jd_time = np.nan
 
     return this_jd_time
+
+
 # ------------------------------------------------------------------------------
 
 # ------------------------------------------------------------------------------
@@ -231,8 +259,9 @@ def calculate_jd_utc(galex_time):
 
     if np.isfinite(galex_time):
         # Convert the GALEX timestamp to a Unix timestamp.
-        this_unix_time = Time(galex_time + 315964800., format="unix",
-                              scale="utc")
+        this_unix_time = Time(
+            galex_time + 315964800.0, format="unix", scale="utc"
+        )
 
         # Convert the Unix timestamp to a Julian date, measured in the
         # UTC standard.
@@ -241,6 +270,8 @@ def calculate_jd_utc(galex_time):
         this_jd_time = np.nan
 
     return this_jd_time
+
+
 # ------------------------------------------------------------------------------
 
 # ------------------------------------------------------------------------------
@@ -258,8 +289,9 @@ def calculate_jd_tai(galex_time):
 
     if np.isfinite(galex_time):
         # Convert the GALEX timestamp to a Unix timestamp.
-        this_unix_time = Time(galex_time + 315964800., format="unix",
-                              scale="utc")
+        this_unix_time = Time(
+            galex_time + 315964800.0, format="unix", scale="utc"
+        )
 
         # Convert the Unix timestamp to a Julian date, measured in the
         # UTC standard.
@@ -268,6 +300,8 @@ def calculate_jd_tai(galex_time):
         this_jd_time = np.nan
 
     return this_jd_time
+
+
 # ------------------------------------------------------------------------------
 
 # ------------------------------------------------------------------------------
@@ -286,21 +320,31 @@ def calculate_caldat(galex_time):
 
     if np.isfinite(galex_time):
         # Convert the GALEX timestamp to a Unix timestamp.
-        this_unix_time = Time(galex_time + 315964800., format="unix",
-                              scale="utc")
+        this_unix_time = Time(
+            galex_time + 315964800.0, format="unix", scale="utc"
+        )
 
         # Convert the Unix timestamp to a calendar date, measured in the
         # UTC standard.
         this_caldat_time = this_unix_time.iso
     else:
-        this_caldat_time = 'NaN'
+        this_caldat_time = "NaN"
 
     return this_caldat_time
+
+
 # ------------------------------------------------------------------------------
 
 # ------------------------------------------------------------------------------
-def checkplot(csvfile,outfile=None,format='png',maxgap=500,imscale=4,
-              nplots=10,cleanup=False):
+def checkplot(
+    csvfile,
+    outfile=None,
+    format="png",
+    maxgap=500,
+    imscale=4,
+    nplots=10,
+    cleanup=False,
+):
     """
     Read a gAperture lighturve file and write diagnostic images of the
     brightness on a 'per-visit' basis with error bars and flagged bins
@@ -341,66 +385,245 @@ def checkplot(csvfile,outfile=None,format='png',maxgap=500,imscale=4,
         time standard.
     """
 
-    def crosscorr_title(a,b):
-        return '{pearsonr}, {spearmanr}, {kendalltau}'.format(
-            pearsonr=round(scipy.stats.pearsonr(a,b)[0],2),
-            spearmanr=round(scipy.stats.spearmanr(a,b)[0],2),
-            kendalltau=round(scipy.stats.kendalltau(a,b)[0],2))
+    def crosscorr_title(a, b):
+        return "{pearsonr}, {spearmanr}, {kendalltau}".format(
+            pearsonr=round(scipy.stats.pearsonr(a, b)[0], 2),
+            spearmanr=round(scipy.stats.spearmanr(a, b)[0], 2),
+            kendalltau=round(scipy.stats.kendalltau(a, b)[0], 2),
+        )
 
     lc = read_lc(csvfile)
-    tranges = dt.distinct_tranges(np.array(lc['t0']),maxgap=500)
-    stepsz = np.median(lc['t1']-lc['t0']) # sort of a guess at stepsz
-    n=2 # temporary hacking variable for number of rows in figure
-    for j in range(np.int(np.ceil(len(tranges)/float(nplots)))):
+    tranges = dt.distinct_tranges(np.array(lc["t0"]), maxgap=500)
+    stepsz = np.median(lc["t1"] - lc["t0"])  # sort of a guess at stepsz
+    n = 2  # temporary hacking variable for number of rows in figure
+    for j in range(np.int(np.ceil(len(tranges) / float(nplots)))):
         plt.figure(
-            figsize=(imscale*(len(tranges[j*nplots:(j+1)*nplots])),imscale*n))
-        for i, trange in enumerate(tranges[j*nplots:(j+1)*nplots]):
+            figsize=(
+                imscale * (len(tranges[j * nplots : (j + 1) * nplots])),
+                imscale * n,
+            )
+        )
+        for i, trange in enumerate(tranges[j * nplots : (j + 1) * nplots]):
             # Countrate
-            plt.subplot(n, len(tranges[j*nplots:(j+1)*nplots]),i+1+len(tranges[j*nplots:(j+1)*nplots])*0)
+            plt.subplot(
+                n,
+                len(tranges[j * nplots : (j + 1) * nplots]),
+                i + 1 + len(tranges[j * nplots : (j + 1) * nplots]) * 0,
+            )
             plt.xticks([])
-            if i==0:
-                plt.ylabel('cps_mcatbgsub')
-            plt.ylim((lc['cps_mcatbgsub']-2*5*lc['cps_mcatbgsub_err']).min(),
-                     (lc['cps_mcatbgsub']+2*5*lc['cps_mcatbgsub_err']).max())
-            time_ix = np.where((np.array(lc['t0'])>=trange[0]) &
-                                           (np.array(lc['t1'])<=trange[1]))
+            if i == 0:
+                plt.ylabel("cps_mcatbgsub")
+            plt.ylim(
+                (lc["cps_mcatbgsub"] - 2 * 5 * lc["cps_mcatbgsub_err"]).min(),
+                (lc["cps_mcatbgsub"] + 2 * 5 * lc["cps_mcatbgsub_err"]).max(),
+            )
+            time_ix = np.where(
+                (np.array(lc["t0"]) >= trange[0])
+                & (np.array(lc["t1"]) <= trange[1])
+            )
             if not len(time_ix[0]):
                 continue
-            tlim = (np.array(lc['t0'])[time_ix].min()-stepsz,
-                    np.array(lc['t1'])[time_ix].max()+stepsz)
-            plt.xlim(tlim[0],tlim[1])
+            tlim = (
+                np.array(lc["t0"])[time_ix].min() - stepsz,
+                np.array(lc["t1"])[time_ix].max() + stepsz,
+            )
+            plt.xlim(tlim[0], tlim[1])
             for nsigma in [5]:
-                plt.errorbar(np.array(lc['t_mean'])[time_ix],
-                    np.array(lc['cps_mcatbgsub'])[time_ix],
-                    yerr=nsigma*np.array(lc['cps_mcatbgsub_err'])[time_ix],fmt='k.')
-            flag_ix = np.where(np.array(lc['flags'])[time_ix]>0)
-            plt.plot(np.array(lc['t_mean'])[time_ix][flag_ix],
-                np.array(lc['cps_mcatbgsub'])[time_ix][flag_ix],'rx')
+                plt.errorbar(
+                    np.array(lc["t_mean"])[time_ix],
+                    np.array(lc["cps_mcatbgsub"])[time_ix],
+                    yerr=nsigma * np.array(lc["cps_mcatbgsub_err"])[time_ix],
+                    fmt="k.",
+                )
+            flag_ix = np.where(np.array(lc["flags"])[time_ix] > 0)
+            plt.plot(
+                np.array(lc["t_mean"])[time_ix][flag_ix],
+                np.array(lc["cps_mcatbgsub"])[time_ix][flag_ix],
+                "rx",
+            )
 
             # Detector Radius
-            plt.subplot(n, len(tranges[j*nplots:(j+1)*nplots]),i+1+len(tranges[j*nplots:(j+1)*nplots])*1)
+            plt.subplot(
+                n,
+                len(tranges[j * nplots : (j + 1) * nplots]),
+                i + 1 + len(tranges[j * nplots : (j + 1) * nplots]) * 1,
+            )
             plt.xticks([])
-            if i==0:
-                plt.ylabel('detrad')
-            plt.xlim(tlim[0],tlim[1])
-            plt.ylim(np.array(lc['detrad'])[time_ix].min()-2,
-                     np.array(lc['detrad'])[time_ix].max()+2)
-            plt.plot(np.array(lc['t_mean'])[time_ix],
-                     np.array(lc['detrad'])[time_ix],'k.')
-            plt.plot(np.array(lc['t_mean'])[time_ix][flag_ix],
-                     np.array(lc['detrad'])[time_ix][flag_ix],'rx')
-            plt.title(crosscorr_title(
-                        np.array(lc['cps_mcatbgsub_err'])[time_ix],
-                        np.array(lc['detrad'])[time_ix]))
+            if i == 0:
+                plt.ylabel("detrad")
+            plt.xlim(tlim[0], tlim[1])
+            plt.ylim(
+                np.array(lc["detrad"])[time_ix].min() - 2,
+                np.array(lc["detrad"])[time_ix].max() + 2,
+            )
+            plt.plot(
+                np.array(lc["t_mean"])[time_ix],
+                np.array(lc["detrad"])[time_ix],
+                "k.",
+            )
+            plt.plot(
+                np.array(lc["t_mean"])[time_ix][flag_ix],
+                np.array(lc["detrad"])[time_ix][flag_ix],
+                "rx",
+            )
+            plt.title(
+                crosscorr_title(
+                    np.array(lc["cps_mcatbgsub_err"])[time_ix],
+                    np.array(lc["detrad"])[time_ix],
+                )
+            )
 
         plt.tight_layout()
         if outfile:
-            if len(tranges)>nplots:
-                plt.savefig('{base}_{j}{type}'.format(
-                    base=outfile[:-4],j=j,type=outfile[-4:]),dpi=300)
+            if len(tranges) > nplots:
+                plt.savefig(
+                    "{base}_{j}{type}".format(
+                        base=outfile[:-4], j=j, type=outfile[-4:]
+                    ),
+                    dpi=300,
+                )
             else:
-                plt.savefig(outfile,dpi=300)
-        if cleanup: # This seems to not work for some reason... ?
-            plt.close('all')
+                plt.savefig(outfile, dpi=300)
+        if cleanup:  # This seems to not work for some reason... ?
+            plt.close("all")
     return
+
+
 # ------------------------------------------------------------------------------
+def get_parquet_stats(fn, columns, row_group=0):
+    group = parquet.read_metadata(fn).row_group(row_group)
+    statistics = {}
+    for column in group.to_dict()["columns"]:
+        if column["path_in_schema"] in columns:
+            statistics[column["path_in_schema"]] = column["statistics"]
+    return statistics
+
+
+def table_values(table, columns):
+    return np.array([table[column].to_numpy() for column in columns]).T
+
+
+def where_between(whatever, t0, t1):
+    return np.where((whatever >= t0) & (whatever < t1))[0]
+
+
+def unequally_stepped(array, rtol=1e-5, atol=1e-8):
+    diff = array[1:] - array[:-1]
+    unequal = np.where(~np.isclose(diff, mode(diff), rtol=rtol, atol=atol))
+    return unequal, diff[unequal]
+
+
+def write_gzip(
+    whatever,
+    outfile,
+    compoptions=None,
+    writemethod="writeto",
+    writeoptions=None,
+):
+    if writeoptions is None:
+        writeoptions = {}
+    if compoptions is None:
+        compoptions = {}
+    gzipped = gzip.open(outfile, mode="wb", **compoptions)
+    getattr(whatever, writemethod)(gzipped, **writeoptions)
+    gzipped.close()
+
+
+def write_zstd(
+    whatever,
+    out_fn,
+    compoptions=None,
+    writemethod="writeto",
+    writeoptions=None,
+):
+    if writeoptions is None:
+        writeoptions = {}
+    if compoptions is None:
+        compoptions = {}
+    outfile = open(out_fn, mode="wb")
+    zstdbuf = BytesIO()
+    getattr(whatever, writemethod)(zstdbuf, **writeoptions)
+    zstdbuf.seek(0)
+    zcomp = ZstdCompressor(write_dict_id=True, **compoptions)
+    zcomp.copy_stream(zstdbuf, outfile)
+    outfile.close()
+
+
+def get_fits_radec(header, endpoints_only=True):
+    ranges = {}
+    for coord, ix in zip(("ra", "dec"), (1, 2)):
+        # explanatory variables
+        steps = header[f"NAXIS{ix}"]
+        stepsize = header[f"CDELT{ix}"]
+        extent = steps * stepsize / 2
+        center = header[f"CRVAL{ix}"]
+        coord_endpoints = (center - extent, center + extent)
+        if endpoints_only is True:
+            ranges[coord] = coord_endpoints
+        else:
+            ranges[coord] = np.arange(*coord_endpoints, stepsize)
+    return ranges
+
+
+def imshow_clipped(data, clip_range=(None, 99), hdu_ix=0, cmap="Greys_r"):
+    if isinstance(data, pyfits.HDUList):
+        header = data[hdu_ix].header
+        data = data[hdu_ix].data
+    elif isinstance(data, fitsio.FITS):
+        header = data[hdu_ix].read_header()
+        data = data[hdu_ix].read()
+    else:
+        header = None
+    if (len(data.shape) == 3) and (data.shape[0] == 1):
+        data = data[0]
+    clip_kwargs = {}
+    for clip_amount, clip_kwarg in zip(clip_range, ("a_min", "a_max")):
+        if clip_amount is not None:
+            clip_kwargs[clip_kwarg] = np.percentile(data, clip_amount)
+        else:
+            clip_kwargs[clip_kwarg] = None
+    fig, ax = plt.subplots()
+    im = ax.imshow(np.clip(data, **clip_kwargs), cmap=cmap)
+    plt.colorbar(mappable=im, ax=ax)
+    if header is not None:
+        radec = get_fits_radec(header, endpoints_only=False)
+        for data_coord, sky_coord in zip(("x", "y"), ("ra", "dec")):
+            vals = radec[sky_coord]
+            ticks = np.round(np.linspace(0, len(vals), 10))
+            tick_labels = np.round(np.linspace(vals[0], vals[-1], 10), 2)
+            getattr(ax, f"set_{data_coord}ticks")(ticks)
+            getattr(ax, f"set_{data_coord}ticklabels")(tick_labels)
+    return fig
+
+
+class NestingDict(defaultdict):
+    """
+    shorthand for automatically-nesting dictionary -- i.e.,
+    insert a series of keys at any depth into a NestingDict
+    and it automatically creates all needed levels above.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.default_factory = NestingDict
+
+    __repr__ = dict.__repr__
+
+
+def pyfits_zopen(filename):
+    zdecomp = zstandard.ZstdDecompressor()
+    zinbuf = BytesIO()
+    with open(filename, mode="rb") as infile:
+        zdecomp.copy_stream(infile, zinbuf)
+    zinbuf.seek(0)
+    return pyfits.open(zinbuf)
+
+
+def diff_photonlist_and_movie_coords(movie_radec, photon_radec):
+    diffs = {}
+    minmax_funcs = {"min": min, "max": max}
+    for coord, op in product(("ra", "dec"), ("min", "max")):
+        diffs[f"{coord}_{op}"] = abs(
+            minmax_funcs[op](movie_radec[coord]) - photon_radec[coord][op]
+        )
+    return diffs
