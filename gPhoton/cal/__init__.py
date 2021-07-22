@@ -107,7 +107,14 @@ def read_data(fn, dim=0):
         data_url='{b}/{f}'.format(b=cal_url,f=fn)
         fitsdata = download_with_progress_bar(data_url, path)
     if '.fits' in fn:
-        return get_fits_data(path, dim=dim).byteswap().newbyteorder(), get_fits_header(path)
+        data = get_fits_data(path, dim=dim)
+        header = get_fits_header(path)
+        if isinstance(data, np.recarray):
+            for name in data.names:
+                data[name] = data[name].byteswap().newbyteorder()
+        else:
+            data = data.byteswap().newbyteorder()
+        return data, header
     elif '.tbl' in fn:
         return get_tbl_data(path)
     else:
