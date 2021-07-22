@@ -817,13 +817,9 @@ def post_csp_caldata():
     wig2fits, wig2head = cal.wiggle2()
     wig2 = np.zeros([128, 8, 32, 8])
 
-    for i in range(len(wig2fits)):
-        ya = wig2fits[i][0]
-        yb = wig2fits[i][1]
-        xb = wig2fits[i][2]
-        yy = wig2fits[i][3]
-        ycor = wig2fits[i][4]
-        wig2[yy][yb][ya][xb] = ycor
+    wig2[
+        wig2fits['yy'], wig2fits['YB'], wig2fits['YA'], wig2fits['XB']
+    ] = wig2fits['ycor']
 
     wig2data = {"start": wig2head["Y_AS_0"], "inc": wig2head["Y_AS_INC"]}
 
