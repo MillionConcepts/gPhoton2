@@ -1,3 +1,5 @@
+import math
+
 import pandas as pd
 import numpy as np
 from gPhoton import cal, curvetools as ct, galextools as gt, FileUtils as fu, \
@@ -19,7 +21,7 @@ import sqlalchemy as sql
 
 def obstype_from_eclipse(eclipse):
     try:
-        t = fu.web_query_aspect(eclipse,quiet=True)[3]
+        t = fu.web_query_aspect(eclipse, quiet=True)[3]
         obsdata = gq.getArray(gq.obstype_from_t(t.mean()))[0]
         obstype = obsdata[0]
         nlegs = obsdata[4]
@@ -33,18 +35,115 @@ def obstype_from_eclipse(eclipse):
         return "NoData", 0, 0
 
 
-def eclipse_to_urls(eclipse, mast_url="http://galex.stsci.edu/gPhoton/RAW6/"):
+def eclipse_to_urls(eclipse, mast_url="http://galex.stsci.edu/gPhoton"):
     eclipse_range = "e{lower}_{upper}".format(
-        lower=int(np.floor(eclipse / 100) * 100),
-        upper=int(np.floor(eclipse / 100) * 100 + 99),
+        lower=int(math.floor(eclipse / 100) * 100),
+        upper=int(math.floor(eclipse / 100) * 100 + 99),
     )
-    base_url = "{mast_url}{eclipse_range}/{eclipse}/e{eclipse}".format(
-        mast_url=mast_url, eclipse_range=eclipse_range, eclipse=str(eclipse).zfill(5)
+    if eclipse_range in (
+        "e32900_32999",
+        "e33800_33899",
+        "e33900_33999",
+        "e34900_34999",
+        "e35700_35799",
+        "e35800_35899",
+        "e35900_35999",
+        "e36600_36699",
+        "e36700_36799",
+        "e36800_36899",
+        "e36900_36999",
+        "e37600_37699",
+        "e37700_37799",
+        "e37800_37899",
+        "e37900_37999",
+        "e38600_38699",
+        "e38700_38799",
+        "e38800_38899",
+        "e38900_38999",
+        "e39500_39599",
+        "e39600_39699",
+        "e39700_39799",
+        "e39800_39899",
+        "e39900_39999",
+        "e40300_40399",
+        "e40400_40499",
+        "e40500_40599",
+        "e40600_40699",
+        "e40700_40799",
+        "e40800_40899",
+        "e40900_40999",
+        "e41100_41199",
+        "e41200_41299",
+        "e41300_41399",
+        "e41400_41499",
+        "e41500_41599",
+        "e41600_41699",
+        "e41700_41799",
+        "e41800_41899",
+        "e41900_41999",
+        "e42100_42199",
+        "e42200_42299",
+        "e42300_42399",
+        "e42400_42499",
+        "e42500_42599",
+        "e42600_42699",
+        "e42700_42799",
+        "e42800_42899",
+        "e42900_42999",
+        "e43100_43199",
+        "e43200_43299",
+        "e43300_43399",
+        "e43400_43499",
+        "e43500_43599",
+        "e43600_43699",
+        "e43700_43799",
+        "e43800_43899",
+        "e43900_43999",
+        "e44000_44099",
+        "e44100_44199",
+        "e44200_44299",
+        "e44300_44399",
+        "e44400_44499",
+        "e44500_44599",
+        "e44600_44699",
+        "e44700_44799",
+        "e44800_44899",
+        "e44900_44999",
+        "e45000_45099",
+        "e45100_45199",
+        "e45200_45299",
+        "e45300_45399",
+        "e45400_45499",
+        "e45500_45599",
+        "e45600_45699",
+        "e45700_45799",
+        "e45800_45899",
+        "e45900_45999",
+        "e46000_46099",
+        "e46100_46199",
+        "e46200_46299",
+    ):
+        raw6_suffix = ".2"
+    elif eclipse_range in (
+        "e46300_46399",
+        "e46400_46499",
+        "e46500_46599",
+        "e46600_46699",
+        "e46700_46799",
+        "e46800_46899",
+    ):
+        raw6_suffix = ".3"
+    else:
+        raw6_suffix = ""
+    raw6_directory = f"RAW6{raw6_suffix}"
+    eclipse = str(eclipse).zfill(5)
+    base_url = (
+        f"{mast_url}/{raw6_directory}/{eclipse_range}/{eclipse}/e{eclipse}"
     )
     return {
-        "scst_url": "{base_url}-scst.fits.gz".format(base_url=base_url),
-        "NUV": {"raw6_url": "{base_url}-nd-raw6.fits.gz".format(base_url=base_url)},
-        "FUV": {"raw6_url": "{base_url}-fd-raw6.fits.gz".format(base_url=base_url)},
+        "scst_url": f"{base_url}-scst.fits.gz",
+        "NUV": {"raw6_url": f"{base_url}-nd-raw6.fits.gz"},
+        "FUV": {"raw6_url": f"{base_url}-fd-raw6.fits.gz"},
     }
 
 
