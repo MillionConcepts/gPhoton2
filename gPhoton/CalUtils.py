@@ -828,12 +828,7 @@ def post_csp_caldata():
     wlk2fits, wlk2head = cal.walk2()
     wlk2 = np.zeros([100, 8, 32])
 
-    for i in range(len(wlk2fits)):
-        q = wlk2fits[i][0]
-        yb = wlk2fits[i][1]
-        yy = wlk2fits[i][2]
-        ycor = wlk2fits[i][3]
-        wlk2[yy][yb][q] = ycor
+    wlk2[wlk2fits['yy'], wlk2fits['yb'], wlk2fits['q']] = wlk2fits['ycor']
 
     wlk2data = {"start": wlk2head["Y_AS_0"], "inc": wlk2head["Y_AS_INC"]}
 
@@ -842,11 +837,7 @@ def post_csp_caldata():
     clk2fits, clk2head = cal.clock2()
     clk2 = np.zeros([100, 8])
 
-    for i in range(len(clk2fits)):
-        yb = clk2fits[i][0]
-        yy = clk2fits[i][1]
-        ycor = clk2fits[i][2]
-        clk2[yy][yb] = ycor
+    clk2[clk2fits['yy'], clk2fits['YB']] = clk2fits['ycor']
 
     clk2data = {"start": clk2head["Y_AS_0"], "inc": clk2head["Y_AS_INC"]}
 
