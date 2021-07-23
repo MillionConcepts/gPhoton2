@@ -6,7 +6,6 @@
 
 from __future__ import absolute_import, division, print_function
 # Core and Third Party imports.
-from collections import defaultdict
 
 from astropy.io import fits as pyfits
 from builtins import str
@@ -352,15 +351,3 @@ def angularSeparation(ra1, dec1, ra2, dec2):
 
     return r*ra2deg
 # ------------------------------------------------------------------------------
-class NestingDict(defaultdict):
-    """
-    shorthand for automatically-nesting dictionary -- i.e.,
-    insert a series of keys at any depth into a NestingDict
-    and it automatically creates all needed levels above.
-    """
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.default_factory = NestingDict
-
-    __repr__ = dict.__repr__

@@ -24,9 +24,13 @@ dependencies:
   - pympler
   - line_profiler
   - memory_profiler
-  # non-mandatory, some performance improvements to numba
+  # deployment (better ARM support than clize)
+  - fire
+  # non-mandatory, some performance improvements to numba --
+  # cannot be used on non-x64 platforms
   - icc_rt
   # testing
+  - boto3
   - zstandard
   - python-snappy
 prefix: /home/michael/miniconda3/envs/glcat

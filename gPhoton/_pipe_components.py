@@ -18,7 +18,8 @@ from gPhoton.CalUtils import (
 )
 import gPhoton.galextools as gt
 from gPhoton.FileUtils import load_aspect, web_query_aspect, download_data
-from gPhoton.MCUtils import print_inline, NestingDict
+from gPhoton.MCUtils import print_inline
+from gPhoton.gphoton_utils import NestingDict
 from gPhoton._numbafied_pipe_components import (
     interpolate_aspect_solutions,
     find_null_indices,

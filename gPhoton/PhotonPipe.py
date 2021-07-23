@@ -218,7 +218,7 @@ def photonpipe(
                          "detrad"
                      ]
     if band == "FUV":
-        variables_for_which_dictionary_compression_is_useful += "x"
+        variables_for_which_dictionary_compression_is_useful.append("x")
 
     # noinspection PyArgumentList
     parquet.write_table(
