@@ -961,7 +961,7 @@ def chunk_data(chunksz, data, nphots, copy=True):
     }
 
 
-def load_cal_data(band, eclipse):
+def load_cal_data(raw6file, band, eclipse):
     cal_data = NestingDict()
     for cal_type in ("wiggle", "walk", "linearity"):
         print_inline(f"Loading {cal_type} files...")
@@ -977,6 +977,7 @@ def load_cal_data(band, eclipse):
     # TODO: it gets applied elsewhere, too. change feedback?
     print_inline("Loading distortion files...")
     if eclipse > 37460:
+        c.STIMSEP = compute_stimstats(raw6file,band,eclipse)[-2]
         print_inline(f" Using stim separation of : {c.STIMSEP}")
     cal_data["distortion"]["x"], distortion_header = cal.distortion(
         band, "x", eclipse, c.STIMSEP

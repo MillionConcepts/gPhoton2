@@ -20,7 +20,7 @@ def interpolate_aspect_solutions(
     return deta, dxi
 
 
-def find_null_indices(aspflags, aspect_slice, asptime, flags, ok_indices):
+def find_null_indices(aspflags: object, aspect_slice: object, asptime: object, flags: object, ok_indices: object) -> object:
     flag_slice = flags[ok_indices]
     cut = (
         ((asptime[aspect_slice + 1] - asptime[aspect_slice]) == 1)
@@ -43,9 +43,8 @@ def find_null_indices(aspflags, aspect_slice, asptime, flags, ok_indices):
 def unfancy_hotspot_portion(
     band, dx, dy, flags, xp_as, xshift, yp_as, yshift
 ):
-    flip = 1.0
-    if band == "FUV":
-        flip = -1.0
+    flip = {"NUV": 1.0,
+            "FUV":-1.0}[band]
     # TODO: is xi always 0? so can half of this be removed?
     #  probably? go look at the C code
     # The detectors aren't oriented the same way.

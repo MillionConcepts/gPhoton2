@@ -129,15 +129,18 @@ def photonpipe(
 
     aspect = retrieve_aspect_solution(aspfile, eclipse, retries, verbose)
 
-    cal_data = load_cal_data(band, eclipse)
+    cal_data = load_cal_data(raw6file, band, eclipse)
     if share_memory is True:
         cal_data = send_cals_to_shared_memory(cal_data)
 
     data, nphots = load_raw6(band, eclipse, raw6file, verbose)
-    stims, stim_coefficients = create_ssd_from_decoded_data(
-        data, band, eclipse, verbose, margin=20
-    )
-    del stims
+    if eclipse > 37460:
+        stim_coefficients = (5105.48, 0.0) # post-CSP only use the default per rtaph.c #1391
+    else:
+        stims, stim_coefficients = create_ssd_from_decoded_data(
+            data, band, eclipse, verbose, margin=20
+        )
+        del stims
     # Post-CSP 'yac' corrections.
     if eclipse > 37460:
         stims_for_yac, yac_coef = create_ssd_from_decoded_data(
