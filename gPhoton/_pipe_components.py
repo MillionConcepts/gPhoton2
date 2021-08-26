@@ -23,7 +23,7 @@ from gPhoton.gphoton_utils import NestingDict
 from gPhoton._numbafied_pipe_components import (
     interpolate_aspect_solutions,
     find_null_indices,
-    unfancy_hotspot_portion,
+    unfancy_detector_coordinates,
     make_corners,
     or_reduce_minus_999,
     init_wiggle_arrays,
@@ -311,7 +311,7 @@ def apply_on_detector_corrections(
         yoffset,
         yp_as,
     )
-    xi, eta, col, row, flags = apply_hotspot_mask(
+    xi, eta, col, row, flags = convert_to_detector_coordinates(
         band,
         chunkid,
         dx,
@@ -326,7 +326,7 @@ def apply_on_detector_corrections(
     return {"xi": xi, "eta": eta, "col": col, "row": row, "flags": flags}
 
 
-def apply_hotspot_mask(
+def convert_to_detector_coordinates(
     band,
     chunkid,
     dx,
@@ -342,7 +342,7 @@ def apply_hotspot_mask(
     # TODO: this is for numba. consider replacing fancy indexing in mask below
     #  with a for-loop to numba-fy the rest of the function...although casting
     #  to int is weirdly slow in numpy, so maybe not.
-    col, row, xi, eta, cut, ok_indices = unfancy_hotspot_portion(
+    col, row, xi, eta, cut, ok_indices = unfancy_detector_coordinates(
         band,
         dx,
         dy,
@@ -354,10 +354,10 @@ def apply_hotspot_mask(
     )
     # TODO: this slice / cast is being computed both here and in
     #  calibrate_photons_inline()
-    col_ix = col[ok_indices].astype(np.int32)
-    row_ix = row[ok_indices].astype(np.int32)
-    cut[ok_indices] = (mask[col_ix, row_ix] == 1.0)
-    flags[~cut] = 6
+#    col_ix = col[ok_indices].astype(np.int32)
+#    row_ix = row[ok_indices].astype(np.int32)
+#    cut[ok_indices] = (mask[col_ix, row_ix] == 1.0)
+#    flags[~cut] = 6
     return xi, eta, col, row, flags
 
 

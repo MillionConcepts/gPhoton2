@@ -40,7 +40,7 @@ def find_null_indices(aspflags: object, aspect_slice: object, asptime: object, f
     return null_ix, flags
 
 
-def unfancy_hotspot_portion(
+def unfancy_detector_coordinates(
     band, dx, dy, flags, xp_as, xshift, yp_as, yshift
 ):
     flip = {"NUV": 1.0,
