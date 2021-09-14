@@ -62,7 +62,7 @@ def unfancy_hotspot_portion(
         & (row < 799.0)
         & (flags == 0)
     )
-    flags[~cut] = 16
+    flags[~cut] = 6
     ok_indices = np.nonzero(cut)[0]
     return col, row, xi, eta, cut, ok_indices
 

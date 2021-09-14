@@ -18,11 +18,11 @@ def run_this(eclipse):
     )
     print(f"Photon data file: {photonfile}")
     PhotonPipe.photonpipe(
-        photonfile, band, raw6file=raw6file, verbose=2, chunksz=1000000,
-        threads=None
+        photonfile, band, raw6file=raw6file, verbose=2, chunksz=500000,
+        threads=8
     )
 
 if __name__ == '__main__':
-    run_this(42645)
+    run_this(38325)
 
 

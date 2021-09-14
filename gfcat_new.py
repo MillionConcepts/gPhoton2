@@ -439,8 +439,8 @@ def make_movies(eclipse, band, depths):
 
 
 if __name__ == "__main__":
-    for eclipse in [
-        4357,
+    # for eclipse in [
+    #     4357,
         # 7666,
         # 9006,
         #     42645,
@@ -451,8 +451,8 @@ if __name__ == "__main__":
         #     34479,
         #     11943,
         #     22650,
-    ]:
-        # for eclipse in (43009, 43010, 43011, 43012, 43013):
+    # ]:
+    for eclipse in [42865]:
         print(eclipse)
         start = time.time()
         data_directory = "test_data"
@@ -465,7 +465,7 @@ if __name__ == "__main__":
         if not photonfile.exists():
             run_photonpipe(eclipse)
         file_stats = get_parquet_stats(photonfile, ["flags", "ra"])
-        if (file_stats["flags"]["min"] != 0) or (
+        if (file_stats["flags"]["min"] > 6) or (
             file_stats["ra"]["max"] is None
         ):
             print("no unflagged data in this visit, not making movies")

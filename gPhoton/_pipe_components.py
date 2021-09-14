@@ -40,6 +40,14 @@ from gPhoton._shared_memory_pipe_components import (
 from gPhoton.gnomonic import gnomfwd_simple, gnomrev_simple
 
 
+# TODO, IMPORTANT: flag 7 is intended to be for gaps >= 2s in aspect sol
+#  or actually-bad flags. in post-CSP aspect solutions, it's possible that
+#  all data has some flag that we should ignore; examine aspect solution for
+#  propagated flag.
+#  flag 12 is intended to be for gaps < 2s in aspect sol. we will use 12 in
+#  photometry but not 7.
+
+
 def retrieve_aspect_solution(aspfile, eclipse, retries, verbose):
     print_inline("Loading aspect data...")
     if aspfile:
