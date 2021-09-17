@@ -18,6 +18,7 @@ from scipy import stats
 from sklearn.cluster import DBSCAN
 import warnings
 import sqlalchemy as sql
+from fast_histogram import histogram2d
 
 def obstype_from_eclipse(eclipse):
     try:
@@ -40,105 +41,9 @@ def eclipse_to_urls(eclipse, mast_url="http://galex.stsci.edu/gPhoton"):
         lower=int(math.floor(eclipse / 100) * 100),
         upper=int(math.floor(eclipse / 100) * 100 + 99),
     )
-    if eclipse_range in (
-        "e32900_32999",
-        "e33800_33899",
-        "e33900_33999",
-        "e34900_34999",
-        "e35700_35799",
-        "e35800_35899",
-        "e35900_35999",
-        "e36600_36699",
-        "e36700_36799",
-        "e36800_36899",
-        "e36900_36999",
-        "e37600_37699",
-        "e37700_37799",
-        "e37800_37899",
-        "e37900_37999",
-        "e38600_38699",
-        "e38700_38799",
-        "e38800_38899",
-        "e38900_38999",
-        "e39500_39599",
-        "e39600_39699",
-        "e39700_39799",
-        "e39800_39899",
-        "e39900_39999",
-        "e40300_40399",
-        "e40400_40499",
-        "e40500_40599",
-        "e40600_40699",
-        "e40700_40799",
-        "e40800_40899",
-        "e40900_40999",
-        "e41100_41199",
-        "e41200_41299",
-        "e41300_41399",
-        "e41400_41499",
-        "e41500_41599",
-        "e41600_41699",
-        "e41700_41799",
-        "e41800_41899",
-        "e41900_41999",
-        "e42100_42199",
-        "e42200_42299",
-        "e42300_42399",
-        "e42400_42499",
-        "e42500_42599",
-        "e42600_42699",
-        "e42700_42799",
-        "e42800_42899",
-        "e42900_42999",
-        "e43100_43199",
-        "e43200_43299",
-        "e43300_43399",
-        "e43400_43499",
-        "e43500_43599",
-        "e43600_43699",
-        "e43700_43799",
-        "e43800_43899",
-        "e43900_43999",
-        "e44000_44099",
-        "e44100_44199",
-        "e44200_44299",
-        "e44300_44399",
-        "e44400_44499",
-        "e44500_44599",
-        "e44600_44699",
-        "e44700_44799",
-        "e44800_44899",
-        "e44900_44999",
-        "e45000_45099",
-        "e45100_45199",
-        "e45200_45299",
-        "e45300_45399",
-        "e45400_45499",
-        "e45500_45599",
-        "e45600_45699",
-        "e45700_45799",
-        "e45800_45899",
-        "e45900_45999",
-        "e46000_46099",
-        "e46100_46199",
-        "e46200_46299",
-    ):
-        raw6_suffix = ".2"
-    elif eclipse_range in (
-        "e46300_46399",
-        "e46400_46499",
-        "e46500_46599",
-        "e46600_46699",
-        "e46700_46799",
-        "e46800_46899",
-    ):
-        raw6_suffix = ".3"
-    else:
-        raw6_suffix = ""
-    raw6_directory = f"RAW6{raw6_suffix}"
     eclipse = str(eclipse).zfill(5)
     base_url = (
-        f"{mast_url}/{raw6_directory}/{eclipse_range}/{eclipse}/e{eclipse}"
+        f"{mast_url}/RAW6/{eclipse_range}/{eclipse}/e{eclipse}"
     )
     return {
         "scst_url": f"{base_url}-scst.fits.gz",
@@ -171,22 +76,14 @@ def download_raw6(
     if not os.path.exists(os.path.dirname(filepath)):
         print("Creating {dirname}".format(dirname=os.path.dirname(filepath)))
         os.makedirs(os.path.dirname(filepath))
-    mc.print_inline("Querying {url}".format(url=url))
-    r = requests.get(url)
-    if r.status_code == 404:
-        mc.print_inline(
-            "Querying {url} (retry)".format(url=url.replace("RAW6", "RAW6.2"))
-        )
-        # Higher number visits have a different URL, so try that one...
-        r = requests.get(url.replace("RAW6", "RAW6.2"))
-        if r.status_code == 404:
-            mc.print_inline(
-                "No raw6 file available for {band} e{eclipse}.".format(
-                    band=band, eclipse=eclipse
-                )
-            )
-            print("")
-            return False
+    for suffix in ["",".2",".3"]: # try all the variant directories, which follow no reasonable rule
+        mc.print_inline("Querying {url}".format(url=url.replace('RAW6',f'RAW6{suffix}')))
+        r = requests.get(url)
+        if not r.status_code == 404:
+            break
+    if r.status_code == 404: # No data found
+        print(f'\nNo data found for {eclipse} {band}')
+        return
     mc.print_inline(
         "Downloading {url} \n\t to {filepath}".format(url=url, filepath=filepath)
     )
@@ -475,44 +372,43 @@ def make_gap_qa_plots(eclipse, sourceid, imfile=None,
     return
 
 def make_images(
-    eclipse,
+    photonfile,
     band,
     pixsz=0.000416666666666667,
     imsz=[3200, 3200],
-    data_directory="data",
     detrad_pix=350,
-    bins=["", 120],
+    bins=["", 120, 30],#, 5,],
+        extension='.parquet'
 ):
-    photonfile = "{data_directory}/e{eclipse}/e{eclipse}-{b}d.h5".format(
-        data_directory=data_directory, eclipse=eclipse, b="n" if band=="NUV" else "f"
-    )
+    #photonfile = f"{data_directory}/e{eclipse}/e{eclipse}-{band.lower()[0]}d.{extension}"
 
-    if os.path.exists(os.path.dirname(photonfile) + "/No{band}".format(band=band)):
-        print("No data.")
+    if (os.path.exists(os.path.dirname(photonfile) + "/No{band}".format(band=band)) or
+            os.path.exists(os.path.dirname(photonfile) + "/No{band}-valid".format(band=band))):
+        print("The NoData flag has been set for this observation.")
         return
 
-    xcalfilename = photonfile.replace(".h5", "-xcal.h5")
-    print("Reading data from {xcalfilename}".format(xcalfilename=xcalfilename))
-    events = pd.read_hdf(xcalfilename, "events")
+    # TODO: Check to see whether images and movies exist already, and abort if so, unless forced.
+
+    events = pd.read_parquet(photonfile)
     if (
         not (0 in np.unique(events['flags'].values)) or not np.isfinite(events["ra"]).any()
-    ):
+    ):  # No unflagged data
         print("No unflagged data.")
         pathlib.Path(
-            os.path.dirname(photonfile) + "/No{band}".format(band=band)
+            os.path.dirname(photonfile) + "/No{band}-valid".format(band=band)
         ).touch()
         return
 
     for binsz in bins:
         if not binsz:
-            cntfilename = photonfile.replace(".h5", "-cnt.fits")
+            print('Generating a full-depth image.')
+            cntfilename = photonfile.replace(extension, "-cnt.fits")
         else:
-            cntfilename = photonfile.replace(".h5", f"-mov-{int(binsz)}s.fits")
+            cntfilename = photonfile.replace(extension, f"-mov{str(binsz).zfill(3)}.fits")
         print("Integrating {cntfilename}".format(cntfilename=cntfilename))
         tranges, exptimes = [], []
         image, flagmap, edgemap = [], [], []  # to try to recover some memory
         trange = [events["t"].min(), events["t"].max()]
-        print(f'\t[{trange[0]},{trange[1]}]')
         t0s = np.arange(trange[0], trange[1], binsz if binsz else trange[1] - trange[0])
         center_skypos = (
             events["ra"].min() + (events["ra"].max() - events["ra"].min()) / 2,
@@ -521,7 +417,7 @@ def make_images(
         wcs = make_wcs(center_skypos)
 
         for i, t0 in enumerate(t0s):
-            mc.print_inline("\tProcessing frame {i} of {n}".format(i=i + 1, n=len(t0s)))
+            mc.print_inline("\tFrame {i} of {n}".format(i=i + 1, n=len(t0s)))
             t1 = t0 + (binsz if binsz else trange[1] - trange[0])
             ix = np.where(
                 (events["t"] >= t0) & (events["t"] < t1) & (events["flags"] == 0)
@@ -529,48 +425,51 @@ def make_images(
             if not len(ix[0]):
                 continue
             tranges += [[t0, t1]]
-            coo = list(zip(events["ra"].iloc[ix[0]], events["dec"].iloc[ix[0]]))
+            coo = list(zip(events["ra"][ix[0]], events["dec"][ix[0]]))
             foc = wcs.sip_pix2foc(wcs.wcs_world2pix(coo, 1), 1)
             weights = 1.0 / events["response"][ix[0]]
-            H, xedges, yedges = np.histogram2d(
+            #H, xedges, yedges = np.histogram2d(
+            H = histogram2d(
                 foc[:, 1] - 0.5,
                 foc[:, 0] - 0.5,
                 bins=imsz,
                 range=([[0, imsz[0]], [0, imsz[1]]]),
                 weights=weights,
             )
-            foc = []
             if len(t0s) == 1:
                 image = H
             else:
                 image += [H]
             exptimes += [compute_exptime(events, band, tranges[-1])]
         if not binsz:
+            print("Generating flag backplanes for full-depth image.")
             ix = np.where(
-                (events.col.values > 0.0)
-                & (events.col.values < 799.0)
-                & (events.row.values > 0.0)
-                & (events.row.values < 799.0)
-                & (events.t.values >= trange[0])
-                & (events.t.values < trange[1])
+                (events["col"].values > 0.0)
+                & (events["col"].values < 799.0)
+                & (events["row"].values > 0.0)
+                & (events["row"].values < 799.0)
+                & (events["t"].values >= trange[0])
+                & (events["t"].values < trange[1])
             )
             mask, maskinfo = cal.mask(band)
             masked_ix = np.where(
                 mask[
-                    np.array(events.col.values[ix], dtype="int64"),
-                    np.array(events.row.values[ix], dtype="int64"),
+                    np.array(events["col"].values[ix], dtype="int64"),
+                    np.array(events["row"].values[ix], dtype="int64"),
                 ]
                 == 0
             )
             try:
                 coo = list(
                     zip(
-                        events.ra.values[ix][masked_ix],
-                        events.dec.values[ix][masked_ix],
+                        events["ra"].values[ix][masked_ix],
+                        events["dec"].values[ix][masked_ix],
                     )
                 )
                 foc = wcs.sip_pix2foc(wcs.wcs_world2pix(coo, 1), 1)
-                flagmap, _, _ = np.histogram2d(
+                #flagmap, _, _ = np.histogram2d(
+                flagmap = histogram2d(
+
                     foc[:, 1] - 0.5,
                     foc[:, 0] - 0.5,
                     bins=imsz,
@@ -582,17 +481,18 @@ def make_images(
                 flagmap = np.zeros(imsz)
             edge_ix = np.where(
                 np.sqrt(
-                    (np.array(events.col.values[ix], dtype="int64") - 400) ** 2
-                    + (np.array(events.row.values[ix], dtype="int64") - 400) ** 2
+                    (np.array(events["col"].values[ix], dtype="int64") - 400) ** 2
+                    + (np.array(events["row"].values[ix], dtype="int64") - 400) ** 2
                 )
                 > detrad_pix
             )
             try:
                 coo = list(
-                    zip(events.ra.values[ix][edge_ix], events.dec.values[ix][edge_ix])
+                    zip(events["ra"].values[ix][edge_ix], events["dec"].values[ix][edge_ix])
                 )
                 foc = wcs.sip_pix2foc(wcs.wcs_world2pix(coo, 1), 1)
-                edgemap, _, _ = np.histogram2d(
+                #edgemap, _, _ = np.histogram2d(
+                edgemap = histogram2d(
                     foc[:, 1] - 0.5,
                     foc[:, 0] - 0.5,
                     bins=imsz,
@@ -612,11 +512,12 @@ def make_images(
             )
         else:
             hdulist = pyfits.HDUList([hdu])
-        print("\t\tWriting {cntfilename}".format(cntfilename=cntfilename))
+        print(f"\t\tWriting {cntfilename}")
         hdulist.writeto(cntfilename, overwrite=True)
-        print("\t\tCompressing {cntfilename}.gz".format(cntfilename=cntfilename))
-        os.system("gzip -f {cntfilename}".format(cntfilename=cntfilename))
-        make_qa_plots(cntfilename + ".gz")
+        print(f"\t\tCompressing {cntfilename}.gz")
+        os.system(f"gzip -f {cntfilename}")
+        #if not binsz: # Generate a full depth quicklook image
+        #    make_qa_plots(cntfilename + ".gz")
     return
 
 

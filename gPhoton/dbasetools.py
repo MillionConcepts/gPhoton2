@@ -48,7 +48,7 @@ def get_aspect(band, skypos, trange=[6e8, 11e8], verbose=0, detsize=1.25):
                                                         detsize=detsize),
                                    verbose=verbose))
 
-    data = {'eclipse':np.array(asp[:, 0], dtype='int16'), 'filename':asp[:, 1],
+    data = {'eclipse':np.array(asp[:, 0], dtype='int32'), 'filename':asp[:, 1],
             't':np.array(asp[:, 2], dtype='float64')/tscale,
             'ra':np.array(asp[:, 3], dtype='float64'),
             'dec':np.array(asp[:, 4], dtype='float64'),
