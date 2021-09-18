@@ -34,7 +34,7 @@ from gPhoton._numbafied_pipe_components import (
     sum_corners,
 )
 from gPhoton._shared_memory_pipe_components import (
-    get_arrays_from_shared_memory,
+    reference_shared_memory_arrays,
     send_to_shared_memory,
 )
 from gPhoton.gnomonic import gnomfwd_simple, gnomrev_simple
@@ -139,11 +139,11 @@ def process_chunk_in_shared_memory(
     xoffset,
     yoffset,
 ):
-    chunk_blocks, chunk = get_arrays_from_shared_memory(block_info)
+    chunk_blocks, chunk = reference_shared_memory_arrays(block_info)
     cal_data = {}
     all_cal_blocks = []
     for cal_name, cal_info in cal_block_info.items():
-        cal_blocks, cal_arrays = get_arrays_from_shared_memory(cal_info)
+        cal_blocks, cal_arrays = reference_shared_memory_arrays(cal_info)
         all_cal_blocks.append(cal_blocks)
         cal_data[cal_name] = cal_arrays
     chunk = apply_all_corrections(

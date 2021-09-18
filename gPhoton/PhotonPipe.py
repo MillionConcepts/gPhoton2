@@ -37,7 +37,7 @@ from gPhoton._pipe_components import (
 # ------------------------------------------------------------------------------
 
 from gPhoton._shared_memory_pipe_components import (
-    unlink_cal_blocks,
+    unlink_nested_block_dict,
     slice_into_shared_chunks,
     send_cals_to_shared_memory,
     get_column_from_shared_memory,
@@ -191,7 +191,7 @@ def photonpipe(
     chunk_indices = sorted(results.keys())
     array_dict = {}
     if share_memory is True:
-        unlink_cal_blocks(cal_data)
+        unlink_nested_block_dict(cal_data)
         for name in results[0].keys():
             array_dict[name] = get_column_from_shared_memory(
                 results, name, unlink=True

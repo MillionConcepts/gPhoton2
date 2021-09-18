@@ -8,18 +8,20 @@ from __future__ import absolute_import, division, print_function
 
 # Core and Third Party imports.
 import gzip
-from collections import defaultdict
+from collections import defaultdict, Collection
 from io import BytesIO
 from itertools import product
 from statistics import mode
 
+
 import fitsio
+import numpy as np
+import pandas as pd
 import zstandard
 from astropy.time import Time
 import scipy.stats
 import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
+
 
 # gPhoton imports.
 from pyarrow import parquet
@@ -627,3 +629,11 @@ def diff_photonlist_and_movie_coords(movie_radec, photon_radec):
             minmax_funcs[op](movie_radec[coord]) - photon_radec[coord][op]
         )
     return diffs
+
+
+def listify(thing):
+    """Always a list, for things that want lists"""
+    if isinstance(thing, Collection):
+        if not isinstance(thing, str):
+            return list(thing)
+    return [thing]

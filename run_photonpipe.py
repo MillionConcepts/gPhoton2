@@ -4,10 +4,7 @@ from gPhoton import PhotonPipe
 import gfcat.gfcat_utils as gfu
 
 
-
-
-
-def run_this(eclipse):
+def run_photonpipe(eclipse):
     band = "NUV"
     data_directory = "test_data"
     raw6file = gfu.download_raw6(eclipse, band, data_directory=data_directory)
@@ -18,11 +15,14 @@ def run_this(eclipse):
     )
     print(f"Photon data file: {photonfile}")
     PhotonPipe.photonpipe(
-        photonfile, band, raw6file=raw6file, verbose=2, chunksz=500000,
-        threads=8
+        photonfile,
+        band,
+        raw6file=raw6file,
+        verbose=2,
+        chunksz=1000000,
+        threads=4,
     )
 
+
 if __name__ == '__main__':
-    run_this(38325)
-
-
+    run_photonpipe(38325)

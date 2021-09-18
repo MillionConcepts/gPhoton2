@@ -20,7 +20,13 @@ def interpolate_aspect_solutions(
     return deta, dxi
 
 
-def find_null_indices(aspflags: object, aspect_slice: object, asptime: object, flags: object, ok_indices: object) -> object:
+def find_null_indices(
+    aspflags: np.ndarray,
+    aspect_slice: np.ndarray,
+    asptime: np.ndarray,
+    flags: np.ndarray,
+    ok_indices: np.ndarray
+) -> (np.ndarray, np.ndarray):
     flag_slice = flags[ok_indices]
     cut = (
         ((asptime[aspect_slice + 1] - asptime[aspect_slice]) == 1)
