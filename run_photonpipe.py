@@ -3,7 +3,8 @@ from pathlib import Path
 from gPhoton import PhotonPipe
 import gfcat.gfcat_utils as gfu
 
-def run_this(eclipse,band='NUV',data_directory = "test_data",rerun=False):
+
+def run_photonpipe(eclipse,band='NUV',data_directory = "test_data",rerun=False):
     if eclipse>47000:
         print(f'CAUSE data w/ eclipse>47000 are not yet supported.')
         return
@@ -24,7 +25,7 @@ def run_this(eclipse,band='NUV',data_directory = "test_data",rerun=False):
     )
 
 if __name__ == '__main__':
-    run_this(42645)
+    run_photonpipe(42645)
     #run_this(12000)
 
 

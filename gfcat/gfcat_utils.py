@@ -188,7 +188,7 @@ def fits_header(band, wcs, tranges, exptimes, hdu=None):
 def make_wcs(
     skypos,
     pixsz=0.000416666666666667,  # Same as the GALEX intensity maps
-    imsz=[3200, 3200],  # Same as the GALEX intensity maps):
+    imsz=(3200, 3200),  # Same as the GALEX intensity maps):
 ):
     wcs = pywcs.WCS(naxis=2)
     wcs.wcs.cdelt = np.array([-pixsz, pixsz])

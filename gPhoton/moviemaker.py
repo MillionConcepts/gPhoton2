@@ -1,26 +1,23 @@
-import gc
 import gzip
-import os
 import warnings
 from collections.abc import Sequence
 from multiprocessing import Pool
-from multiprocessing.shared_memory import SharedMemory
 from pathlib import Path
-from typing import Optional, Union
+from typing import Optional
 
 import astropy.io.fits as pyfits
-import astropy.wcs.wcs
 import fast_histogram as fh
 import numpy as np
+import scipy.sparse
 from more_itertools import windowed
 from pyarrow import parquet
-import scipy.sparse
 from zstandard import ZstdCompressor
 
 import gPhoton.constants as c
 import gfcat.gfcat_utils as gfu
 from gPhoton import MCUtils as mc
 from gPhoton import __version__
+from gPhoton._numbafied_pipe_components import between
 from gPhoton._shared_memory_pipe_components import (
     reference_shared_memory_arrays,
     unlink_nested_block_dict,
@@ -29,12 +26,10 @@ from gPhoton._shared_memory_pipe_components import (
 )
 from gPhoton.gphoton_utils import (
     table_values,
-    where_between,
     NestingDict,
 )
 
 
-# @profile
 def optimize_wcs(radec):
     real_ra = radec[:, 0][np.isfinite(radec[:, 0])]
     real_dec = radec[:, 1][np.isfinite(radec[:, 1])]
@@ -68,17 +63,8 @@ def optimize_compute_shutter(timeslice, flagslice, trange, shutgap=0.05):
     return shutter
 
 
-def sm_compute_exptime(event_block_info, band, trange):
-    """
-    this retrieves exptime in presliced chunks from shared memory; thus
-    no time indexing needs to happen inside this function.
-    """
-    _, event_dict = reference_shared_memory_arrays(event_block_info)
-    events = event_dict["exposure"]
-    rawexpt = trange[1] - trange[0]
-    shutter = optimize_compute_shutter(
-        events[:, 0], flagslice=events[:, 1], trange=trange
-    )
+def _compute_exptime(timeslice, flagslice, band, trange):
+    shutter = optimize_compute_shutter(timeslice, flagslice, trange)
     # Calculate deadtime
     model = {
         "NUV": [-0.000434730599193, 77.217817988],
@@ -86,39 +72,8 @@ def sm_compute_exptime(event_block_info, band, trange):
     }
     # TODO: THIS IS A CORRECTION THAT NEEDS TO BE
     #  IMPLEMENTED IN gPhoton!!!
-    rawexpt -= shutter
-
-    if rawexpt == 0:
-        return rawexpt
-    gcr = len(events[:, 0]) / rawexpt
-    feeclkratio = 0.966
-    refrate = model[band][1] / feeclkratio
-    scr = model[band][0] * gcr + model[band][1]
-    deadtime = 1 - scr / feeclkratio / refrate
-    return rawexpt * (1.0 - deadtime)
-
-
-def optimize_compute_exptime(
-    events: np.ndarray, band: str, trange: Sequence[int]
-) -> float:
     rawexpt = trange[1] - trange[0]
-    times = events[:, 0]
-    tix = np.where((times >= trange[0]) & (times < trange[1]))
-    timeslice = times[tix]
-    shutter = optimize_compute_shutter(
-        timeslice, flagslice=events[:, 1][tix], trange=trange
-    )
-
-    # Calculate deadtime
-    model = {
-        "NUV": [-0.000434730599193, 77.217817988],
-        "FUV": [-0.000408075976406, 76.3000943221],
-    }
-
-    # TODO: THIS IS A CORRECTION THAT NEEDS TO BE
-    #  IMPLEMENTED IN gPhoton!!!
     rawexpt -= shutter
-
     if rawexpt == 0:
         return rawexpt
     gcr = len(timeslice) / rawexpt
@@ -129,41 +84,30 @@ def optimize_compute_exptime(
     return rawexpt * (1.0 - deadtime)
 
 
+def shared_compute_exptime(event_block_info, band, trange):
+    """
+    this retrieves exptime in presliced chunks from shared memory; thus
+    no time indexing needs to happen inside this function.
+    """
+    _, event_dict = reference_shared_memory_arrays(event_block_info)
+    events = event_dict["exposure"]
+    return _compute_exptime(events[:, 0], events[:, 1], band, trange)
+
+
+def unshared_compute_exptime(
+    events: np.ndarray, band: str, trange: Sequence[int]
+) -> float:
+    times = events[:, 0]
+    tix = np.where((times >= trange[0]) & (times < trange[1]))
+    return _compute_exptime(times[tix], events[:, 1][tix], band, trange)
+
+
 def select_on_detector(event_table, threshold=400):
     detrad = event_table["detrad"].to_numpy()
     return event_table.take(
         # TODO: is isfinite() necessary?
         np.where(np.isfinite(detrad) & (detrad < threshold))[0]
     )
-
-
-# @profile
-def make_images(
-    photonfile: Union[str, os.PathLike],
-    depth: Sequence[Union[int, None]],
-    band: str = "NUV",
-    edge_threshold: int = 350,
-    lil: bool = False,
-):
-    print("making exposure tables & WCS solution")
-    exposure_array, indexed, trange, wcs = prep_image_inputs(
-        photonfile, edge_threshold
-    )
-    imsz = (
-        int((wcs.wcs.crpix[1] - 0.5) * 2),
-        int((wcs.wcs.crpix[0] - 0.5) * 2),
-    )
-    # TODO: write each framesize out mid_loop
-    movies, tranges, exptimes = {}, [], []
-    for framesize in depth:
-        print(f"making {framesize}-second depth movie")
-        movies, tranges, exptimes = make_frames_at_depth(
-            framesize, exposure_array, indexed, trange, imsz, band, lil
-        )
-        mc.print_inline("")
-    return movies, wcs, tranges, exptimes
-
-    # TODO: Write the images.
 
 
 def prep_image_inputs(photonfile, edge_threshold):
@@ -176,12 +120,9 @@ def prep_image_inputs(photonfile, edge_threshold):
     mask_ix = np.where(event_table["mask"].to_numpy())
     edge_ix = np.where(event_table["detrad"].to_numpy() > edge_threshold)
     t = event_table["t"].to_numpy()
-    indexed = generate_indexed_values(edge_ix, foc, mask_ix, t, weights)
-    trange = (
-        np.min(event_table["t"].to_numpy()),
-        np.max(event_table["t"].to_numpy()),
-    )
-    return exposure_array, indexed, trange, wcs
+    map_ix_dict = generate_indexed_values(edge_ix, foc, mask_ix, t, weights)
+    total_trange = (t.min(), t.max())
+    return exposure_array, map_ix_dict, total_trange, wcs
 
 
 def generate_indexed_values(edge_ix, foc, mask_ix, t, weights):
@@ -194,8 +135,8 @@ def generate_indexed_values(edge_ix, foc, mask_ix, t, weights):
     return indexed
 
 
-def make_frames_at_depth(
-    framesize: Optional[int],
+def make_movies(
+    depth: Optional[int],
     exposure_array: np.ndarray,
     map_ix_dict: dict,
     total_trange: tuple[int, int],
@@ -205,7 +146,7 @@ def make_frames_at_depth(
     threads: Optional[int] = 4,
 ) -> tuple[dict[str, list[np.ndarray]], list, list]:
     """
-    :param framesize: framesize in seconds; None for full range
+    :param depth: framesize in seconds
     :param exposure_array: t and flags, _including_ off-detector, for exptime
     :param map_ix_dict: cnt, edge, and mask indices for weights, t, and foc
     :param total_trange: (time minimum, time maximum) for on-detector events
@@ -217,16 +158,7 @@ def make_frames_at_depth(
     if threads is None:
         # TODO: write this part
         raise NotImplementedError("oops, I didn't write this part yet")
-    interval = total_trange[1] - total_trange[0]
-    t0s = np.arange(
-        total_trange[0],
-        total_trange[1] + framesize
-        if framesize is not None
-        else total_trange[1] + interval,
-        framesize
-        if framesize is not None
-        else total_trange[1] - total_trange[0],
-    )
+    t0s = np.arange(total_trange[0], total_trange[1] + depth, depth)
     tranges = list(windowed(t0s, 2))
     exposure_directory = slice_exposure_into_memory(exposure_array, tranges)
     del exposure_array
@@ -234,63 +166,59 @@ def make_frames_at_depth(
     # TODO: these _are_ always sorted by time, right? check
     for map_name in list(map_ix_dict.keys()):
         for frame_ix, trange in enumerate(tranges):
-            frame_time_ix = where_between(map_ix_dict[map_name]["t"], *trange)
+            frame_time_ix = between(map_ix_dict[map_name]["t"], *trange)[0]
             map_directory[frame_ix][map_name] = slice_into_memory(
                 {k: v for k, v in map_ix_dict[map_name].items() if k != "t"},
                 (frame_time_ix.min(), frame_time_ix.max()),
             )
         del map_ix_dict[map_name]
     del map_ix_dict
-    # pool = Pool(threads)
+    pool = Pool(threads)
     results = {}
     for frame_ix, trange in enumerate(tranges):
         headline = f"Integrating frame {frame_ix + 1} of {len(tranges)}"
         # noinspection PyTypeChecker
-        results[frame_ix] = sm_compute_movie_frames(
-            band,
-            map_directory[frame_ix],
-            exposure_directory[frame_ix],
-            trange,
-            imsz,
-            lil,
-            headline
-        )
-        # time.sleep(10)
-        # raise
-        # results[frame_ix] = pool.apply_async(
-        #     sm_compute_movie_frames,
-        #     (
-        #         band,
-        #         map_directory[frame_ix],
-        #         exposure_directory[frame_ix],
-        #         trange,
-        #         imsz,
-        #         lil,
-        #         headline,
-        #     ),
+        # results[frame_ix] = sm_compute_movie_frame(
+        #     band,
+        #     map_directory[frame_ix],
+        #     exposure_directory[frame_ix],
+        #     trange,
+        #     imsz,
+        #     lil,
+        #     headline,
         # )
-    # pool.close()
-
-    mc.print_inline("... gathering results ...")
-    # pool.join()
-    # results = {task: result.get() for task, result in results.items()}
+        results[frame_ix] = pool.apply_async(
+            sm_compute_movie_frame,
+            (
+                band,
+                map_directory[frame_ix],
+                exposure_directory[frame_ix],
+                trange,
+                imsz,
+                lil,
+                headline,
+            ),
+        )
+    pool.close()
+    pool.join()
+    results = {task: result.get() for task, result in results.items()}
     frame_indices = sorted(results.keys())
     movies = {"cnt": [], "flag": [], "edge": []}
     exptimes = []
     for frame_ix in frame_indices:
         movies["cnt"].append(results[frame_ix]["cnt"])
-        movies["flag"].append(results[frame_ix]["cnt"])
-        movies["edge"].append(results[frame_ix]["cnt"])
+        movies["flag"].append(results[frame_ix]["flag"])
+        movies["edge"].append(results[frame_ix]["edge"])
         exptimes.append(results[frame_ix]["exptime"])
         del results[frame_ix]
     return movies, tranges, exptimes
 
 
-def sm_compute_movie_frames(
+def sm_compute_movie_frame(
     band, map_block_info, exposure_block_info, trange, imsz, lil, headline
 ):
     mc.print_inline(headline)
-    exptime = sm_compute_exptime(exposure_block_info, band, trange)
+    exptime = shared_compute_exptime(exposure_block_info, band, trange)
     # todo: make this cleaner...?
     expblock, _ = reference_shared_memory_arrays(
         exposure_block_info, fetch=False
@@ -315,11 +243,7 @@ def slice_exposure_into_memory(exposure_array, tranges):
     times = exposure_array[:, 0]
     for frame_ix, trange in enumerate(tranges):
         exposure_directory[frame_ix] = send_to_shared_memory(
-            {
-                "exposure": exposure_array[
-                    np.where((times >= trange[0]) & (times < trange[1]))
-                ]
-            }
+            {"exposure": exposure_array[between(times, trange[0], trange[1])]}
         )
     return exposure_directory
 
@@ -337,27 +261,6 @@ def sm_make_maps(block_directory, imsz, lil=False):
 def sm_make_map(block_directory, map_name, imsz):
     _, map_arrays = reference_shared_memory_arrays(block_directory[map_name])
     return make_frame(map_arrays["foc"], map_arrays["weights"], imsz)
-
-
-# def make_maps(indexed, trange, wcs):
-#     t0, t1 = trange
-#     t, foc, weights = [indexed[n]["det"] for n in ("t", "foc", "weights")]
-#     cnt_tix = where_between(t, t0, t1)
-#     cntmap = make_frame(foc[cnt_tix], weights[cnt_tix], wcs)
-#     flag_tix = where_between(indexed["t"]["mask"], t0, t1)
-#     flagmap = make_frame(
-#         indexed["foc"]["mask"][flag_tix],
-#         indexed["weights"]["mask"][flag_tix],
-#         wcs,
-#     )
-#     edge_tix = where_between(indexed["t"]["edge"], t0, t1)
-#     edgemap = make_frame(
-#         indexed["foc"]["edge"][edge_tix],
-#         indexed["weights"]["edge"][edge_tix],
-#         wcs,
-#     )
-#     return cntmap, edgemap, flagmap
-#
 
 
 def generate_wcs_components(event_table):
@@ -408,35 +311,63 @@ def populate_fits_header(band, wcs, tranges, exptimes):
     return header
 
 
-def write_movie(
-    band, depth, eclipse, exptimes, movies, tranges, wcs, compression="gz"
-):
-    # TODO: nicer depth filenaming in the inner loop, garbage hack
-    # TODO: actually write all the frames
-    if depth == [None]:
-        frame_title = "-full"
-    else:
-        frame_title = f"-{depth[0]}s"
-    movie_fn = f"test_data/e{eclipse}/e{eclipse}{frame_title}" \
-               f"-cnt.fits.{compression}"
-    if Path(movie_fn).exists():
-        print(f"overwriting {movie_fn}")
-        Path(movie_fn).unlink()
+def open_compressed_stream(fn, compression):
+    if Path(fn).exists():
+        print(f"overwriting {fn}")
+        Path(fn).unlink()
     if compression == "zstd":
-        file_handle = open(movie_fn, "wb+")
+        file_handle = open(fn, "wb+")
         compressor = ZstdCompressor(level=-1)
         writer = compressor.stream_writer(file_handle)
     else:
-        file_handle = gzip.open(movie_fn, "wb+", compresslevel=3)
+        file_handle = gzip.open(fn, "wb+", compresslevel=3)
         writer = file_handle
+    return file_handle, writer
+
+
+def write_movie(
+    band,
+    depth,
+    eclipse,
+    exptimes,
+    movies,
+    tranges,
+    wcs,
+    compression="gz",
+    write_split=True,
+):
+    title = "-full" if depth is None else f"-{depth}s"
+
     # TODO, maybe: rewrite this to have to not assemble the primary hdu in
     #  order to make the header
-    print(f"writing {depth[0]}-second depth movie to {movie_fn}")
+
     header = populate_fits_header(band, wcs, tranges, exptimes)
+
+    if depth is None:
+        movie_name = "full-depth image"
+    else:
+        movie_name = f"{depth}-second depth movie"
+    if write_split is False:
+        movie_fn = (
+            f"test_data/e{eclipse}/e{eclipse}{title}" f".fits.{compression}"
+        )
+        file_handle, writer = open_compressed_stream(movie_fn, compression)
+        print(f"writing {movie_name} to {movie_fn}")
+    else:
+        print("writing planes separately, pass write_split=False to not")
     for key in ["cnt", "flag", "edge"]:
-        print(f"writing {key} map to file")
+        print(f"writing {key} map")
+        if write_split is True:
+            movie_fn = (
+                f"test_data/e{eclipse}/e{eclipse}{title}-{key}.fits."
+                f"{compression}"
+            )
+            file_handle, writer = open_compressed_stream(movie_fn, compression)
+            print(f"writing to {movie_fn}")
         add_movie_to_fits_file(writer, movies[key], header)
         del movies[key]
+        if write_split is True:
+            writer.close()
     del movies
     writer.close()
 
@@ -446,18 +377,138 @@ def add_movie_to_fits_file(writer, movie, header):
         pyfits.append(
             writer,
             np.stack([frame.toarray() for frame in movie]),
-            header=header
+            header=header,
         )
     else:
         pyfits.append(writer, np.stack(movie), header=header)
 
 
-def make_movies(eclipse, depths, band, lil=False, compression="gz"):
+def make_full_depth_image(
+    exposure_array, map_ix_dict, total_trange, imsz, band="NUV"
+):
+    # TODO: feels weird to have the nominal range end up twice as long as
+    #  the actual range, but the ending value can actually be arbitrarily
+    #  far in the future, right?
+    interval = total_trange[1] - total_trange[0]
+    trange = np.arange(total_trange[0], total_trange[1] + interval, interval)
+    exptime = unshared_compute_exptime(exposure_array, band, trange)
+    images = {
+        map_name: make_frame(
+            map_ix_dict[map_name]["foc"],
+            map_ix_dict[map_name]["weights"],
+            imsz,
+        )
+        for map_name in ["cnt", "flag", "edge"]
+    }
+    return images, trange, exptime
+
+
+def handle_movie_and_image_creation(
+    eclipse,
+    depth,
+    band,
+    lil=False,
+    compression="gz",
+    make_full=True,
+    edge_threshold: int = 350,
+    write_to_file=True,
+):
     photonfile = f"test_data/e{eclipse}/e{eclipse}-nd.parquet"
-    print(f"making movies at {depths}-second depths from {photonfile}")
-    movies, wcs, tranges, exptimes = make_images(
-        photonfile, depth=depths, lil=lil
+    print(f"making images from {photonfile}")
+    if write_to_file is True:
+        print(
+            "write_to_file=True passed, writing to disk and cleaning up "
+            "in-memory values"
+        )
+    else:
+        print("write_to_file=False passed, returning in-memory values")
+    print("indexing data and making WCS solution")
+    exposure_array, map_ix_dict, total_trange, wcs = prep_image_inputs(
+        photonfile, edge_threshold
     )
-    write_movie(
-        band, depths, eclipse, exptimes, movies, tranges, wcs, compression
+    imsz = (
+        int((wcs.wcs.crpix[1] - 0.5) * 2),
+        int((wcs.wcs.crpix[0] - 0.5) * 2),
     )
+    render_kwargs = {
+        "exposure_array": exposure_array,
+        "map_ix_dict": map_ix_dict,
+        "total_trange": total_trange,
+        "imsz": imsz,
+        "band": band,
+    }
+    writer_kwargs = {
+        "eclipse": eclipse,
+        "wcs": wcs,
+        "compression": compression,
+        "band": band,
+    }
+    # TODO: this slightly less horrible format makes me unable to delete the
+    #  exposure array inline. consider doing something about this.
+    exptime, images, trange = handle_full_depth_image(
+        depth, make_full, render_kwargs, write_to_file, writer_kwargs,
+    )
+    exptimes, movies, tranges = handle_movie(
+        depth, lil, render_kwargs, write_to_file, writer_kwargs
+    )
+    if write_to_file is True:
+        return
+    output_dict = {"wcs": wcs}
+    if movies is not None:
+        output_dict["movie"] = {
+            "cnt": movies["cnt"],
+            "flag": movies["flag"],
+            "edge": movies["edge"],
+            "tranges": tranges,
+            "exptimes": exptimes,
+        }
+        if images is not None:
+            output_dict["image"] = {
+                "cnt": images["cnt"],
+                "flag": images["flag"],
+                "edge": images["edge"],
+                "trange": trange,
+                "exptime": exptime,
+            }
+        return output_dict
+
+
+def handle_movie(depth, lil, render_kwargs, write_to_file, writer_kwargs):
+    if depth is not None:
+        print(f"making {depth}-second movie")
+        movies, tranges, exptimes = make_movies(
+            depth=depth, lil=lil, **render_kwargs
+        )
+        del render_kwargs
+        if write_to_file is True:
+            write_movie(
+                depth=depth,
+                exptimes=exptimes,
+                movies=movies,
+                tranges=tranges,
+                **writer_kwargs,
+            )
+    else:
+        movies, tranges, exptimes = None, None, None
+    return exptimes, movies, tranges
+
+
+def handle_full_depth_image(
+    depth, make_full_frame, render_kwargs, write_to_file, writer_kwargs
+):
+    if (depth is None) or (make_full_frame is True):
+        print(f"making full-depth image")
+        # special case: don't be careful about memory, just go for it.
+        images, trange, exptime = make_full_depth_image(**render_kwargs)
+        if write_to_file is True:
+            write_movie(
+                depth=None,
+                exptimes=[exptime],
+                movies=images,
+                tranges=[trange],
+                **writer_kwargs,
+            )
+            images = None
+    else:
+        images, trange, exptime = None, None, None
+    return exptime, images, trange

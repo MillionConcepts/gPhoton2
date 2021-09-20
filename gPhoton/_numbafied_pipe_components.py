@@ -201,4 +201,8 @@ def float_between_wiggled_points(blt_u, floor_xy, wig_xy, xya_ix):
     return np.array(wigix) * (1 - blt_u) + np.array(wigix1) * blt_u
 
 
+def between(reference, t0, t1):
+    return np.where((reference >= t0) & (reference < t1))
+
+
 jit_module(nopython=True, cache=True)

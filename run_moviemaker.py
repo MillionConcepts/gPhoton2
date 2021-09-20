@@ -1,13 +1,21 @@
 import time
 from pathlib import Path
 
+
 from gPhoton.gphoton_utils import get_parquet_stats
-from gPhoton.moviemaker import make_movies
+from gPhoton.moviemaker import handle_movie_and_image_creation
 from run_photonpipe import run_photonpipe
 
 
 def run_moviemaker(
-    eclipse, depths, band="NUV", make_photon_list=True, lil=False, compression="zstd"
+    eclipse,
+    depth,
+    band="NUV",
+    make_photon_list=True,
+    lil=False,
+    compression="zstd",
+    make_full_frame=True,
+    write_to_file=True
 ):
     data_directory = "test_data"
     photonfile = Path(
@@ -27,17 +35,27 @@ def run_moviemaker(
     if (file_stats["flags"]["min"] > 6) or (file_stats["ra"]["max"] is None):
         print(f"no unflagged data in {photonfile}. bailing out.")
         return
-    make_movies(eclipse, depths, band, lil, compression=compression)
+    handle_movie_and_image_creation(
+        eclipse,
+        depth,
+        band,
+        lil,
+        compression=compression,
+        make_full=make_full_frame,
+        write_to_file=write_to_file
+    )
 
 
 for ecl in [22650]:
     start = time.time()
     run_moviemaker(
         eclipse=ecl,
-        depths=[120],
+        depth=30,
         band="NUV",
         make_photon_list=False,
         lil=True,
-        compression="zstd"
+        compression="zstd",
+        write_to_file=False
     )
     print(time.time() - start)
+
