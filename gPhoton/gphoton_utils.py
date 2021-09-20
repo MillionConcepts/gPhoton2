@@ -11,6 +11,7 @@ import gzip
 from collections import defaultdict, Collection
 from io import BytesIO
 from itertools import product
+from pathlib import Path
 from statistics import mode
 
 
@@ -29,6 +30,8 @@ from zstandard import ZstdCompressor
 from astropy.io import fits as pyfits
 
 
+import gfcat.gfcat_utils as gfu
+import gPhoton.constants as c
 import gPhoton.galextools as gt
 import gPhoton.dbasetools as dt
 
@@ -637,3 +640,49 @@ def listify(thing):
         if not isinstance(thing, str):
             return list(thing)
     return [thing]
+
+
+def make_wcs_from_radec(radec):
+    real_ra = radec[:, 0][np.isfinite(radec[:, 0])]
+    real_dec = radec[:, 1][np.isfinite(radec[:, 1])]
+    ra_range = real_ra.min(), real_ra.max()
+    dec_range = real_dec.min(), real_dec.max()
+    center_skypos = (np.mean(ra_range), np.mean(dec_range))
+    imsz = (
+        int(np.ceil((dec_range[1] - dec_range[0]) / c.DEGPERPIXEL)),
+        int(np.ceil((ra_range[1] - ra_range[0]) / c.DEGPERPIXEL)),
+    )
+    # imsz = (3200, 3200)
+    return gfu.make_wcs(center_skypos, imsz=imsz, pixsz=c.DEGPERPIXEL)
+
+
+def read_image(fn):
+    if Path(fn).suffix == '.zstd':
+        hdu = pyfits_zopen(fn)
+    else:
+        hdu = pyfits.open(fn)
+    print(f"Opened {fn}.")
+    image = hdu[0].data
+    exptimes, tranges = [], []
+    for i in range(hdu[0].header["N_FRAME"]):
+        exptimes += [hdu[0].header[f"EXPT_{i}"]]
+        tranges += [[hdu[0].header[f"T0_{i}"], hdu[0].header[f"T1_{i}"]]]
+    skypos = (hdu[0].header["CRVAL1"], hdu[0].header["CRVAL2"])
+    wcs = gfu.make_wcs(skypos)
+    print("\tParsed file header.")
+    try:
+        flagmap = hdu[1].data
+        edgemap = hdu[2].data
+        print("\tRetrieved flag and edge maps.")
+    except IndexError:
+        flagmap = None
+        edgemap = None
+    return {
+        'image': image,
+        'flagmap': flagmap,
+        'edgemap': edgemap,
+        'wcs': wcs,
+        'tranges': tranges,
+        'exptimes': exptimes,
+        'skypos': skypos
+    }

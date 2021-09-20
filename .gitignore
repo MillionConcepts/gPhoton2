@@ -15,3 +15,4 @@
 /gPhoton/_cython_pipe_components.pyx
 /build_cython_extensions.py
 **scratch**
+*.pkl

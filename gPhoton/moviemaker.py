@@ -27,21 +27,8 @@ from gPhoton._shared_memory_pipe_components import (
 from gPhoton.gphoton_utils import (
     table_values,
     NestingDict,
+    make_wcs_from_radec,
 )
-
-
-def optimize_wcs(radec):
-    real_ra = radec[:, 0][np.isfinite(radec[:, 0])]
-    real_dec = radec[:, 1][np.isfinite(radec[:, 1])]
-    ra_range = real_ra.min(), real_ra.max()
-    dec_range = real_dec.min(), real_dec.max()
-    center_skypos = (np.mean(ra_range), np.mean(dec_range))
-    imsz = (
-        int(np.ceil((dec_range[1] - dec_range[0]) / c.DEGPERPIXEL)),
-        int(np.ceil((ra_range[1] - ra_range[0]) / c.DEGPERPIXEL)),
-    )
-    # imsz = (3200, 3200)
-    return gfu.make_wcs(center_skypos, imsz=imsz, pixsz=c.DEGPERPIXEL)
 
 
 def make_frame(foc, weights, imsz):
@@ -144,7 +131,7 @@ def make_movies(
     band: str,
     lil: bool = False,
     threads: Optional[int] = 4,
-) -> tuple[dict[str, list[np.ndarray]], list, list]:
+) -> dict:
     """
     :param depth: framesize in seconds
     :param exposure_array: t and flags, _including_ off-detector, for exptime
@@ -206,12 +193,11 @@ def make_movies(
     movies = {"cnt": [], "flag": [], "edge": []}
     exptimes = []
     for frame_ix in frame_indices:
-        movies["cnt"].append(results[frame_ix]["cnt"])
-        movies["flag"].append(results[frame_ix]["flag"])
-        movies["edge"].append(results[frame_ix]["edge"])
+        for map_name in ("cnt", "flag", "edge"):
+            movies[map_name].append(results[frame_ix][map_name])
         exptimes.append(results[frame_ix]["exptime"])
         del results[frame_ix]
-    return movies, tranges, exptimes
+    return {"tranges": tranges, "exptimes": exptimes} | movies
 
 
 def sm_compute_movie_frame(
@@ -264,7 +250,7 @@ def sm_make_map(block_directory, map_name, imsz):
 
 
 def generate_wcs_components(event_table):
-    wcs = optimize_wcs(table_values(event_table, ["ra", "dec"]))
+    wcs = make_wcs_from_radec(table_values(event_table, ["ra", "dec"]))
     # This is a bottleneck, so only do it once.
     foc = wcs.sip_pix2foc(
         wcs.wcs_world2pix(table_values(event_table, ["ra", "dec"]), 1), 1
@@ -313,62 +299,60 @@ def populate_fits_header(band, wcs, tranges, exptimes):
 
 def open_compressed_stream(fn, compression):
     if Path(fn).exists():
-        print(f"overwriting {fn}")
+        print(f"erasing {fn}")
         Path(fn).unlink()
     if compression == "zstd":
         file_handle = open(fn, "wb+")
         compressor = ZstdCompressor(level=-1)
         writer = compressor.stream_writer(file_handle)
     else:
-        file_handle = gzip.open(fn, "wb+", compresslevel=3)
-        writer = file_handle
-    return file_handle, writer
+        writer = gzip.open(fn, "wb+", compresslevel=3)
+    return writer
 
 
 def write_movie(
     band,
     depth,
     eclipse,
-    exptimes,
-    movies,
-    tranges,
+    outpath,
+    movie_dict,
     wcs,
     compression="gz",
-    write_split=True,
+    split=True,
+    clean_up = False
 ):
     title = "-full" if depth is None else f"-{depth}s"
 
     # TODO, maybe: rewrite this to have to not assemble the primary hdu in
     #  order to make the header
-
-    header = populate_fits_header(band, wcs, tranges, exptimes)
-
+    header = populate_fits_header(
+        band, wcs, movie_dict["tranges"], movie_dict["exptimes"]
+    )
     if depth is None:
         movie_name = "full-depth image"
     else:
         movie_name = f"{depth}-second depth movie"
-    if write_split is False:
-        movie_fn = (
-            f"test_data/e{eclipse}/e{eclipse}{title}" f".fits.{compression}"
-        )
+    if split is False:
+        movie_fn = (Path(outpath, f"e{eclipse}{title}.fits.{compression}"))
         file_handle, writer = open_compressed_stream(movie_fn, compression)
         print(f"writing {movie_name} to {movie_fn}")
     else:
-        print("writing planes separately, pass write_split=False to not")
-    for key in ["cnt", "flag", "edge"]:
+        print("writing planes separately, pass split=False to not")
+    for key in ["edge", "flag", "cnt"]:
         print(f"writing {key} map")
-        if write_split is True:
+        if split is True:
             movie_fn = (
-                f"test_data/e{eclipse}/e{eclipse}{title}-{key}.fits."
-                f"{compression}"
+                (Path(outpath, f"e{eclipse}{title}-{key}.fits.{compression}"))
             )
-            file_handle, writer = open_compressed_stream(movie_fn, compression)
+            writer = open_compressed_stream(movie_fn, compression)
             print(f"writing to {movie_fn}")
-        add_movie_to_fits_file(writer, movies[key], header)
-        del movies[key]
-        if write_split is True:
+        add_movie_to_fits_file(writer, movie_dict[key], header)
+        if clean_up:
+            del movie_dict[key]
+        if split is True:
             writer.close()
-    del movies
+    if clean_up:
+        del movie_dict
     writer.close()
 
 
@@ -386,21 +370,17 @@ def add_movie_to_fits_file(writer, movie, header):
 def make_full_depth_image(
     exposure_array, map_ix_dict, total_trange, imsz, band="NUV"
 ):
-    # TODO: feels weird to have the nominal range end up twice as long as
-    #  the actual range, but the ending value can actually be arbitrarily
-    #  far in the future, right?
     interval = total_trange[1] - total_trange[0]
     trange = np.arange(total_trange[0], total_trange[1] + interval, interval)
     exptime = unshared_compute_exptime(exposure_array, band, trange)
-    images = {
-        map_name: make_frame(
+    output_dict = {"tranges": [trange], "exptimes": [exptime]}
+    for map_name in ("cnt", "flag", "edge"):
+        output_dict[map_name] = make_frame(
             map_ix_dict[map_name]["foc"],
             map_ix_dict[map_name]["weights"],
-            imsz,
+            imsz
         )
-        for map_name in ["cnt", "flag", "edge"]
-    }
-    return images, trange, exptime
+    return output_dict
 
 
 def handle_movie_and_image_creation(
@@ -408,20 +388,11 @@ def handle_movie_and_image_creation(
     depth,
     band,
     lil=False,
-    compression="gz",
     make_full=True,
     edge_threshold: int = 350,
-    write_to_file=True,
-):
+) -> dict:
     photonfile = f"test_data/e{eclipse}/e{eclipse}-nd.parquet"
     print(f"making images from {photonfile}")
-    if write_to_file is True:
-        print(
-            "write_to_file=True passed, writing to disk and cleaning up "
-            "in-memory values"
-        )
-    else:
-        print("write_to_file=False passed, returning in-memory values")
     print("indexing data and making WCS solution")
     exposure_array, map_ix_dict, total_trange, wcs = prep_image_inputs(
         photonfile, edge_threshold
@@ -437,78 +408,25 @@ def handle_movie_and_image_creation(
         "imsz": imsz,
         "band": band,
     }
-    writer_kwargs = {
-        "eclipse": eclipse,
-        "wcs": wcs,
-        "compression": compression,
-        "band": band,
-    }
-    # TODO: this slightly less horrible format makes me unable to delete the
-    #  exposure array inline. consider doing something about this.
-    exptime, images, trange = handle_full_depth_image(
-        depth, make_full, render_kwargs, write_to_file, writer_kwargs,
-    )
-    exptimes, movies, tranges = handle_movie(
-        depth, lil, render_kwargs, write_to_file, writer_kwargs
-    )
-    if write_to_file is True:
-        return
-    output_dict = {"wcs": wcs}
-    if movies is not None:
-        output_dict["movie"] = {
-            "cnt": movies["cnt"],
-            "flag": movies["flag"],
-            "edge": movies["edge"],
-            "tranges": tranges,
-            "exptimes": exptimes,
-        }
-        if images is not None:
-            output_dict["image"] = {
-                "cnt": images["cnt"],
-                "flag": images["flag"],
-                "edge": images["edge"],
-                "trange": trange,
-                "exptime": exptime,
-            }
-        return output_dict
-
-
-def handle_movie(depth, lil, render_kwargs, write_to_file, writer_kwargs):
-    if depth is not None:
-        print(f"making {depth}-second movie")
-        movies, tranges, exptimes = make_movies(
-            depth=depth, lil=lil, **render_kwargs
-        )
-        del render_kwargs
-        if write_to_file is True:
-            write_movie(
-                depth=depth,
-                exptimes=exptimes,
-                movies=movies,
-                tranges=tranges,
-                **writer_kwargs,
-            )
-    else:
-        movies, tranges, exptimes = None, None, None
-    return exptimes, movies, tranges
-
-
-def handle_full_depth_image(
-    depth, make_full_frame, render_kwargs, write_to_file, writer_kwargs
-):
-    if (depth is None) or (make_full_frame is True):
+    if (depth is None) or (make_full is True):
         print(f"making full-depth image")
         # special case: don't be careful about memory, just go for it.
-        images, trange, exptime = make_full_depth_image(**render_kwargs)
-        if write_to_file is True:
-            write_movie(
-                depth=None,
-                exptimes=[exptime],
-                movies=images,
-                tranges=[trange],
-                **writer_kwargs,
-            )
-            images = None
+        image_dict = make_full_depth_image(**render_kwargs)
     else:
-        images, trange, exptime = None, None, None
-    return exptime, images, trange
+        image_dict = {}
+    if depth is not None:
+        print(f"making {depth}-second depth movies")
+        movie_dict = make_movies(depth=depth, lil=lil, **render_kwargs)
+    else:
+        movie_dict = {}
+    return (
+        {"wcs": wcs} | {"movie_dict": movie_dict} | {"image_dict": image_dict}
+    )
+
+# write_movie(
+#     depth=depth,
+#     exptimes=exptimes,
+#     movies=movies,
+#     tranges=tranges,
+#     **writer_kwargs,
+# )
