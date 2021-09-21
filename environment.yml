@@ -33,4 +33,5 @@ dependencies:
   - boto3
   - zstandard
   - python-snappy
+  - more-itertools
 prefix: /home/michael/miniconda3/envs/glcat
