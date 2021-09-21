@@ -31,7 +31,7 @@ from gPhoton.gphoton_utils import (
 )
 
 
-def make_frame(foc, weights, imsz):
+def make_frame(foc, weights, imsz, booleanize=False):
     frame = fh.histogram2d(
         foc[:, 1] - 0.5,
         foc[:, 0] - 0.5,
@@ -39,6 +39,8 @@ def make_frame(foc, weights, imsz):
         range=([[0, imsz[0]], [0, imsz[1]]]),
         weights=weights,
     )
+    if booleanize:
+        return frame.astype(bool)
     return frame
 
 
@@ -142,9 +144,6 @@ def make_movies(
     :param lil: sparsify matrices to reduce memory footprint, at compute cost
     :param threads: how many threads to use to calculate frames
     """
-    if threads is None:
-        # TODO: write this part
-        raise NotImplementedError("oops, I didn't write this part yet")
     t0s = np.arange(total_trange[0], total_trange[1] + depth, depth)
     tranges = list(windowed(t0s, 2))
     exposure_directory = slice_exposure_into_memory(exposure_array, tranges)
@@ -160,23 +159,16 @@ def make_movies(
             )
         del map_ix_dict[map_name]
     del map_ix_dict
-    pool = Pool(threads)
+    if threads is None:
+        pool = None
+    else:
+        pool = Pool(threads)
     results = {}
     for frame_ix, trange in enumerate(tranges):
         headline = f"Integrating frame {frame_ix + 1} of {len(tranges)}"
-        # noinspection PyTypeChecker
-        # results[frame_ix] = sm_compute_movie_frame(
-        #     band,
-        #     map_directory[frame_ix],
-        #     exposure_directory[frame_ix],
-        #     trange,
-        #     imsz,
-        #     lil,
-        #     headline,
-        # )
-        results[frame_ix] = pool.apply_async(
-            sm_compute_movie_frame,
-            (
+        if pool is None:
+            # noinspection PyTypeChecker
+            results[frame_ix] = sm_compute_movie_frame(
                 band,
                 map_directory[frame_ix],
                 exposure_directory[frame_ix],
@@ -184,11 +176,24 @@ def make_movies(
                 imsz,
                 lil,
                 headline,
-            ),
-        )
-    pool.close()
-    pool.join()
-    results = {task: result.get() for task, result in results.items()}
+            )
+        else:
+            results[frame_ix] = pool.apply_async(
+                sm_compute_movie_frame,
+                (
+                    band,
+                    map_directory[frame_ix],
+                    exposure_directory[frame_ix],
+                    trange,
+                    imsz,
+                    lil,
+                    headline,
+                ),
+            )
+    if pool is not None:
+        pool.close()
+        pool.join()
+        results = {task: result.get() for task, result in results.items()}
     frame_indices = sorted(results.keys())
     movies = {"cnt": [], "flag": [], "edge": []}
     exptimes = []
@@ -246,7 +251,12 @@ def sm_make_maps(block_directory, imsz, lil=False):
 
 def sm_make_map(block_directory, map_name, imsz):
     _, map_arrays = reference_shared_memory_arrays(block_directory[map_name])
-    return make_frame(map_arrays["foc"], map_arrays["weights"], imsz)
+    return make_frame(
+        map_arrays["foc"],
+        map_arrays["weights"],
+        imsz,
+        booleanize=map_name in ("cnt", "flag"),
+    )
 
 
 def generate_wcs_components(event_table):
@@ -319,7 +329,7 @@ def write_movie(
     wcs,
     compression="gz",
     split=True,
-    clean_up = False
+    clean_up=False,
 ):
     title = "-full" if depth is None else f"-{depth}s"
 
@@ -333,7 +343,7 @@ def write_movie(
     else:
         movie_name = f"{depth}-second depth movie"
     if split is False:
-        movie_fn = (Path(outpath, f"e{eclipse}{title}.fits.{compression}"))
+        movie_fn = Path(outpath, f"e{eclipse}{title}.fits.{compression}")
         file_handle, writer = open_compressed_stream(movie_fn, compression)
         print(f"writing {movie_name} to {movie_fn}")
     else:
@@ -341,8 +351,8 @@ def write_movie(
     for key in ["edge", "flag", "cnt"]:
         print(f"writing {key} map")
         if split is True:
-            movie_fn = (
-                (Path(outpath, f"e{eclipse}{title}-{key}.fits.{compression}"))
+            movie_fn = Path(
+                outpath, f"e{eclipse}{title}-{key}.fits.{compression}"
             )
             writer = open_compressed_stream(movie_fn, compression)
             print(f"writing to {movie_fn}")
@@ -378,7 +388,8 @@ def make_full_depth_image(
         output_dict[map_name] = make_frame(
             map_ix_dict[map_name]["foc"],
             map_ix_dict[map_name]["weights"],
-            imsz
+            imsz,
+            booleanize=map_name in ("flag", "edge"),
         )
     return output_dict
 
@@ -422,6 +433,7 @@ def handle_movie_and_image_creation(
     return (
         {"wcs": wcs} | {"movie_dict": movie_dict} | {"image_dict": image_dict}
     )
+
 
 # write_movie(
 #     depth=depth,
