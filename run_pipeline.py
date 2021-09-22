@@ -6,6 +6,6 @@ if __name__ == "__main__":
         "NUV",
         depth=30,
         threads=4,
-        data_root="data",
-        download=True
+        data_root="test_data",
+        download=False
     )

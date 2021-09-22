@@ -205,4 +205,8 @@ def between(reference, t0, t1):
     return np.where((reference >= t0) & (reference < t1))
 
 
+def slice_between(subject, reference, t0, t1):
+    return subject[between(reference, t0, t1)]
+
+
 jit_module(nopython=True, cache=True)

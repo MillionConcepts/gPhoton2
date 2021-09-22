@@ -14,7 +14,7 @@ from pyarrow import parquet
 
 from gPhoton import MCUtils as mc
 from gPhoton import __version__
-from gPhoton._numbafied_pipe_components import between
+from gPhoton._numbafied_pipe_components import between, slice_between
 from gPhoton._shared_memory_pipe_components import (
     reference_shared_memory_arrays,
     unlink_nested_block_dict,
@@ -239,7 +239,7 @@ def slice_exposure_into_memory(exposure_array, tranges):
     times = exposure_array[:, 0]
     for frame_ix, trange in enumerate(tranges):
         exposure_directory[frame_ix] = send_to_shared_memory(
-            {"exposure": exposure_array[between(times, trange[0], trange[1])]}
+            {"exposure": slice_between(exposure_array, times, trange[0], trange[1])}
         )
     return exposure_directory
 
