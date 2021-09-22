@@ -250,7 +250,7 @@ def sm_make_maps(block_directory, imsz, lil=False):
         for map_name in ("cnt", "flag", "edge")
     ]
     if lil is True:
-        return [scipy.sparse.lil_matrix(moviemap) for moviemap in maps]
+        return [scipy.sparse.coo_matrix(moviemap) for moviemap in maps]
     return maps
 
 
