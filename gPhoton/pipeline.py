@@ -65,7 +65,6 @@ def pipeline(
     if (file_stats["flags"]["min"] > 6) or (file_stats["ra"]["max"] is None):
         print(f"no unflagged data in {photonpath}. bailing out.")
         return
-    stopwatch.click()
     results = handle_movie_and_image_creation(
         str(photonpath),
         depth,
@@ -81,15 +80,19 @@ def pipeline(
         results["image_dict"],
         results["wcs"],
     )
-    stopwatch.click()
-    source_table = extract_photometry(
-        results["movie_dict"], source_table, apertures, threads
-    )
-    stopwatch.click()
-    write_photometry_tables(
-        filenames["photomfile"], filenames["expfile"], source_table, results["movie_dict"]
-    )
-    stopwatch.click()
+    if source_table is not None:
+        stopwatch.click()
+        source_table = extract_photometry(
+            results["movie_dict"], source_table, apertures, threads
+        )
+        stopwatch.click()
+        write_photometry_tables(
+            filenames["photomfile"],
+            filenames["expfile"],
+            source_table,
+            results["movie_dict"]
+        )
+        stopwatch.click()
     write_movie(
         band,
         None,

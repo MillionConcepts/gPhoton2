@@ -21,12 +21,12 @@ def find_sources(
     if not image_dict["cnt"].max():
         print(f"{eclipse} appears to contain nothing in {band}.")
         Path(datapath, f"No{band}").touch()
-        return
+        return None, None
     exptime = image_dict["exptimes"][0]
     if exptime < 600:
         print("Skipping low exposure time visit.")
         Path(datapath, "LowExpt").touch()
-        return
+        return None, None
     print("Extracting sources.")
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
@@ -37,7 +37,7 @@ def find_sources(
     except TypeError:
         print(f"{eclipse} {band} contains no sources.")
         Path(datapath, f"No{band}").touch()
-        return
+        return None, None
 
     positions = sources[["xcentroid", "ycentroid"]].to_pandas().values
     apertures = CircularAperture(positions, r=8.533333333333326)
