@@ -18,7 +18,6 @@ from statistics import mode
 import fitsio
 import numpy as np
 import pandas as pd
-import zstandard
 from astropy.time import Time
 import scipy.stats
 import matplotlib.pyplot as plt
@@ -26,7 +25,6 @@ import matplotlib.pyplot as plt
 
 # gPhoton imports.
 from pyarrow import parquet
-from zstandard import ZstdCompressor
 from astropy.io import fits as pyfits
 
 
@@ -534,26 +532,6 @@ def write_gzip(
     gzipped.close()
 
 
-def write_zstd(
-    whatever,
-    out_fn,
-    compoptions=None,
-    writemethod="writeto",
-    writeoptions=None,
-):
-    if writeoptions is None:
-        writeoptions = {}
-    if compoptions is None:
-        compoptions = {}
-    outfile = open(out_fn, mode="wb")
-    zstdbuf = BytesIO()
-    getattr(whatever, writemethod)(zstdbuf, **writeoptions)
-    zstdbuf.seek(0)
-    zcomp = ZstdCompressor(write_dict_id=True, **compoptions)
-    zcomp.copy_stream(zstdbuf, outfile)
-    outfile.close()
-
-
 def get_fits_radec(header, endpoints_only=True):
     ranges = {}
     for coord, ix in zip(("ra", "dec"), (1, 2)):
@@ -615,15 +593,6 @@ class NestingDict(defaultdict):
     __repr__ = dict.__repr__
 
 
-def pyfits_zopen(filename):
-    zdecomp = zstandard.ZstdDecompressor()
-    zinbuf = BytesIO()
-    with open(filename, mode="rb") as infile:
-        zdecomp.copy_stream(infile, zinbuf)
-    zinbuf.seek(0)
-    return pyfits.open(zinbuf)
-
-
 def diff_photonlist_and_movie_coords(movie_radec, photon_radec):
     diffs = {}
     minmax_funcs = {"min": min, "max": max}
@@ -657,10 +626,7 @@ def make_wcs_from_radec(radec):
 
 
 def read_image(fn):
-    if Path(fn).suffix == ".zstd":
-        hdu = pyfits_zopen(fn)
-    else:
-        hdu = pyfits.open(fn)
+    hdu = pyfits.open(fn)
     print(f"Opened {fn}.")
     image = hdu[0].data
     exptimes, tranges = [], []
