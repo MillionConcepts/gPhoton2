@@ -46,6 +46,8 @@ def pipeline(
         return
     filenames = eclipse_to_files(eclipse, data_root, depth)[band]
     photonpath = Path(filenames["photonfile"])
+    if not photonpath.parent.exists():
+        photonpath.parent.mkdir(parents=True)
     stopwatch.click()
     if recreate or not photonpath.exists():
         PhotonPipe.photonpipe(
