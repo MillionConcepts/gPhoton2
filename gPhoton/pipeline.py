@@ -1,66 +1,71 @@
+import shutil
 from time import time
 from pathlib import Path
 
-from gPhoton.gphoton_utils import get_parquet_stats
-from gPhoton.moviemaker import write_movie
+from gPhoton import PhotonPipe
+from gfcat import gfcat_utils as gfu
+from gPhoton.gphoton_utils import get_parquet_stats, eclipse_to_files
+from gPhoton.moviemaker import handle_movie_and_image_creation, write_movie
 from gPhoton.photometry import (
     find_sources,
     extract_photometry,
-    write_photometry_tables,
+    write_photometry_tables
 )
-from gPhoton.moviemaker import handle_movie_and_image_creation
-
-# def load_full_depth_image(eclipse, datapath):
-#     prefix = f"e{eclipse}-full-"
-#     full_depth = read_image(Path(datapath, f"{prefix}cnt.fits.zstd"))
-#     flag = read_image(Path(datapath, f"{prefix}flag.fits.zstd"))["image"]
-#     edge = read_image(Path(datapath, f"{prefix}edge.fits.zstd"))["image"]
-#     image_dict = {
-#         "cnt": full_depth["image"],
-#         "flag": flag,
-#         "edge": edge,
-#         "exptime": full_depth["exptimes"][0],
-#     }
-#     wcs = full_depth["wcs"]
-#     return image_dict, wcs
-
 from gPhoton.devtools import Stopwatch
-from run_photonpipe import run_photonpipe
 
 stopwatch = Stopwatch()
 
 
 def pipeline(
-    eclipse=None,
-    band=None,
-    depth=None,
+    eclipse,
+    band,
+    depth,
     threads=None,
     recreate=False,
-    data_root = "test_data"
+    data_root="test_data",
+    distinct_raw6_root=None,
+    download=True
 ):
-    now = time()
+    startt = time()
     stopwatch.click()
-    data_path = Path(data_root, f"e{eclipse}")
-    photonfile = Path(
-        data_path, f"e{eclipse}-{'n' if band == 'NUV' else 'f'}d.parquet"
-    )
-    if photonfile.exists():
-        if recreate is True:
-            print(f"overwriting {photonfile}")
-            # TODO: run_photonpipe needs to be able to accept an eclipse
-            run_photonpipe(eclipse)
-        else:
-            print(f"using existing photon list {photonfile}")
+    if eclipse > 47000:
+        print(f'CAUSE data w/ eclipse>47000 are not yet supported.')
+        return
+    if download is True:
+        raw6file = gfu.download_raw6(eclipse, band, data_directory=data_root)
+    elif distinct_raw6_root is None:
+        raw6file = eclipse_to_files(eclipse, data_root)[band]["raw6"]
     else:
-        run_photonpipe(eclipse)
-    file_stats = get_parquet_stats(photonfile, ["flags", "ra"])
+        remote_raw6file = eclipse_to_files(
+            eclipse, distinct_raw6_root
+        )[band]["raw6"]
+        print(f"making temp local copy of {remote_raw6file}")
+        raw6file = shutil.copy(remote_raw6file, data_root)
+    if (raw6file is None) or not Path(str(raw6file)).exists():
+        print("couldn't find raw6 file.")
+        return
+    filenames = eclipse_to_files(eclipse, data_root, depth)[band]
+    photonpath = Path(filenames["photonfile"])
+    stopwatch.click()
+    if recreate or not photonpath.exists():
+        PhotonPipe.photonpipe(
+            photonpath,
+            band,
+            raw6file=raw6file,
+            verbose=2,
+            chunksz=1000000,
+            threads=threads
+        )
+    else:
+        print(f"using existing photon list {photonpath}")
+    stopwatch.click()
+    file_stats = get_parquet_stats(str(photonpath), ["flags", "ra"])
     if (file_stats["flags"]["min"] > 6) or (file_stats["ra"]["max"] is None):
-        print(f"no unflagged data in {photonfile}. bailing out.")
+        print(f"no unflagged data in {photonpath}. bailing out.")
         return
     stopwatch.click()
-
     results = handle_movie_and_image_creation(
-        eclipse,
+        str(photonpath),
         depth,
         band,
         lil=True,
@@ -68,7 +73,11 @@ def pipeline(
     )
     stopwatch.click()
     source_table, apertures = find_sources(
-        eclipse, data_path, results["image_dict"], results["wcs"], band
+        eclipse,
+        band,
+        str(photonpath.parent),
+        results["image_dict"],
+        results["wcs"],
     )
     stopwatch.click()
     source_table = extract_photometry(
@@ -76,28 +85,29 @@ def pipeline(
     )
     stopwatch.click()
     write_photometry_tables(
-        data_path, eclipse, depth, source_table, results["movie_dict"]
+        filenames["photomfile"], filenames["expfile"], source_table, results["movie_dict"]
     )
     stopwatch.click()
-    writer_kwargs = {
-        "band": band,
-        "eclipse": eclipse,
-        "wcs": results["wcs"],
-        "outpath": data_path,
-    }
     write_movie(
-        movie_dict=results["image_dict"],
-        depth=None,
+        band,
+        None,
+        filenames["image"].replace(".gz", ""),
+        results["image_dict"],
         clean_up=True,
-        **writer_kwargs,
+        wcs=results["wcs"]
     )
     del results["image_dict"]
     stopwatch.click()
     write_movie(
-        movie_dict=results["movie_dict"],
-        depth=depth,
+        band,
+        depth,
+        filenames["movie"].replace(".gz", ""),
+        results["movie_dict"],
         clean_up=True,
-        **writer_kwargs,
+        wcs=results["wcs"]
     )
     stopwatch.click()
-    print(f"{(time() - now).__round__(2)} seconds for pipeline execution")
+    if distinct_raw6_root is not None:
+        print(f"removing temp copy of {raw6file}")
+        Path(raw6file).unlink()
+    print(f"{(time() - startt).__round__(2)} seconds for pipeline execution")

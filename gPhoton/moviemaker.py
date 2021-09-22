@@ -1,8 +1,8 @@
-import warnings
 from collections.abc import Sequence
 from multiprocessing import Pool
 from pathlib import Path
 from typing import Optional
+import warnings
 
 import astropy.io.fits as pyfits
 import fast_histogram as fh
@@ -315,14 +315,12 @@ def populate_fits_header(band, wcs, tranges, exptimes):
 def write_movie(
     band,
     depth,
-    eclipse,
-    outpath,
+    moviefile,
     movie_dict,
     wcs,
     compress=True,
     clean_up=False,
 ):
-    title = "-full" if depth is None else f"-{depth}s"
     # TODO, maybe: rewrite this to have to not assemble the primary hdu in
     #  order to make the header
     header = populate_fits_header(
@@ -332,30 +330,30 @@ def write_movie(
         movie_name = "full-depth image"
     else:
         movie_name = f"{depth}-second depth movie"
-    movie_fn = Path(outpath, f"e{eclipse}{title}.fits")
-    if movie_fn.exists():
-        print(f"overwriting {movie_fn} with {movie_name}")
-        movie_fn.unlink()
+    movie_path = Path(moviefile)
+    if movie_path.exists():
+        print(f"overwriting {movie_path} with {movie_name}")
+        movie_path.unlink()
     else:
-        print(f"writing {movie_name} to {movie_fn}")
+        print(f"writing {movie_name} to {movie_path}")
     for key in ["cnt", "flag", "edge"]:
         print(f"writing {key} map")
-        add_movie_to_fits_file(movie_fn, movie_dict[key], header)
+        add_movie_to_fits_file(movie_path, movie_dict[key], header)
         if clean_up:
             del movie_dict[key]
     if clean_up:
         del movie_dict
     if compress is not True:
         return
-    print(f"gzipping {movie_fn}")
-    gzip_path = Path(f"{movie_fn}.gz")
+    gzip_path = Path(f"{movie_path}.gz")
     if gzip_path.exists():
         print(f"overwriting {gzip_path}")
         gzip_path.unlink()
+    print(f"gzipping {movie_path} in background")
     try:
-        sh.libdeflate_gzip(movie_fn, _bg=True)
+        sh.libdeflate_gzip(movie_path, _bg=True)
     except sh.CommandNotFound:
-        sh.gzip(movie_fn, _bg=True)
+        sh.gzip(movie_path, _bg=True)
 
 
 def add_movie_to_fits_file(writer, movie, header):
@@ -387,7 +385,7 @@ def make_full_depth_image(
 
 
 def handle_movie_and_image_creation(
-    eclipse,
+    photonfile,
     depth,
     band,
     lil=False,
@@ -395,7 +393,6 @@ def handle_movie_and_image_creation(
     edge_threshold: int = 350,
     threads=None
 ) -> dict:
-    photonfile = f"test_data/e{eclipse}/e{eclipse}-nd.parquet"
     print(f"making images from {photonfile}")
     print("indexing data and making WCS solution")
     exposure_array, map_ix_dict, total_trange, wcs = prep_image_inputs(

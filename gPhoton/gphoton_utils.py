@@ -657,7 +657,7 @@ def make_wcs_from_radec(radec):
 
 
 def read_image(fn):
-    if Path(fn).suffix == '.zstd':
+    if Path(fn).suffix == ".zstd":
         hdu = pyfits_zopen(fn)
     else:
         hdu = pyfits.open(fn)
@@ -678,11 +678,50 @@ def read_image(fn):
         flagmap = None
         edgemap = None
     return {
-        'image': image,
-        'flagmap': flagmap,
-        'edgemap': edgemap,
-        'wcs': wcs,
-        'tranges': tranges,
-        'exptimes': exptimes,
-        'skypos': skypos
+        "image": image,
+        "flagmap": flagmap,
+        "edgemap": edgemap,
+        "wcs": wcs,
+        "tranges": tranges,
+        "exptimes": exptimes,
+        "skypos": skypos,
     }
+
+
+def eclipse_to_files(eclipse, data_directory="data", depth=None):
+    eclipse_path = f"{data_directory}/e{eclipse}/"
+    eclipse_base = f"{eclipse_path}e{eclipse}"
+    bands = "NUV", "FUV"
+    band_initials = "n", "f"
+    file_dict = {}
+    for band, initial in zip(bands, band_initials):
+        prefix = f"{eclipse_base}-{initial}d"
+        band_dict = {
+            "raw6": f"{prefix}-raw6.fits.gz",
+            "photonfile": f"{prefix}.parquet",
+            "image": f"{prefix}-full.fits.gz",
+        }
+        if depth is not None:
+            band_dict |= {
+                "movie": f"{prefix}-{depth}s.fits.gz",
+                "photomfile": f"{prefix}-{depth}s-photom.csv",
+                "expfile": f"{prefix}-{depth}s-exptime.csv",
+            }
+        file_dict[band] = band_dict
+    return file_dict
+
+
+
+# def load_full_depth_image(eclipse, datapath):
+#     prefix = f"e{eclipse}-full-"
+#     full_depth = read_image(Path(datapath, f"{prefix}cnt.fits.zstd"))
+#     flag = read_image(Path(datapath, f"{prefix}flag.fits.zstd"))["image"]
+#     edge = read_image(Path(datapath, f"{prefix}edge.fits.zstd"))["image"]
+#     image_dict = {
+#         "cnt": full_depth["image"],
+#         "flag": flag,
+#         "edge": edge,
+#         "exptime": full_depth["exptimes"][0],
+#     }
+#     wcs = full_depth["wcs"]
+#     return image_dict, wcs

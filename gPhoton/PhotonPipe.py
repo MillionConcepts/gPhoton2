@@ -11,6 +11,8 @@ import time
 import warnings
 
 # Core and Third Party imports.
+from pathlib import Path
+
 import numpy as np
 import pyarrow
 from pyarrow import parquet
@@ -45,7 +47,7 @@ from gPhoton._shared_memory_pipe_components import (
 
 
 def photonpipe(
-    outbase,
+    outfile,
     band,
     raw6file=None,
     scstfile=None,
@@ -74,9 +76,9 @@ def photonpipe(
 
     :type band: str
 
-    :param outbase: Base of the output file names.
+    :param outfile: Base of the output file names.
 
-    :type outbase: str, pathlib.Path
+    :type outfile: str, pathlib.Path
 
     :param aspfile: Name of aspect file to use.
 
@@ -102,12 +104,12 @@ def photonpipe(
             "Using shared memory without multithreading. "
             "This incurs a performance cost to no end."
         )
-
-    outfile = "{outbase}.parquet".format(outbase=outbase)
-    if os.path.exists(outfile):
+    outfile = Path(outfile)
+    outbase = outfile.stem
+    if outfile.exists():
         if overwrite:
             print(f"{outfile} already exists... deleting")
-            os.remove(outfile)
+            outfile.unlink()
         else:
             print(f"{outfile} already exists... aborting run")
             return outfile

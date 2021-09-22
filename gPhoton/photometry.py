@@ -12,10 +12,10 @@ from gPhoton import MCUtils as mc
 
 def find_sources(
     eclipse: int,
+    band,
     datapath: Union[str, Path],
     image_dict,
     wcs,
-    band: str = "NUV",
 ):
     # TODO, maybe: pop these into a handler function
     if not image_dict["cnt"].max():
@@ -117,9 +117,8 @@ def extract_photometry(movie_dict, source_table, apertures, threads):
 
 
 def write_photometry_tables(
-    datapath, eclipse, depth, source_table, movie_dict
+    photomfile, expfile, source_table, movie_dict
 ):
-    photomfile = Path(datapath, f"e{eclipse}-{depth}s-photom.csv")
     print(f"writing source table to {photomfile}")
     source_table.to_csv(photomfile, index=False)
     exptime_table = pd.DataFrame(
@@ -129,7 +128,6 @@ def write_photometry_tables(
             "t1": [trange[1] for trange in movie_dict["tranges"]],
         }
     )
-    exptimefile = Path(datapath, f"e{eclipse}-{depth}s-exptime.csv")
-    print(f"writing exposure time table to {exptimefile}")
+    print(f"writing exposure time table to {expfile}")
     # noinspection PyTypeChecker
-    exptime_table.to_csv(exptimefile, index=False)
+    exptime_table.to_csv(expfile, index=False)
