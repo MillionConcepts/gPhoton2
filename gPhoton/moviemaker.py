@@ -333,7 +333,11 @@ def write_movie(
     else:
         movie_name = f"{depth}-second depth movie"
     movie_fn = Path(outpath, f"e{eclipse}{title}.fits")
-    print(f"writing {movie_name} to {movie_fn}")
+    if movie_fn.exists():
+        print(f"overwriting {movie_fn} with {movie_name}")
+        movie_fn.unlink()
+    else:
+        print(f"writing {movie_name} to {movie_fn}")
     for key in ["cnt", "flag", "edge"]:
         print(f"writing {key} map")
         add_movie_to_fits_file(movie_fn, movie_dict[key], header)
@@ -349,7 +353,7 @@ def write_movie(
         print(f"overwriting {gzip_path}")
         gzip_path.unlink()
     try:
-        sh.libdeflate_gzip(movie_fn, _bg=True)
+        sh.libdeflate_gzip(movie_fn, "-7", _bg=True)
     except sh.CommandNotFound:
         sh.gzip(movie_fn, _bg=True)
 
