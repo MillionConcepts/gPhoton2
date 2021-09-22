@@ -353,7 +353,7 @@ def write_movie(
         print(f"overwriting {gzip_path}")
         gzip_path.unlink()
     try:
-        sh.libdeflate_gzip(movie_fn, "-7", _bg=True)
+        sh.libdeflate_gzip(movie_fn, _bg=True)
     except sh.CommandNotFound:
         sh.gzip(movie_fn, _bg=True)
 
