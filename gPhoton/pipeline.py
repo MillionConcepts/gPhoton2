@@ -29,8 +29,8 @@ def pipeline(
     startt = time()
     stopwatch.click()
     if eclipse > 47000:
-        print(f'CAUSE data w/ eclipse>47000 are not yet supported.')
-        return
+        print('CAUSE data w/ eclipse>47000 are not yet supported.')
+        return 'CAUSE data w/ eclipse>47000 are not yet supported.'
     if download is True:
         raw6file = gfu.download_raw6(eclipse, band, data_directory=data_root)
     elif distinct_raw6_root is None:
@@ -43,7 +43,7 @@ def pipeline(
         raw6file = shutil.copy(remote_raw6file, data_root)
     if (raw6file is None) or not Path(str(raw6file)).exists():
         print("couldn't find raw6 file.")
-        return
+        return "couldn't find raw6 file."
     filenames = eclipse_to_files(eclipse, data_root, depth)[band]
     photonpath = Path(filenames["photonfile"])
     if not photonpath.parent.exists():
@@ -64,7 +64,7 @@ def pipeline(
     file_stats = get_parquet_stats(str(photonpath), ["flags", "ra"])
     if (file_stats["flags"]["min"] > 6) or (file_stats["ra"]["max"] is None):
         print(f"no unflagged data in {photonpath}. bailing out.")
-        return
+        return f"no unflagged data, stopped after photon list"
     results = handle_movie_and_image_creation(
         str(photonpath),
         depth,
@@ -116,3 +116,7 @@ def pipeline(
         print(f"removing temp copy of {raw6file}")
         Path(raw6file).unlink()
     print(f"{(time() - startt).__round__(2)} seconds for pipeline execution")
+    if source_table is None:
+        return "skipped photometry due to low exptime or other issue"
+    return "successful"
+
