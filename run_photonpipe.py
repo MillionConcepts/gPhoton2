@@ -21,7 +21,7 @@ def run_photonpipe(eclipse,band='NUV',data_directory = "test_data",rerun=False):
         return
     PhotonPipe.photonpipe(
         photonfile, band, raw6file=raw6file, verbose=2, chunksz=1000000,
-        threads=None
+        threads=6
     )
 
 if __name__ == '__main__':

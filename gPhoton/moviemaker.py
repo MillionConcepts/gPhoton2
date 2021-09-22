@@ -1,4 +1,3 @@
-import gzip
 import warnings
 from collections.abc import Sequence
 from multiprocessing import Pool
@@ -9,12 +8,10 @@ import astropy.io.fits as pyfits
 import fast_histogram as fh
 import numpy as np
 import scipy.sparse
+import sh
 from more_itertools import windowed
 from pyarrow import parquet
-from zstandard import ZstdCompressor
 
-import gPhoton.constants as c
-import gfcat.gfcat_utils as gfu
 from gPhoton import MCUtils as mc
 from gPhoton import __version__
 from gPhoton._numbafied_pipe_components import between
@@ -31,6 +28,14 @@ from gPhoton.gphoton_utils import (
 )
 
 
+def booleanize_for_fits(array):
+    # not actually casting to bool because FITS does not have a boolean
+    # data type and astropy will not cast boolean arrays to unsigned
+    # integers, which is the closest thing FITS does have.
+    mask = array.astype(bool)
+    return np.ones(shape=array.shape, dtype=np.uint8) * mask
+
+
 def make_frame(foc, weights, imsz, booleanize=False):
     frame = fh.histogram2d(
         foc[:, 1] - 0.5,
@@ -40,7 +45,7 @@ def make_frame(foc, weights, imsz, booleanize=False):
         weights=weights,
     )
     if booleanize:
-        return frame.astype(bool)
+        return booleanize_for_fits(frame)
     return frame
 
 
@@ -255,7 +260,7 @@ def sm_make_map(block_directory, map_name, imsz):
         map_arrays["foc"],
         map_arrays["weights"],
         imsz,
-        booleanize=map_name in ("cnt", "flag"),
+        booleanize=map_name in ("edge", "flag"),
     )
 
 
@@ -307,19 +312,6 @@ def populate_fits_header(band, wcs, tranges, exptimes):
     return header
 
 
-def open_compressed_stream(fn, compression):
-    if Path(fn).exists():
-        print(f"erasing {fn}")
-        Path(fn).unlink()
-    if compression == "zstd":
-        file_handle = open(fn, "wb+")
-        compressor = ZstdCompressor(level=-1)
-        writer = compressor.stream_writer(file_handle)
-    else:
-        writer = gzip.open(fn, "wb+", compresslevel=3)
-    return writer
-
-
 def write_movie(
     band,
     depth,
@@ -327,12 +319,10 @@ def write_movie(
     outpath,
     movie_dict,
     wcs,
-    compression="gz",
-    split=True,
+    compress=True,
     clean_up=False,
 ):
     title = "-full" if depth is None else f"-{depth}s"
-
     # TODO, maybe: rewrite this to have to not assemble the primary hdu in
     #  order to make the header
     header = populate_fits_header(
@@ -342,28 +332,26 @@ def write_movie(
         movie_name = "full-depth image"
     else:
         movie_name = f"{depth}-second depth movie"
-    if split is False:
-        movie_fn = Path(outpath, f"e{eclipse}{title}.fits.{compression}")
-        file_handle, writer = open_compressed_stream(movie_fn, compression)
-        print(f"writing {movie_name} to {movie_fn}")
-    else:
-        print("writing planes separately, pass split=False to not")
-    for key in ["edge", "flag", "cnt"]:
+    movie_fn = Path(outpath, f"e{eclipse}{title}.fits")
+    print(f"writing {movie_name} to {movie_fn}")
+    for key in ["cnt", "flag", "edge"]:
         print(f"writing {key} map")
-        if split is True:
-            movie_fn = Path(
-                outpath, f"e{eclipse}{title}-{key}.fits.{compression}"
-            )
-            writer = open_compressed_stream(movie_fn, compression)
-            print(f"writing to {movie_fn}")
-        add_movie_to_fits_file(writer, movie_dict[key], header)
+        add_movie_to_fits_file(movie_fn, movie_dict[key], header)
         if clean_up:
             del movie_dict[key]
-        if split is True:
-            writer.close()
     if clean_up:
         del movie_dict
-    writer.close()
+    if compress is not True:
+        return
+    print(f"gzipping {movie_fn}")
+    gzip_path = Path(f"{movie_fn}.gz")
+    if gzip_path.exists():
+        print(f"overwriting {gzip_path}")
+        gzip_path.unlink()
+    try:
+        sh.libdeflate_gzip(movie_fn, _bg=True)
+    except sh.CommandNotFound:
+        sh.gzip(movie_fn, _bg=True)
 
 
 def add_movie_to_fits_file(writer, movie, header):
@@ -401,6 +389,7 @@ def handle_movie_and_image_creation(
     lil=False,
     make_full=True,
     edge_threshold: int = 350,
+    threads=None
 ) -> dict:
     photonfile = f"test_data/e{eclipse}/e{eclipse}-nd.parquet"
     print(f"making images from {photonfile}")
@@ -427,18 +416,11 @@ def handle_movie_and_image_creation(
         image_dict = {}
     if depth is not None:
         print(f"making {depth}-second depth movies")
-        movie_dict = make_movies(depth=depth, lil=lil, **render_kwargs)
+        movie_dict = make_movies(
+            depth=depth, lil=lil, threads=threads, **render_kwargs
+        )
     else:
         movie_dict = {}
     return (
         {"wcs": wcs} | {"movie_dict": movie_dict} | {"image_dict": image_dict}
     )
-
-
-# write_movie(
-#     depth=depth,
-#     exptimes=exptimes,
-#     movies=movies,
-#     tranges=tranges,
-#     **writer_kwargs,
-# )

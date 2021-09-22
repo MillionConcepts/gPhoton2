@@ -31,7 +31,7 @@ dependencies:
   - icc_rt
   # testing
   - boto3
-  - zstandard
   - python-snappy
   - more-itertools
+  - sh
 prefix: /home/michael/miniconda3/envs/glcat

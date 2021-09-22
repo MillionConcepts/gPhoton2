@@ -1,10 +1,13 @@
 from multiprocessing import Pool
 from pathlib import Path
 from typing import Union
+import warnings
 
 import pandas as pd
-import scipy.sparse
 from photutils import DAOStarFinder, CircularAperture, aperture_photometry
+import scipy.sparse
+
+from gPhoton import MCUtils as mc
 
 
 def find_sources(
@@ -24,18 +27,25 @@ def find_sources(
         print("Skipping low exposure time visit.")
         Path(datapath, "LowExpt").touch()
         return
-    daofind = DAOStarFinder(fwhm=5, threshold=0.01)
-    sources = daofind(image_dict["cnt"] / exptime)
+    print("Extracting sources.")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        daofind = DAOStarFinder(fwhm=5, threshold=0.01)
+        sources = daofind(image_dict["cnt"] / exptime)
     try:
         print(f"Located {len(sources)} sources.")
     except TypeError:
         print(f"{eclipse} {band} contains no sources.")
         Path(datapath, f"No{band}").touch()
         return
+
     positions = sources[["xcentroid", "ycentroid"]].to_pandas().values
     apertures = CircularAperture(positions, r=8.533333333333326)
+    print("Performing aperture photometry on primary movie.")
     phot_table = aperture_photometry(image_dict["cnt"], apertures).to_pandas()
+    print("Performing aperture photometry on flag maps.")
     flag_table = aperture_photometry(image_dict["flag"], apertures).to_pandas()
+    print("Performing aperture photometry on edge maps.")
     edge_table = aperture_photometry(image_dict["edge"], apertures).to_pandas()
     source_table = pd.concat(
         [
@@ -61,46 +71,56 @@ def extract_frame(frame, apertures):
     return aperture_photometry(frame, apertures)["aperture_sum"].data
 
 
-def _extract_photometry_unthreaded(movie, source_table, apertures):
+def _extract_photometry_unthreaded(movie, apertures):
     photometry = {}
     for ix, frame in enumerate(movie):
+        mc.print_inline(f"extracting frame {ix}")
         photometry[ix] = extract_frame(frame, apertures)
-    photometry = {
-        f"aperture_sum_{ix}": photometry[ix] for ix in photometry.keys()
-    }
-    photometry = pd.DataFrame.from_dict(photometry)
-    return pd.concat([source_table, photometry], axis=1)
+    return photometry
 
 
 # it's foolish to run this multithreaded unless you _are_ unpacking sparse
 # matrices, but I won't stop you.
-def _extract_photometry_threaded(movie, source_table, apertures, threads):
+def _extract_photometry_threaded(movie, apertures, threads):
     pool = Pool(threads)
     photometry = {}
     for ix, frame in enumerate(movie):
         photometry[ix] = pool.apply_async(extract_frame, (frame, apertures))
-    frame_indices = sorted(photometry.keys())
     pool.close()
     pool.join()
-    photometry = {
-        f"aperture_sum_{ix}": photometry[ix].get() for ix in frame_indices
-    }
-    photometry = pd.DataFrame.from_dict(photometry)
-    return pd.concat([source_table, photometry], axis=1)
+    return {ix: result.get() for ix, result in photometry.items()}
 
 
-def extract_photometry(movie, source_table, apertures, threads):
-    if threads is None:
-        return _extract_photometry_unthreaded(movie, source_table, apertures)
-    return _extract_photometry_threaded(
-        movie, source_table, apertures, threads
-    )
+def extract_photometry(movie_dict, source_table, apertures, threads):
+    photometry_tables = []
+    for key in ["cnt", "flag", "edge"]:
+        title = "primary movie" if key == "cnt" else f"{key} map"
+        print(f"extracting photometry from {title}")
+        if threads is None:
+            photometry = _extract_photometry_unthreaded(
+                movie_dict[key], apertures
+            )
+        else:
+            photometry = _extract_photometry_threaded(
+                movie_dict[key], apertures, threads
+            )
+        frame_indices = sorted(photometry.keys())
+        if key in ("edge", "flag"):
+            column_prefix = f"aperture_sum_{key}"
+        else:
+            column_prefix = "aperture_sum"
+        photometry = {
+            f"{column_prefix}_{ix}": photometry[ix] for ix in frame_indices
+        }
+        photometry_tables.append(pd.DataFrame.from_dict(photometry))
+    return pd.concat([source_table, *photometry_tables], axis=1)
 
 
 def write_photometry_tables(
     datapath, eclipse, depth, source_table, movie_dict
 ):
     photomfile = Path(datapath, f"e{eclipse}-{depth}s-photom.csv")
+    print(f"writing source table to {photomfile}")
     source_table.to_csv(photomfile, index=False)
     exptime_table = pd.DataFrame(
         {
@@ -110,5 +130,6 @@ def write_photometry_tables(
         }
     )
     exptimefile = Path(datapath, f"e{eclipse}-{depth}s-exptime.csv")
+    print(f"writing exposure time table to {exptimefile}")
     # noinspection PyTypeChecker
     exptime_table.to_csv(exptimefile, index=False)
