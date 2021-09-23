@@ -349,7 +349,7 @@ def write_movie(
     if gzip_path.exists():
         print(f"overwriting {gzip_path}")
         gzip_path.unlink()
-    print(f"gzipping {movie_path} in background")
+    print(f"gzipping {movie_path}")
     try:
         sh.libdeflate_gzip(movie_path)
     except sh.CommandNotFound:
