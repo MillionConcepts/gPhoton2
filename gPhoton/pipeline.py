@@ -69,7 +69,7 @@ def pipeline(
     if (file_stats["flags"]["min"] > 6) or (file_stats["ra"]["max"] is None):
         print(f"no unflagged data in {photonpath}. bailing out.")
         clean_raw6()
-        return f"no unflagged data, stopped after photon list"
+        return f"no unflagged data (stopped after photon list)"
     results = handle_movie_and_image_creation(
         str(photonpath),
         depth,
