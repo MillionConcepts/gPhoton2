@@ -655,7 +655,7 @@ def read_image(fn):
 
 
 def eclipse_to_files(eclipse, data_directory="data", depth=None):
-    zpad = str(eclipse.zfill(5))
+    zpad = str(eclipse).zfill(5)
     eclipse_path = f"{data_directory}/e{zpad}/"
     eclipse_base = f"{eclipse_path}e{zpad}"
     bands = "NUV", "FUV"
