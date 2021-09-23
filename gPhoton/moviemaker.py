@@ -351,9 +351,9 @@ def write_movie(
         gzip_path.unlink()
     print(f"gzipping {movie_path} in background")
     try:
-        sh.libdeflate_gzip(movie_path, _bg=True)
+        sh.libdeflate_gzip(movie_path)
     except sh.CommandNotFound:
-        sh.gzip(movie_path, _bg=True)
+        sh.gzip(movie_path)
 
 
 def add_movie_to_fits_file(writer, movie, header):
