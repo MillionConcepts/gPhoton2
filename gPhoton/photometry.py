@@ -23,7 +23,7 @@ def find_sources(
         Path(datapath, f"No{band}").touch()
         return None, None
     exptime = image_dict["exptimes"][0]
-    if exptime < 600:
+    if exptime < 300:
         print("Skipping low exposure time visit.")
         Path(datapath, "LowExpt").touch()
         return None, None

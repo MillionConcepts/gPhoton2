@@ -28,6 +28,8 @@ def pipeline(
 ):
     startt = time()
     stopwatch.click()
+    # TODO: this unnecessarily moves raw6 files around in some
+    #  unlikely use cases
     if eclipse > 47000:
         print('CAUSE data w/ eclipse>47000 are not yet supported.')
         return 'CAUSE data w/ eclipse>47000 are not yet supported.'
