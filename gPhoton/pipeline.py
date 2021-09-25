@@ -37,9 +37,9 @@ def pipeline(
                 f"making temp local copy of photon file from remote: "
                 f"{remote_files['photonfile']}"
             )
-        photonpath = shutil.copy(
-            Path(remote_files["photonfile"]), temp_directory
-        )
+            photonpath = shutil.copy(
+                Path(remote_files["photonfile"]), temp_directory
+            )
     if recreate or not photonpath.exists():
         # find raw6 file.
         # first look locally. then look in remote (like s3) if provided.

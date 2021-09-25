@@ -70,7 +70,8 @@ def _compute_exptime(timeslice, flagslice, band, trange):
     rawexpt -= shutter
     if rawexpt == 0:
         return rawexpt
-    gcr = len(timeslice) / rawexpt
+    ix = np.where(flagslice == 0)
+    gcr = len(timeslice[ix]) / rawexpt
     feeclkratio = 0.966
     refrate = model[band][1] / feeclkratio
     scr = model[band][0] * gcr + model[band][1]
