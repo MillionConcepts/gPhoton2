@@ -155,9 +155,12 @@ def make_movies(
     exposure_directory = slice_exposure_into_memory(exposure_array, tranges)
     del exposure_array
     map_directory = NestingDict()
-    # TODO: these _are_ always sorted by time, right? check
     for map_name in list(map_ix_dict.keys()):
         for frame_ix, trange in enumerate(tranges):
+            # 0-count exposure times have 'None' entries assigned in
+            # slice_exposure_into_memory
+            if exposure_directory[frame_ix] is None:
+                continue
             frame_time_ix = between(map_ix_dict[map_name]["t"], *trange)[0]
             map_directory[frame_ix][map_name] = slice_into_memory(
                 {k: v for k, v in map_ix_dict[map_name].items() if k != "t"},
@@ -215,18 +218,22 @@ def sm_compute_movie_frame(
     band, map_block_info, exposure_block_info, trange, imsz, lil, headline
 ):
     mc.print_inline(headline)
-    exptime = shared_compute_exptime(exposure_block_info, band, trange)
-    # todo: make this cleaner...?
-    expblock, _ = reference_shared_memory_arrays(
-        exposure_block_info, fetch=False
-    )
-    expblock["exposure"].unlink()
-    expblock["exposure"].close()
-    # noinspection PyTypeChecker
-    cntmap, edgemap, flagmap = sm_make_maps(map_block_info, imsz, lil)
-    unlink_nested_block_dict(map_block_info)
-    # TODO: slice this into shared memory to reduce serialization cost?
-    #  not worth doing if they're sparse
+    if exposure_block_info is None:
+        exptime = 0
+        cntmap, edgemap, flagmap = zero_frame(imsz, lil)
+    else:
+        exptime = shared_compute_exptime(exposure_block_info, band, trange)
+        # todo: make this cleaner...?
+        expblock, _ = reference_shared_memory_arrays(
+            exposure_block_info, fetch=False
+        )
+        expblock["exposure"].unlink()
+        expblock["exposure"].close()
+        # noinspection PyTypeChecker
+        cntmap, edgemap, flagmap = sm_make_maps(map_block_info, imsz, lil)
+        unlink_nested_block_dict(map_block_info)
+        # TODO: slice this into shared memory to reduce serialization cost?
+        #  not worth doing if they're sparse
     return {
         "cnt": cntmap,
         "edge": edgemap,
@@ -239,10 +246,25 @@ def slice_exposure_into_memory(exposure_array, tranges):
     exposure_directory = {}
     times = exposure_array[:, 0]
     for frame_ix, trange in enumerate(tranges):
-        exposure_directory[frame_ix] = send_to_shared_memory(
-            {"exposure": slice_between(exposure_array, times, trange[0], trange[1])}
-        )
+        exposure = slice_between(exposure_array, times, trange[0], trange[1])
+        if len(exposure) > 0:
+            exposure_directory[frame_ix] = send_to_shared_memory(
+                {"exposure": exposure}
+            )
+        else:
+            exposure_directory[frame_ix] = None
     return exposure_directory
+
+
+def zero_frame(imsz, lil=False):
+    maps = (
+        np.zeros(imsz),
+        np.zeros(imsz, dtype="uint8"),
+        np.zeros(imsz, dtype="uint8")
+    )
+    if lil is True:
+        return [scipy.sparse.coo_matrix(moviemap) for moviemap in maps]
+    return maps
 
 
 def sm_make_maps(block_directory, imsz, lil=False):
