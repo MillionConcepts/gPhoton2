@@ -17,7 +17,8 @@ def pipeline(
     remote_root=None,
     download=True,
     recreate = False,
-    verbose=2
+    verbose=2,
+    maxsize=None
 ):
     stopwatch = Stopwatch()
     startt = time()
@@ -87,8 +88,13 @@ def pipeline(
         depth,
         band,
         lil=True,
-        threads=threads
+        threads=threads,
+        maxsize = maxsize
     )
+    if isinstance(results, str):
+        # this is a "nope, skipping" condition, currently caused only by
+        # excessively large images
+        return results
     stopwatch.click()
     from gPhoton.photometry import find_sources, extract_photometry, write_photometry_tables
     source_table, apertures = find_sources(

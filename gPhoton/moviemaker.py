@@ -392,7 +392,8 @@ def handle_movie_and_image_creation(
     lil=False,
     make_full=True,
     edge_threshold: int = 350,
-    threads=None
+    threads=None,
+    maxsize=None
 ) -> dict:
     print(f"making images from {photonfile}")
     print("indexing data and making WCS solution")
@@ -403,6 +404,12 @@ def handle_movie_and_image_creation(
         int((wcs.wcs.crpix[1] - 0.5) * 2),
         int((wcs.wcs.crpix[0] - 0.5) * 2),
     )
+    if maxsize is not None:
+        if imsz[0] * imsz[1] > maxsize:
+            failure_string = f"image size: {imsz} greater than total array " \
+                             f"size threshold of {maxsize}. quitting."
+            print(failure_string)
+            return failure_string
     print(f"image size: {imsz}")
     render_kwargs = {
         "exposure_array": exposure_array,
