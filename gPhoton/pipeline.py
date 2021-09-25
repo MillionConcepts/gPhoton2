@@ -1,8 +1,11 @@
+import warnings
 from pathlib import Path
 import shutil
 from time import time
 
 from gPhoton.pipeline_start import eclipse_to_files, Stopwatch
+
+warnings.filterwarnings(action="ignore", category=RuntimeWarning)
 
 
 def pipeline(

@@ -403,6 +403,7 @@ def handle_movie_and_image_creation(
         int((wcs.wcs.crpix[1] - 0.5) * 2),
         int((wcs.wcs.crpix[0] - 0.5) * 2),
     )
+    print(f"image size: {imsz}")
     render_kwargs = {
         "exposure_array": exposure_array,
         "map_ix_dict": map_ix_dict,
