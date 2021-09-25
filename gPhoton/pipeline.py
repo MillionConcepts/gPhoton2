@@ -81,6 +81,7 @@ def pipeline(
     file_stats = get_parquet_stats(str(photonpath), ["flags", "ra"])
     if (file_stats["flags"]["min"] > 6) or (file_stats["ra"]["max"] is None):
         print(f"no unflagged data in {photonpath}. bailing out.")
+        print(f"no unflagged data (stopped after photon list)")
         return f"no unflagged data (stopped after photon list)"
     from gPhoton.moviemaker import handle_movie_and_image_creation, write_movie
     results = handle_movie_and_image_creation(
