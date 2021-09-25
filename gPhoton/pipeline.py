@@ -51,7 +51,7 @@ def pipeline(
                     f"making temp local copy of raw6 file from remote: "
                     f"{remote_files['raw6']}"
                 )
-            raw6path = shutil.copy(remote_files['raw6'], temp_directory)
+            raw6path = Path(shutil.copy(remote_files['raw6'], temp_directory))
         if not raw6path.exists() and (download is True):
             from gfcat.gfcat_utils import download_raw6
             raw6file = download_raw6(eclipse, band, data_directory=data_root)
