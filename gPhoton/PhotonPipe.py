@@ -6,7 +6,6 @@
        given mission-produced -raw6, -scst, and -asprta data.
 """
 from multiprocessing import Pool
-import os
 import time
 import warnings
 

@@ -16,10 +16,10 @@ from gPhoton.CalUtils import (
     avg_stimpos,
     rtaph_yap,
 )
+from gPhoton.MCUtils import print_inline
 from gPhoton.pipeline_utils import NestingDict
 import gPhoton.galextools as gt
 from gPhoton.FileUtils import load_aspect, web_query_aspect, download_data
-from gPhoton.MCUtils import print_inline
 from gPhoton._numbafied_pipe_components import (
     interpolate_aspect_solutions,
     find_null_indices,

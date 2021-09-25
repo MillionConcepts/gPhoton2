@@ -7,5 +7,5 @@ if __name__ == "__main__":
         depth=30,
         threads=4,
         data_root="test_data",
-        download=True
+        download=True,
     )

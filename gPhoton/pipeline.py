@@ -17,6 +17,7 @@ def pipeline(
     remote_root=None,
     download=True,
     recreate = False,
+    verbose=2
 ):
     stopwatch = Stopwatch()
     startt = time()
@@ -68,7 +69,7 @@ def pipeline(
             photonpath,
             band,
             raw6file=str(raw6path),
-            verbose=2,
+            verbose=verbose,
             chunksz=1000000,
             threads=threads
         )
