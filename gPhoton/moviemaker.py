@@ -21,10 +21,10 @@ from gPhoton._shared_memory_pipe_components import (
     slice_into_memory,
     send_to_shared_memory,
 )
-from gPhoton.gphoton_utils import (
+from gPhoton.gphoton_utils import make_wcs_from_radec
+from gPhoton.pipeline_utils import (
     table_values,
     NestingDict,
-    make_wcs_from_radec,
 )
 
 

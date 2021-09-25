@@ -2,7 +2,7 @@ from multiprocessing.shared_memory import SharedMemory
 
 import numpy as np
 
-from gPhoton.gphoton_utils import NestingDict
+from gPhoton.pipeline_utils import NestingDict
 
 
 def get_column_from_shared_memory(results, column_name, unlink=True):

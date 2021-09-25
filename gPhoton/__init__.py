@@ -10,6 +10,6 @@ time_id = int(time.time()) # Define this session by time at import.
 # [DEVEL] NOTE: It is CRITICAL that these lines go AFTER the constants above.
 #         Due to the (circular) import structure, setup.py fails unless these
 #         come first, even though it's against PEP8 standard.
-from gPhoton.gAperture import gaperture as gAperture
-from gPhoton.gFind import gfind as gFind
-from gPhoton.gMap import gmap as gMap
+# from gPhoton.gAperture import gaperture as gAperture
+# from gPhoton.gFind import gfind as gFind
+# from gPhoton.gMap import gmap as gMap

@@ -19,8 +19,9 @@ import fitsio
 import numpy as np
 import pandas as pd
 from astropy.time import Time
-import scipy.stats
-import matplotlib.pyplot as plt
+# TODO: comment these back in if necessary
+# import scipy.stats
+# import matplotlib.pyplot as plt
 
 
 # gPhoton imports.
@@ -493,122 +494,6 @@ def checkplot(
 
 
 # ------------------------------------------------------------------------------
-def get_parquet_stats(fn, columns, row_group=0):
-    group = parquet.read_metadata(fn).row_group(row_group)
-    statistics = {}
-    for column in group.to_dict()["columns"]:
-        if column["path_in_schema"] in columns:
-            statistics[column["path_in_schema"]] = column["statistics"]
-    return statistics
-
-
-def table_values(table, columns):
-    return np.array([table[column].to_numpy() for column in columns]).T
-
-
-def where_between(whatever, t0, t1):
-    return np.where((whatever >= t0) & (whatever < t1))[0]
-
-
-def unequally_stepped(array, rtol=1e-5, atol=1e-8):
-    diff = array[1:] - array[:-1]
-    unequal = np.where(~np.isclose(diff, mode(diff), rtol=rtol, atol=atol))
-    return unequal, diff[unequal]
-
-
-def write_gzip(
-    whatever,
-    outfile,
-    compoptions=None,
-    writemethod="writeto",
-    writeoptions=None,
-):
-    if writeoptions is None:
-        writeoptions = {}
-    if compoptions is None:
-        compoptions = {}
-    gzipped = gzip.open(outfile, mode="wb", **compoptions)
-    getattr(whatever, writemethod)(gzipped, **writeoptions)
-    gzipped.close()
-
-
-def get_fits_radec(header, endpoints_only=True):
-    ranges = {}
-    for coord, ix in zip(("ra", "dec"), (1, 2)):
-        # explanatory variables
-        steps = header[f"NAXIS{ix}"]
-        stepsize = header[f"CDELT{ix}"]
-        extent = steps * stepsize / 2
-        center = header[f"CRVAL{ix}"]
-        coord_endpoints = (center - extent, center + extent)
-        if endpoints_only is True:
-            ranges[coord] = coord_endpoints
-        else:
-            ranges[coord] = np.arange(*coord_endpoints, stepsize)
-    return ranges
-
-
-def imshow_clipped(data, clip_range=(None, 99), hdu_ix=0, cmap="Greys_r"):
-    if isinstance(data, pyfits.HDUList):
-        header = data[hdu_ix].header
-        data = data[hdu_ix].data
-    elif isinstance(data, fitsio.FITS):
-        header = data[hdu_ix].read_header()
-        data = data[hdu_ix].read()
-    else:
-        header = None
-    if (len(data.shape) == 3) and (data.shape[0] == 1):
-        data = data[0]
-    clip_kwargs = {}
-    for clip_amount, clip_kwarg in zip(clip_range, ("a_min", "a_max")):
-        if clip_amount is not None:
-            clip_kwargs[clip_kwarg] = np.percentile(data, clip_amount)
-        else:
-            clip_kwargs[clip_kwarg] = None
-    fig, ax = plt.subplots()
-    im = ax.imshow(np.clip(data, **clip_kwargs), cmap=cmap)
-    plt.colorbar(mappable=im, ax=ax)
-    if header is not None:
-        radec = get_fits_radec(header, endpoints_only=False)
-        for data_coord, sky_coord in zip(("x", "y"), ("ra", "dec")):
-            vals = radec[sky_coord]
-            ticks = np.round(np.linspace(0, len(vals), 10))
-            tick_labels = np.round(np.linspace(vals[0], vals[-1], 10), 2)
-            getattr(ax, f"set_{data_coord}ticks")(ticks)
-            getattr(ax, f"set_{data_coord}ticklabels")(tick_labels)
-    return fig
-
-
-class NestingDict(defaultdict):
-    """
-    shorthand for automatically-nesting dictionary -- i.e.,
-    insert a series of keys at any depth into a NestingDict
-    and it automatically creates all needed levels above.
-    """
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.default_factory = NestingDict
-
-    __repr__ = dict.__repr__
-
-
-def diff_photonlist_and_movie_coords(movie_radec, photon_radec):
-    diffs = {}
-    minmax_funcs = {"min": min, "max": max}
-    for coord, op in product(("ra", "dec"), ("min", "max")):
-        diffs[f"{coord}_{op}"] = abs(
-            minmax_funcs[op](movie_radec[coord]) - photon_radec[coord][op]
-        )
-    return diffs
-
-
-def listify(thing):
-    """Always a list, for things that want lists"""
-    if isinstance(thing, Collection):
-        if not isinstance(thing, str):
-            return list(thing)
-    return [thing]
 
 
 def make_wcs_from_radec(radec):
@@ -623,61 +508,6 @@ def make_wcs_from_radec(radec):
     )
     # imsz = (3200, 3200)
     return gfu.make_wcs(center_skypos, imsz=imsz, pixsz=c.DEGPERPIXEL)
-
-
-def read_image(fn):
-    hdu = pyfits.open(fn)
-    print(f"Opened {fn}.")
-    image = hdu[0].data
-    exptimes, tranges = [], []
-    for i in range(hdu[0].header["N_FRAME"]):
-        exptimes += [hdu[0].header[f"EXPT_{i}"]]
-        tranges += [[hdu[0].header[f"T0_{i}"], hdu[0].header[f"T1_{i}"]]]
-    skypos = (hdu[0].header["CRVAL1"], hdu[0].header["CRVAL2"])
-    wcs = gfu.make_wcs(skypos)
-    print("\tParsed file header.")
-    try:
-        flagmap = hdu[1].data
-        edgemap = hdu[2].data
-        print("\tRetrieved flag and edge maps.")
-    except IndexError:
-        flagmap = None
-        edgemap = None
-    return {
-        "image": image,
-        "flagmap": flagmap,
-        "edgemap": edgemap,
-        "wcs": wcs,
-        "tranges": tranges,
-        "exptimes": exptimes,
-        "skypos": skypos,
-    }
-
-
-def eclipse_to_files(eclipse, data_directory="data", depth=None):
-    zpad = str(eclipse).zfill(5)
-    eclipse_path = f"{data_directory}/e{zpad}/"
-    eclipse_base = f"{eclipse_path}e{zpad}"
-    bands = "NUV", "FUV"
-    band_initials = "n", "f"
-    file_dict = {}
-    for band, initial in zip(bands, band_initials):
-        prefix = f"{eclipse_base}-{initial}d"
-        band_dict = {
-            "raw6": f"{prefix}-raw6.fits.gz",
-            "photonfile": f"{prefix}.parquet",
-            "image": f"{prefix}-full.fits.gz",
-        }
-        if depth is not None:
-            band_dict |= {
-                "movie": f"{prefix}-{depth}s.fits.gz",
-                "photomfile": f"{prefix}-{depth}s-photom.csv",
-                "expfile": f"{prefix}-{depth}s-exptime.csv",
-            }
-        file_dict[band] = band_dict
-    return file_dict
-
-
 
 # def load_full_depth_image(eclipse, datapath):
 #     prefix = f"e{eclipse}-full-"
