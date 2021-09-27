@@ -66,14 +66,19 @@ def pipeline(
             print("couldn't find raw6 file.")
             return "couldn't find raw6 file."
         from gPhoton import PhotonPipe
-        PhotonPipe.photonpipe(
-            photonpath,
-            band,
-            raw6file=str(raw6path),
-            verbose=verbose,
-            chunksz=1000000,
-            threads=threads
-        )
+        try:
+            PhotonPipe.photonpipe(
+                photonpath,
+                band,
+                raw6file=str(raw6path),
+                verbose=verbose,
+                chunksz=1000000,
+                threads=threads
+            )
+        except ValueError as value_error:
+            if str(value_error).startswith("bad distortion correction"):
+                print(str(value_error))
+                return "bad distortion correction solution"
     else:
         print(f"using existing photon list {photonpath}")
     stopwatch.click()

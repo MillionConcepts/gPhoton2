@@ -734,16 +734,21 @@ def apply_stim_distortion_correction(
         xp_as,
         yp_as,
     )
-    raveled_ix = np.ravel_multi_index(
-        np.array(
-            [
-                depth[ok_indices].astype(np.int64),
-                row[ok_indices].astype(np.int64),
-                col[ok_indices].astype(np.int64),
-            ]
-        ),
-        distortion["x"].shape,
-    )
+    try:
+        raveled_ix = np.ravel_multi_index(
+            np.array(
+                [
+                    depth[ok_indices].astype(np.int64),
+                    row[ok_indices].astype(np.int64),
+                    col[ok_indices].astype(np.int64),
+                ]
+            ),
+            distortion["x"].shape,
+        )
+    except ValueError as value_error:
+        if "invalid entry in coordinates array" in str(value_error):
+            raise ValueError("bad distortion correction solution. Quitting.")
+        raise
     xshift[ok_indices] = distortion["x"].ravel()[raveled_ix]
     yshift[ok_indices] = distortion["y"].ravel()[raveled_ix]
     xshift = (xshift * c.ARCSECPERPIXEL) + xoffset
