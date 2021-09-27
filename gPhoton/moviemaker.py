@@ -162,10 +162,19 @@ def make_movies(
             if exposure_directory[frame_ix] is None:
                 continue
             frame_time_ix = between(map_ix_dict[map_name]["t"], *trange)[0]
-            map_directory[frame_ix][map_name] = slice_into_memory(
-                {k: v for k, v in map_ix_dict[map_name].items() if k != "t"},
-                (frame_time_ix.min(), frame_time_ix.max()),
-            )
+            if len(frame_time_ix) == 0:
+                map_directory[frame_ix][map_name] = None
+                continue
+            try:
+                map_directory[frame_ix][map_name] = slice_into_memory(
+                    {k: v for k, v in map_ix_dict[map_name].items() if k != "t"},
+                    (frame_time_ix.min(), frame_time_ix.max()),
+                )
+            except ValueError as value_error:
+                if str(value_error).lower() == "'size' must be a positive number different from zero":
+                    map_directory[frame_ix][map_name] = None
+                    continue
+                raise
         del map_ix_dict[map_name]
     del map_ix_dict
     if threads is None:
@@ -278,6 +287,9 @@ def sm_make_maps(block_directory, imsz, lil=False):
 
 
 def sm_make_map(block_directory, map_name, imsz):
+    if block_directory[map_name] is None:
+        dtype = np.uint8 if map_name in ('edge', 'flag') else np.float64
+        return np.zeros(imsz, dtype)
     _, map_arrays = reference_shared_memory_arrays(block_directory[map_name])
     return make_frame(
         map_arrays["foc"],
