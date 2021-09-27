@@ -373,10 +373,17 @@ def write_movie(
         print(f"overwriting {gzip_path}")
         gzip_path.unlink()
     print(f"gzipping {movie_path}")
-    try:
-        sh.libdeflate_gzip(movie_path)
-    except sh.CommandNotFound:
-        sh.gzip(movie_path)
+    # try various gzip commands in order of perceived goodness
+    for gzipper, gzip_command in (
+        ("igzip", [movie_path, "-T 4"]),
+        ("libdeflate_gzip", [movie_path]),
+        ("gzip", [movie_path])
+    ):
+        try:
+            getattr(sh, gzipper)(*gzip_command)
+            break
+        except sh.CommandNotFound:
+            continue
 
 
 def add_movie_to_fits_file(writer, movie, header):
