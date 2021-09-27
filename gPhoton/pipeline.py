@@ -35,7 +35,7 @@ def pipeline(
     if not photonpath.parent.exists():
         photonpath.parent.mkdir(parents=True)
     stopwatch.click()
-    if remote_root is not None:
+    if (remote_root is not None) and (recreate is False):
         # check for remote photon list.
         if Path(remote_files["photonfile"]).exists():
             print(
