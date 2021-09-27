@@ -375,7 +375,7 @@ def write_movie(
     print(f"gzipping {movie_path}")
     # try various gzip commands in order of perceived goodness
     for gzipper, gzip_command in (
-        ("igzip", [movie_path, "-T 4"]),
+        ("igzip", [movie_path, "-T 4", "--rm"]),
         ("libdeflate_gzip", [movie_path]),
         ("gzip", [movie_path])
     ):
