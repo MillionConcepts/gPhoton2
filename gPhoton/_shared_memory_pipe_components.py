@@ -23,6 +23,8 @@ def get_column_from_shared_memory(results, column_name, unlink=True):
 def unlink_nested_block_dict(cal_data):
     all_cal_blocks = []
     for cal_name, cal_info in cal_data.items():
+        if cal_info is None:
+            continue
         cal_blocks, _ = reference_shared_memory_arrays(cal_info, fetch=False)
         all_cal_blocks += list(cal_blocks.values())
     for block in all_cal_blocks:
