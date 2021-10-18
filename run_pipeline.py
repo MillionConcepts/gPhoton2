@@ -1,11 +1,15 @@
 from gPhoton.pipeline import pipeline
 
+source_catalog_file = "/home/michael/Desktop/galex_swarm/" \
+                      "wdcat_eclipse_list.csv"
+
 if __name__ == "__main__":
     pipeline(
-        23863,
+        29097,
         "NUV",
-        depth=30,
+        depth=480,
         threads=None,
         data_root="test_data",
-        download=True,
+        recreate=False,
+        source_catalog_file=source_catalog_file
     )

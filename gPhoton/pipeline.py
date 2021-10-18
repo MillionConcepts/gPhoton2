@@ -2,6 +2,9 @@ import warnings
 from pathlib import Path
 import shutil
 from time import time
+from typing import Optional
+
+import pandas as pd
 
 from gPhoton.pipeline_start import eclipse_to_files, Stopwatch
 
@@ -16,16 +19,17 @@ def pipeline(
     data_root="test_data",
     remote_root=None,
     download=True,
-    recreate = False,
+    recreate=False,
     verbose=2,
-    maxsize=None
+    maxsize=None,
+    source_catalog_file: Optional[str] = None,
 ):
     stopwatch = Stopwatch()
     startt = time()
     stopwatch.click()
     if eclipse > 47000:
-        print('CAUSE data w/ eclipse>47000 are not yet supported.')
-        return 'CAUSE data w/ eclipse>47000 are not yet supported.'
+        print("CAUSE data w/ eclipse>47000 are not yet supported.")
+        return "CAUSE data w/ eclipse>47000 are not yet supported."
     filenames = eclipse_to_files(eclipse, data_root, depth)[band]
     remote_files = eclipse_to_files(eclipse, remote_root)[band]
     temp_directory = Path(data_root, "temp", str(eclipse).zfill(5))
@@ -42,9 +46,9 @@ def pipeline(
                 f"making temp local copy of photon file from remote: "
                 f"{remote_files['photonfile']}"
             )
-            photonpath = Path(shutil.copy(
-                Path(remote_files["photonfile"]), temp_directory
-            ))
+            photonpath = Path(
+                shutil.copy(Path(remote_files["photonfile"]), temp_directory)
+            )
     if recreate or not photonpath.exists():
         # find raw6 file.
         # first look locally. then look in remote (like s3) if provided.
@@ -56,9 +60,10 @@ def pipeline(
                     f"making temp local copy of raw6 file from remote: "
                     f"{remote_files['raw6']}"
                 )
-            raw6path = Path(shutil.copy(remote_files['raw6'], temp_directory))
+            raw6path = Path(shutil.copy(remote_files["raw6"], temp_directory))
         if not raw6path.exists() and (download is True):
             from gfcat.gfcat_utils import download_raw6
+
             raw6file = download_raw6(eclipse, band, data_directory=data_root)
             if raw6file is not None:
                 raw6path = Path(raw6file)
@@ -66,6 +71,7 @@ def pipeline(
             print("couldn't find raw6 file.")
             return "couldn't find raw6 file."
         from gPhoton import PhotonPipe
+
         try:
             PhotonPipe.photonpipe(
                 photonpath,
@@ -73,7 +79,7 @@ def pipeline(
                 raw6file=str(raw6path),
                 verbose=verbose,
                 chunksz=1000000,
-                threads=threads
+                threads=threads,
             )
         except ValueError as value_error:
             if str(value_error).startswith("bad distortion correction"):
@@ -83,32 +89,47 @@ def pipeline(
         print(f"using existing photon list {photonpath}")
     stopwatch.click()
     from gPhoton.pipeline_utils import get_parquet_stats
+
     file_stats = get_parquet_stats(str(photonpath), ["flags", "ra"])
     if (file_stats["flags"]["min"] > 6) or (file_stats["ra"]["max"] is None):
         print(f"no unflagged data in {photonpath}. bailing out.")
         print(f"no unflagged data (stopped after photon list)")
         return f"no unflagged data (stopped after photon list)"
     from gPhoton.moviemaker import handle_movie_and_image_creation, write_movie
+
     results = handle_movie_and_image_creation(
         str(photonpath),
         depth,
         band,
         lil=True,
         threads=threads,
-        maxsize = maxsize
+        maxsize=maxsize,
     )
     if isinstance(results, str):
         # this is a "nope, skipping" condition, currently caused only by
         # excessively large images
         return results
     stopwatch.click()
-    from gPhoton.photometry import find_sources, extract_photometry, write_photometry_tables
+    from gPhoton.photometry import (
+        find_sources,
+        extract_photometry,
+        write_photometry_tables,
+    )
+
+    if source_catalog_file is not None:
+        sources = pd.read_csv(source_catalog_file)
+        sources = sources.loc[
+            sources["eclipse"] == eclipse
+        ].reset_index(drop=True)
+    else:
+        sources = None
     source_table, apertures = find_sources(
         eclipse,
         band,
         str(photonpath.parent),
         results["image_dict"],
         results["wcs"],
+        sources=sources
     )
     if source_table is not None:
         stopwatch.click()
@@ -120,7 +141,7 @@ def pipeline(
             filenames["photomfile"],
             filenames["expfile"],
             source_table,
-            results["movie_dict"]
+            results["movie_dict"],
         )
         stopwatch.click()
     write_movie(
@@ -129,7 +150,7 @@ def pipeline(
         filenames["image"].replace(".gz", ""),
         results["image_dict"],
         clean_up=True,
-        wcs=results["wcs"]
+        wcs=results["wcs"],
     )
     del results["image_dict"]
     stopwatch.click()
@@ -139,11 +160,10 @@ def pipeline(
         filenames["movie"].replace(".gz", ""),
         results["movie_dict"],
         clean_up=True,
-        wcs=results["wcs"]
+        wcs=results["wcs"],
     )
     stopwatch.click()
     print(f"{(time() - startt).__round__(2)} seconds for pipeline execution")
     if source_table is None:
         return "skipped photometry due to low exptime or other issue"
     return "successful"
-
