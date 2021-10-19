@@ -7,9 +7,10 @@ if __name__ == "__main__":
     pipeline(
         29097,
         "NUV",
-        depth=480,
-        threads=None,
+        depth=5,
+        threads=4,
         data_root="test_data",
         recreate=False,
+        maxsize=16*1024**3,
         source_catalog_file=source_catalog_file
     )

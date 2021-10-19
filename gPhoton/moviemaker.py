@@ -1,7 +1,7 @@
 from collections.abc import Sequence
 from multiprocessing import Pool
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 import warnings
 
 import astropy.io.fits as pyfits
@@ -130,6 +130,30 @@ def generate_indexed_values(edge_ix, foc, mask_ix, t, weights):
     return indexed
 
 
+def slice_frame(exposure_directory, map_ix_dict, map_name, frame_ix, trange):
+    # 0-count exposure times have 'None' entries assigned in
+    # slice_exposure_into_memory
+    if exposure_directory[frame_ix] is None:
+        return
+    frame_time_ix = between(map_ix_dict[map_name]["t"], *trange)[0]
+    if len(frame_time_ix) == 0:
+        return None
+    try:
+        return slice_into_memory(
+            {k: v for k, v in map_ix_dict[map_name].items() if k != "t"},
+            (frame_time_ix.min(), frame_time_ix.max()),
+        )
+    except ValueError as value_error:
+        # case in which there are no events for this map in this
+        # time range
+        if (
+            str(value_error).lower()
+            == "'size' must be a positive number different from zero"
+        ):
+            return None
+        raise
+
+
 def make_movies(
     depth: Optional[int],
     exposure_array: np.ndarray,
@@ -139,7 +163,8 @@ def make_movies(
     band: str,
     lil: bool = False,
     threads: Optional[int] = 4,
-) -> dict:
+    maxsize: Optional[int] = None,
+) -> tuple[str, dict]:
     """
     :param depth: framesize in seconds
     :param exposure_array: t and flags, _including_ off-detector, for exptime
@@ -149,9 +174,19 @@ def make_movies(
     :param band: "FUV" or "NUV"
     :param lil: sparsify matrices to reduce memory footprint, at compute cost
     :param threads: how many threads to use to calculate frames
+    :param maxsize: terminate if predicted size (in bytes) of cntmap > maxsize
     """
     t0s = np.arange(total_trange[0], total_trange[1] + depth, depth)
     tranges = list(windowed(t0s, 2))
+    if maxsize is not None:
+        array_size = predict_movie_size(imsz, n_frames=len(tranges))
+        if array_size > maxsize:
+            failure_string = (
+                f"{array_size / (1024 ** 3)} GB necessary for movie "
+                f"> size threshold {maxsize}"
+            )
+            print(failure_string + "; halting pipeline")
+            return failure_string, {}
     exposure_directory = slice_exposure_into_memory(exposure_array, tranges)
     del exposure_array
     map_directory = NestingDict()
@@ -159,22 +194,9 @@ def make_movies(
         for frame_ix, trange in enumerate(tranges):
             # 0-count exposure times have 'None' entries assigned in
             # slice_exposure_into_memory
-            if exposure_directory[frame_ix] is None:
-                continue
-            frame_time_ix = between(map_ix_dict[map_name]["t"], *trange)[0]
-            if len(frame_time_ix) == 0:
-                map_directory[frame_ix][map_name] = None
-                continue
-            try:
-                map_directory[frame_ix][map_name] = slice_into_memory(
-                    {k: v for k, v in map_ix_dict[map_name].items() if k != "t"},
-                    (frame_time_ix.min(), frame_time_ix.max()),
-                )
-            except ValueError as value_error:
-                if str(value_error).lower() == "'size' must be a positive number different from zero":
-                    map_directory[frame_ix][map_name] = None
-                    continue
-                raise
+            map_directory[frame_ix][map_name] = slice_frame(
+                exposure_directory, map_ix_dict, map_name, frame_ix, trange
+            )
         del map_ix_dict[map_name]
     del map_ix_dict
     if threads is None:
@@ -184,29 +206,20 @@ def make_movies(
     results = {}
     for frame_ix, trange in enumerate(tranges):
         headline = f"Integrating frame {frame_ix + 1} of {len(tranges)}"
+        frame_params = (
+            band,
+            map_directory[frame_ix],
+            exposure_directory[frame_ix],
+            trange,
+            imsz,
+            lil,
+            headline,
+        )
         if pool is None:
-            # noinspection PyTypeChecker
-            results[frame_ix] = sm_compute_movie_frame(
-                band,
-                map_directory[frame_ix],
-                exposure_directory[frame_ix],
-                trange,
-                imsz,
-                lil,
-                headline,
-            )
+            results[frame_ix] = sm_compute_movie_frame(*frame_params)
         else:
             results[frame_ix] = pool.apply_async(
-                sm_compute_movie_frame,
-                (
-                    band,
-                    map_directory[frame_ix],
-                    exposure_directory[frame_ix],
-                    trange,
-                    imsz,
-                    lil,
-                    headline,
-                ),
+                sm_compute_movie_frame, frame_params
             )
     if pool is not None:
         pool.close()
@@ -220,7 +233,10 @@ def make_movies(
             movies[map_name].append(results[frame_ix][map_name])
         exptimes.append(results[frame_ix]["exptime"])
         del results[frame_ix]
-    return {"tranges": tranges, "exptimes": exptimes} | movies
+    return (
+        "successfully made movies",
+        {"tranges": tranges, "exptimes": exptimes} | movies,
+    )
 
 
 def sm_compute_movie_frame(
@@ -269,7 +285,7 @@ def zero_frame(imsz, lil=False):
     maps = (
         np.zeros(imsz),
         np.zeros(imsz, dtype="uint8"),
-        np.zeros(imsz, dtype="uint8")
+        np.zeros(imsz, dtype="uint8"),
     )
     if lil is True:
         return [scipy.sparse.coo_matrix(moviemap) for moviemap in maps]
@@ -288,7 +304,7 @@ def sm_make_maps(block_directory, imsz, lil=False):
 
 def sm_make_map(block_directory, map_name, imsz):
     if block_directory[map_name] is None:
-        dtype = np.uint8 if map_name in ('edge', 'flag') else np.float64
+        dtype = np.uint8 if map_name in ("edge", "flag") else np.float64
         return np.zeros(imsz, dtype)
     _, map_arrays = reference_shared_memory_arrays(block_directory[map_name])
     return make_frame(
@@ -389,7 +405,7 @@ def write_movie(
     for gzipper, gzip_command in (
         ("igzip", [movie_path, "-T 4", "--rm"]),
         ("libdeflate_gzip", [movie_path]),
-        ("gzip", [movie_path])
+        ("gzip", [movie_path]),
     ):
         try:
             getattr(sh, gzipper)(*gzip_command)
@@ -409,9 +425,28 @@ def add_movie_to_fits_file(writer, movie, header):
         pyfits.append(writer, np.stack(movie), header=header)
 
 
+def predict_movie_size(imsz, n_frames, nbytes=8):
+    """
+    nbytes is equal to anticipated absolute bytesize of
+    the largest component (cntmap, the "data" plane proper) of the
+    in-memory array during write -- this is going to be somewhat less
+    than total memory pressure, which is very difficult to predict.
+    """
+    return imsz[0] * imsz[1] * n_frames * nbytes
+
+
 def make_full_depth_image(
-    exposure_array, map_ix_dict, total_trange, imsz, band="NUV"
-):
+    exposure_array, map_ix_dict, total_trange, imsz, maxsize=None, band="NUV"
+) -> tuple[str, dict]:
+    if maxsize is not None:
+        array_size = predict_movie_size(imsz, n_frames=1)
+        if array_size > maxsize:
+            failure_string = (
+                f"failure: {array_size/(1024**3)} GB necessary for image "
+                f"> size threshold {maxsize}"
+            )
+            print(failure_string + "; halting pipeline")
+            return failure_string, {}
     interval = total_trange[1] - total_trange[0]
     trange = np.arange(total_trange[0], total_trange[1] + interval, interval)
     exptime = unshared_compute_exptime(exposure_array, band, trange)
@@ -423,7 +458,7 @@ def make_full_depth_image(
             imsz,
             booleanize=map_name in ("flag", "edge"),
         )
-    return output_dict
+    return "successfully made image", output_dict
 
 
 def handle_movie_and_image_creation(
@@ -434,10 +469,11 @@ def handle_movie_and_image_creation(
     make_full=True,
     edge_threshold: int = 350,
     threads=None,
-    maxsize=None
-) -> dict:
+    maxsize=None,
+) -> Union[dict, str]:
     print(f"making images from {photonfile}")
     print("indexing data and making WCS solution")
+    movie_dict, image_dict, status = {}, {}, "started"
     exposure_array, map_ix_dict, total_trange, wcs = prep_image_inputs(
         photonfile, edge_threshold
     )
@@ -445,33 +481,27 @@ def handle_movie_and_image_creation(
         int((wcs.wcs.crpix[1] - 0.5) * 2),
         int((wcs.wcs.crpix[0] - 0.5) * 2),
     )
-    if maxsize is not None:
-        if imsz[0] * imsz[1] > maxsize:
-            failure_string = f"image size: {imsz} greater than total array " \
-                             f"size threshold of {maxsize}. quitting."
-            print(failure_string)
-            return failure_string
     print(f"image size: {imsz}")
     render_kwargs = {
         "exposure_array": exposure_array,
         "map_ix_dict": map_ix_dict,
         "total_trange": total_trange,
         "imsz": imsz,
+        "maxsize": maxsize,
         "band": band,
     }
     if (depth is None) or (make_full is True):
         print(f"making full-depth image")
-        # special case: don't be careful about memory, just go for it.
-        image_dict = make_full_depth_image(**render_kwargs)
-    else:
-        image_dict = {}
-    if depth is not None:
+        # don't be careful about memory wrt sparsification, just go for it
+        status, image_dict = make_full_depth_image(**render_kwargs)
+    if (depth is not None) and status.startswith("success"):
         print(f"making {depth}-second depth movies")
-        movie_dict = make_movies(
+        status, movie_dict = make_movies(
             depth=depth, lil=lil, threads=threads, **render_kwargs
         )
-    else:
-        movie_dict = {}
-    return (
-        {"wcs": wcs} | {"movie_dict": movie_dict} | {"image_dict": image_dict}
-    )
+    return {
+        "wcs": wcs,
+        "movie_dict": movie_dict,
+        "image_dict": image_dict,
+        "status": status,
+    }

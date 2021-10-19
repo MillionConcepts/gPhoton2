@@ -71,7 +71,6 @@ def pipeline(
             print("couldn't find raw6 file.")
             return "couldn't find raw6 file."
         from gPhoton import PhotonPipe
-
         try:
             PhotonPipe.photonpipe(
                 photonpath,
@@ -105,11 +104,17 @@ def pipeline(
         threads=threads,
         maxsize=maxsize,
     )
-    if isinstance(results, str):
-        # this is a "nope, skipping" condition, currently caused only by
-        # excessively large images
-        return results
     stopwatch.click()
+    if results["movie_dict"] == {}:
+        print("No movies available, halting pipeline before photometry.")
+        if results["image_dict"] != {}:
+            write_movie(
+                band,
+                None,
+                filenames["image"].replace(".gz", ""),
+                results["image_dict"],
+                wcs=results["wcs"],
+            )
     from gPhoton.photometry import (
         find_sources,
         extract_photometry,
@@ -118,9 +123,9 @@ def pipeline(
 
     if source_catalog_file is not None:
         sources = pd.read_csv(source_catalog_file)
-        sources = sources.loc[
-            sources["eclipse"] == eclipse
-        ].reset_index(drop=True)
+        sources = sources.loc[sources["eclipse"] == eclipse].reset_index(
+            drop=True
+        )
     else:
         sources = None
     source_table, apertures = find_sources(
@@ -129,7 +134,7 @@ def pipeline(
         str(photonpath.parent),
         results["image_dict"],
         results["wcs"],
-        sources=sources
+        sources=sources,
     )
     if source_table is not None:
         stopwatch.click()
