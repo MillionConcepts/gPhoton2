@@ -5,12 +5,12 @@ source_catalog_file = "/home/michael/Desktop/galex_swarm/" \
 
 if __name__ == "__main__":
     pipeline(
-        29097,
+        18051,
         "NUV",
         depth=5,
         threads=4,
         data_root="test_data",
         recreate=False,
-        maxsize=16*1024**3,
+        maxsize=30*1024**3,
         source_catalog_file=source_catalog_file
     )

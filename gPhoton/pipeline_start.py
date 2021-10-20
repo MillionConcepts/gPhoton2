@@ -39,7 +39,8 @@ def eclipse_to_files(eclipse, data_directory="data", depth=None):
         if depth is not None:
             band_dict |= {
                 "movie": f"{prefix}-{depth}s.fits.gz",
-                "photomfile": f"{prefix}-{depth}s-photom.csv",
+                # stem -- multiple aperture sizes possible
+                "photomfile": f"{prefix}-{depth}s-photom-",
                 "expfile": f"{prefix}-{depth}s-exptime.csv",
             }
         file_dict[band] = band_dict

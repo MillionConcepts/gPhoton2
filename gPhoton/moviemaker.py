@@ -130,7 +130,9 @@ def generate_indexed_values(edge_ix, foc, mask_ix, t, weights):
     return indexed
 
 
-def slice_frame(exposure_directory, map_ix_dict, map_name, frame_ix, trange):
+def slice_frame_into_memory(
+    exposure_directory, map_ix_dict, map_name, frame_ix, trange
+):
     # 0-count exposure times have 'None' entries assigned in
     # slice_exposure_into_memory
     if exposure_directory[frame_ix] is None:
@@ -143,11 +145,11 @@ def slice_frame(exposure_directory, map_ix_dict, map_name, frame_ix, trange):
             {k: v for k, v in map_ix_dict[map_name].items() if k != "t"},
             (frame_time_ix.min(), frame_time_ix.max()),
         )
-    except ValueError as value_error:
+    except ValueError as error:
         # case in which there are no events for this map in this
         # time range
         if (
-            str(value_error).lower()
+            str(error).lower()
             == "'size' must be a positive number different from zero"
         ):
             return None
@@ -194,7 +196,7 @@ def make_movies(
         for frame_ix, trange in enumerate(tranges):
             # 0-count exposure times have 'None' entries assigned in
             # slice_exposure_into_memory
-            map_directory[frame_ix][map_name] = slice_frame(
+            map_directory[frame_ix][map_name] = slice_frame_into_memory(
                 exposure_directory, map_ix_dict, map_name, frame_ix, trange
             )
         del map_ix_dict[map_name]
@@ -363,7 +365,7 @@ def populate_fits_header(band, wcs, tranges, exptimes):
     return header
 
 
-def write_movie(
+def write_fits_array(
     band,
     depth,
     moviefile,

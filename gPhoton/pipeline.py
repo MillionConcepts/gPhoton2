@@ -2,13 +2,43 @@ import warnings
 from pathlib import Path
 import shutil
 from time import time
-from typing import Optional
+from typing import Optional, Sequence
 
 import pandas as pd
 
+import gPhoton.constants as c
+from gPhoton.photometry import count_full_depth_image, write_exptime_file
 from gPhoton.pipeline_start import eclipse_to_files, Stopwatch
 
 warnings.filterwarnings(action="ignore", category=RuntimeWarning)
+
+
+def write_movies_as_appropriate(
+    results, filenames, depth, band, write_movie, write_image, stopwatch
+):
+    from gPhoton.moviemaker import write_fits_array
+
+    if write_image and (results["image_dict"] != {}):
+        write_fits_array(
+            band,
+            None,
+            filenames["image"].replace(".gz", ""),
+            results["image_dict"],
+            clean_up=True,
+            wcs=results["wcs"],
+        )
+    del results["image_dict"]
+    stopwatch.click()
+    if write_movie and (results["movie_dict"] != {}):
+        write_fits_array(
+            band,
+            depth,
+            filenames["movie"].replace(".gz", ""),
+            results["movie_dict"],
+            clean_up=True,
+            wcs=results["wcs"],
+        )
+        stopwatch.click()
 
 
 def pipeline(
@@ -23,6 +53,10 @@ def pipeline(
     verbose=2,
     maxsize=None,
     source_catalog_file: Optional[str] = None,
+    write_image: bool = True,
+    write_movie: bool = True,
+    # size in arcseconds
+    aperture_sizes: Sequence[float] = tuple([12.8]),
 ):
     stopwatch = Stopwatch()
     startt = time()
@@ -71,6 +105,7 @@ def pipeline(
             print("couldn't find raw6 file.")
             return "couldn't find raw6 file."
         from gPhoton import PhotonPipe
+
         try:
             PhotonPipe.photonpipe(
                 photonpath,
@@ -92,9 +127,8 @@ def pipeline(
     file_stats = get_parquet_stats(str(photonpath), ["flags", "ra"])
     if (file_stats["flags"]["min"] > 6) or (file_stats["ra"]["max"] is None):
         print(f"no unflagged data in {photonpath}. bailing out.")
-        print(f"no unflagged data (stopped after photon list)")
         return f"no unflagged data (stopped after photon list)"
-    from gPhoton.moviemaker import handle_movie_and_image_creation, write_movie
+    from gPhoton.moviemaker import handle_movie_and_image_creation
 
     results = handle_movie_and_image_creation(
         str(photonpath),
@@ -107,19 +141,17 @@ def pipeline(
     stopwatch.click()
     if results["movie_dict"] == {}:
         print("No movies available, halting pipeline before photometry.")
-        if results["image_dict"] != {}:
-            write_movie(
-                band,
-                None,
-                filenames["image"].replace(".gz", ""),
-                results["image_dict"],
-                wcs=results["wcs"],
-            )
-    from gPhoton.photometry import (
-        find_sources,
-        extract_photometry,
-        write_photometry_tables,
-    )
+        write_movies_as_appropriate(
+            results,
+            filenames,
+            depth,
+            band,
+            write_movie,
+            write_image,
+            stopwatch,
+        )
+        return results["status"]
+    from gPhoton.photometry import find_sources, extract_photometry
 
     if source_catalog_file is not None:
         sources = pd.read_csv(source_catalog_file)
@@ -128,47 +160,42 @@ def pipeline(
         )
     else:
         sources = None
-    source_table, apertures = find_sources(
+    source_table = find_sources(
         eclipse,
         band,
         str(photonpath.parent),
         results["image_dict"],
         results["wcs"],
-        sources=sources,
+        source_table=sources,
     )
+    stopwatch.click()
+    # if source_table is None at this point, it should mean that DAOStarFinder
+    # didn't find anything
     if source_table is not None:
-        stopwatch.click()
-        source_table = extract_photometry(
-            results["movie_dict"], source_table, apertures, threads
-        )
-        stopwatch.click()
-        write_photometry_tables(
-            filenames["photomfile"],
-            filenames["expfile"],
-            source_table,
-            results["movie_dict"],
-        )
-        stopwatch.click()
-    write_movie(
-        band,
-        None,
-        filenames["image"].replace(".gz", ""),
-        results["image_dict"],
-        clean_up=True,
-        wcs=results["wcs"],
+        for aperture_size in aperture_sizes:
+            aperture_size_px = aperture_size / c.ARCSECPERPIXEL
+            source_table, apertures = count_full_depth_image(
+                source_table,
+                aperture_size_px,
+                results["image_dict"],
+                results["wcs"],
+            )
+            source_table = extract_photometry(
+                results["movie_dict"], source_table, apertures, threads
+            )
+            photomfile = (
+                filenames["photomfile"]
+                + str(aperture_size).replace(".", "_")
+                + ".csv"
+            )
+            print(f"writing source table to {photomfile}")
+            source_table.to_csv(photomfile, index=False)
+            stopwatch.click()
+        write_exptime_file(filenames["expfile"], results["movie_dict"])
+    write_movies_as_appropriate(
+        results, filenames, depth, band, write_movie, write_image, stopwatch
     )
-    del results["image_dict"]
-    stopwatch.click()
-    write_movie(
-        band,
-        depth,
-        filenames["movie"].replace(".gz", ""),
-        results["movie_dict"],
-        clean_up=True,
-        wcs=results["wcs"],
-    )
-    stopwatch.click()
     print(f"{(time() - startt).__round__(2)} seconds for pipeline execution")
-    if source_table is None:
+    if sources is None:
         return "skipped photometry due to low exptime or other issue"
     return "successful"
