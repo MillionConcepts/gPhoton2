@@ -154,6 +154,8 @@ def pipeline(
     from gPhoton.photometry import find_sources, extract_photometry
 
     if source_catalog_file is not None:
+        import os
+        print(os.getcwd())
         sources = pd.read_csv(source_catalog_file)
         sources = sources.loc[sources["eclipse"] == eclipse].reset_index(
             drop=True
