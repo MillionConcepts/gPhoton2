@@ -12,5 +12,7 @@ if __name__ == "__main__":
         data_root="test_data",
         recreate=False,
         maxsize=30*1024**3,
-        source_catalog_file=source_catalog_file
+        source_catalog_file=source_catalog_file,
+        aperture_sizes=[12.8, 25.6, 51.2],
+        write_movie=False
     )

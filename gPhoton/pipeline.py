@@ -55,7 +55,7 @@ def pipeline(
     source_catalog_file: Optional[str] = None,
     write_image: bool = True,
     write_movie: bool = True,
-    # size in arcseconds
+    # sizes of apertures in arcseconds
     aperture_sizes: Sequence[float] = tuple([12.8]),
 ):
     stopwatch = Stopwatch()
@@ -180,6 +180,7 @@ def pipeline(
                 results["image_dict"],
                 results["wcs"],
             )
+            stopwatch.click()
             source_table = extract_photometry(
                 results["movie_dict"], source_table, apertures, threads
             )

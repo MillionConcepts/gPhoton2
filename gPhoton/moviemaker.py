@@ -178,6 +178,13 @@ def make_movies(
     :param threads: how many threads to use to calculate frames
     :param maxsize: terminate if predicted size (in bytes) of cntmap > maxsize
     """
+    # TODO, maybe: at very short depths, slicing arrays into memory becomes a
+    #  meaningful single-core-speed-dependent bottleneck. overhead of
+    #  distributing across processes may not be worth it anyway.
+    #  also, jamming the entirety of the arrays into memory and indexing as
+    #  needed _is_ an option if rigorous thread safety is practiced, although
+    #  this will significantly increase the memory pressure of this portion
+    #  of the pipeline.
     t0s = np.arange(total_trange[0], total_trange[1] + depth, depth)
     tranges = list(windowed(t0s, 2))
     if maxsize is not None:

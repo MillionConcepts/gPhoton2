@@ -12,7 +12,7 @@ from gPhoton import MCUtils as mc
 
 
 def count_full_depth_image(source_table, aperture_size, image_dict, wcs):
-    positions = source_table[["xcentroid", "ycentroid"]].to_pandas().values
+    positions = source_table[["xcentroid", "ycentroid"]].values
     apertures = CircularAperture(positions, r=aperture_size)
     print("Performing aperture photometry on primary image.")
     phot_table = aperture_photometry(image_dict["cnt"], apertures).to_pandas()
@@ -57,7 +57,7 @@ def find_sources(
         Path(datapath, "LowExpt").touch()
         return None, None
     if source_table is None:
-        print("Extracting sources.")
+        print("Extracting sources with DAOFIND.")
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             daofind = DAOStarFinder(fwhm=5, threshold=0.01)
@@ -78,7 +78,6 @@ def find_sources(
         )
         source_table[["xcentroid", "ycentroid"]] = positions
     return source_table
-
 
 
 def extract_frame(frame, apertures):
@@ -132,7 +131,7 @@ def extract_photometry(movie_dict, source_table, apertures, threads):
     return pd.concat([source_table, *photometry_tables], axis=1)
 
 
-def write_exptime_file(movie_dict, expfile):
+def write_exptime_file(expfile, movie_dict):
     exptime_table = pd.DataFrame(
         {
             "expt": movie_dict["exptimes"],
