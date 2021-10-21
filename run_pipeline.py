@@ -6,13 +6,13 @@ source_catalog_file = (
 
 if __name__ == "__main__":
     pipeline(
-        12843,
+        28391,
         "NUV",
         depth=5,
-        threads=2,
+        threads=4,
         data_root="test_data",
         recreate=False,
-        maxsize=25*1024**3,
+        maxsize=16*1024**3,
         source_catalog_file=source_catalog_file,
         aperture_sizes=[12.8, 25.6, 51.2],
         write={"movie": False, "image": True},

@@ -474,8 +474,8 @@ def predict_sparse_movie_memory(
     framesize = imsz[0] * imsz[1] * nbytes
     # we need to be able to hold one full frame in memory for each thread
     base_cost = framesize * threads
-    # and also there's some amount of overhead from frames
-    slice_cost = n_frames * nbytes * (40 * 1024**2)
+    # and also there's some small amount of overhead from frames
+    slice_cost = n_frames * (15 * 1024**2)
     return base_cost + slice_cost
 
 
