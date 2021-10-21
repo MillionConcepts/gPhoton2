@@ -32,8 +32,8 @@ def pipeline(
     startt = time()
     stopwatch.click()
     if eclipse > 47000:
-        print("CAUSE data w/ eclipse>47000 are not yet supported.")
-        return "CAUSE data w/ eclipse>47000 are not yet supported."
+        print("CAUSE data w/eclipse>47000 are not yet supported.")
+        return "return code: CAUSE data w/eclipse>47000 are not yet supported."
     names = eclipse_to_files(eclipse, data_root, depth)[band]
     remote_files = eclipse_to_files(eclipse, remote_root)[band]
     temp_directory = Path(data_root, "temp", str(eclipse).zfill(5))
@@ -73,7 +73,7 @@ def pipeline(
                 raw6path = Path(raw6file)
         if not raw6path.exists():
             print("couldn't find raw6 file.")
-            return "couldn't find raw6 file."
+            return "return code: couldn't find raw6 file."
         from gPhoton import PhotonPipe
 
         try:
@@ -88,7 +88,7 @@ def pipeline(
         except ValueError as value_error:
             if str(value_error).startswith("bad distortion correction"):
                 print(str(value_error))
-                return "bad distortion correction solution"
+                return "return code: bad distortion correction solution"
     else:
         print(f"using existing photon list {photonpath}")
     stopwatch.click()
@@ -97,7 +97,7 @@ def pipeline(
     file_stats = get_parquet_stats(str(photonpath), ["flags", "ra"])
     if (file_stats["flags"]["min"] > 6) or (file_stats["ra"]["max"] is None):
         print(f"no unflagged data in {photonpath}. bailing out.")
-        return f"no unflagged data (stopped after photon list)"
+        return "return code: no unflagged data (stopped after photon list)"
     from gPhoton.moviemaker import handle_movie_and_image_creation, write_fits
 
     results = handle_movie_and_image_creation(
@@ -107,7 +107,7 @@ def pipeline(
     if results["movie_dict"] == {}:
         print("No movies available, halting pipeline before photometry.")
         write_fits(results, names, depth, band, write, maxsize, stopwatch)
-        return results["status"]
+        return "return code: " + results["status"]
     from gPhoton.photometry import (
         find_sources,
         extract_photometry,
@@ -166,5 +166,5 @@ def pipeline(
     if write_result != "successful":
         failures.append(write_result)
     if len(failures) > 0:
-        return ";".join(failures)
-    return "successful"
+        return "return code: " + ";".join(failures)
+    return "return code: successful"
