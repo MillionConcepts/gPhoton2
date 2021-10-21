@@ -188,14 +188,23 @@ def make_movies(
     t0s = np.arange(total_trange[0], total_trange[1] + depth, depth)
     tranges = list(windowed(t0s, 2))
     if maxsize is not None:
-        array_size = predict_movie_size(imsz, n_frames=len(tranges))
-        if array_size > maxsize:
+        # we're ignoring most of the per-frame overhead at this point because
+        # it is probably (?) trivial for large arrays.
+        # sparse = 0.08 if lil else 1
+        memory = predict_sparse_movie_memory(
+            imsz, n_frames=len(tranges), threads=threads
+        )
+        # add a single-frame 'penalty' for unsparsified full-depth image
+        # 10 = sum of element sizes across planes
+        memory += imsz[0] * imsz[1] * 10
+        if memory > maxsize:
             failure_string = (
-                f"{array_size / (1024 ** 3)} GB necessary for movie "
+                f"{round(memory / (1024 ** 3), 2)} GB needed to make movie "
                 f"> size threshold {maxsize}"
             )
             print(failure_string + "; halting pipeline")
             return failure_string, {}
+    print("slicing exposure array into memory")
     exposure_directory = slice_exposure_into_memory(exposure_array, tranges)
     del exposure_array
     map_directory = NestingDict()
@@ -203,6 +212,10 @@ def make_movies(
         for frame_ix, trange in enumerate(tranges):
             # 0-count exposure times have 'None' entries assigned in
             # slice_exposure_into_memory
+            print(
+                f"slicing {map_name} data {frame_ix + 1} of {len(tranges)} "
+                f"into memory"
+            )
             map_directory[frame_ix][map_name] = slice_frame_into_memory(
                 exposure_directory, map_ix_dict, map_name, frame_ix, trange
             )
@@ -434,25 +447,49 @@ def add_movie_to_fits_file(writer, movie, header):
         pyfits.append(writer, np.stack(movie), header=header)
 
 
-def predict_movie_size(imsz, n_frames, nbytes=8):
+def predict_movie_memory(imsz, n_frames, nbytes=8):
     """
-    nbytes is equal to anticipated absolute bytesize of
-    the largest component (cntmap, the "data" plane proper) of the
-    in-memory array during write -- this is going to be somewhat less
-    than total memory pressure, which is very difficult to predict.
+    predict memory size in bytes of movie during write. nbytes is equal to the
+    per-element size of _only_ the largest plane, which should be the cntmap
+    with the current pipeline configuration. this will be something of an
+    undercount due to handling costs.
     """
     return imsz[0] * imsz[1] * n_frames * nbytes
+
+
+def predict_sparse_movie_memory(
+    imsz, n_frames, threads, nbytes=17
+):
+    """
+    nbytes here is equal to the sum of the per-element sizes of all movie
+    planes -- cnt / flag / edge, in the worst-case where one has not yet
+    been reduced to uint8.
+    sparsification means that, for large arrays, the process will usually
+    get cheaper as it goes on unless there are a truly huge number of frames,
+    so we're sort of ignoring framesize in that calculation for now.
+    """
+    if threads is None:
+        threads = 1
+    threads = min(threads, n_frames)
+    framesize = imsz[0] * imsz[1] * nbytes
+    # we need to be able to hold one full frame in memory for each thread
+    base_cost = framesize * threads
+    # and also there's some amount of overhead from frames
+    slice_cost = n_frames * nbytes * (40 * 1024**2)
+    return base_cost + slice_cost
 
 
 def make_full_depth_image(
     exposure_array, map_ix_dict, total_trange, imsz, maxsize=None, band="NUV"
 ) -> tuple[str, dict]:
     if maxsize is not None:
-        array_size = predict_movie_size(imsz, n_frames=1)
-        if array_size > maxsize:
+        # peak memory usage will be ~17 -- 8 + 1 + 8, before the final
+        # map is cast from float64 to uint8.
+        memory = predict_movie_memory(imsz, n_frames=1, nbytes=17)
+        if memory > maxsize:
             failure_string = (
-                f"failure: {array_size/(1024**3)} GB necessary for image "
-                f"> size threshold {maxsize}"
+                f"failure: {round(memory/(1024**3), 2)} GB needed to make "
+                f"image > size threshold {maxsize}"
             )
             print(failure_string + "; halting pipeline")
             return failure_string, {}
@@ -475,10 +512,9 @@ def handle_movie_and_image_creation(
     depth,
     band,
     lil=False,
-    make_full=True,
-    edge_threshold: int = 350,
     threads=None,
     maxsize=None,
+    edge_threshold: int = 350,
 ) -> Union[dict, str]:
     print(f"making images from {photonfile}")
     print("indexing data and making WCS solution")
@@ -499,10 +535,10 @@ def handle_movie_and_image_creation(
         "maxsize": maxsize,
         "band": band,
     }
-    if (depth is None) or (make_full is True):
-        print(f"making full-depth image")
-        # don't be careful about memory wrt sparsification, just go for it
-        status, image_dict = make_full_depth_image(**render_kwargs)
+
+    print(f"making full-depth image")
+    # don't be careful about memory wrt sparsification, just go for it
+    status, image_dict = make_full_depth_image(**render_kwargs)
     if (depth is not None) and status.startswith("success"):
         print(f"making {depth}-second depth movies")
         status, movie_dict = make_movies(
@@ -514,3 +550,50 @@ def handle_movie_and_image_creation(
         "image_dict": image_dict,
         "status": status,
     }
+
+
+def write_fits(
+    results,
+    filenames,
+    depth,
+    band,
+    write,
+    maxsize,
+    stopwatch,
+):
+    if write["image"] and (results["image_dict"] != {}):
+        write_fits_array(
+            band,
+            None,
+            filenames["image"].replace(".gz", ""),
+            results["image_dict"],
+            clean_up=True,
+            wcs=results["wcs"],
+        )
+    del results["image_dict"]
+    stopwatch.click()
+    if write["movie"] and (results["movie_dict"] != {}):
+        # we don't check size of the image, because if we can handle the image
+        # in memory, we can write it, but we handle the movies frame by frame
+        # earlier in the pipeline, so that doesn't hold true for them.
+        if maxsize is not None:
+            imsz = results["movie_dict"]["cnt"][0].shape
+            n_frames = len(results["movie_dict"]["cnt"])
+            memory = predict_movie_memory(imsz, n_frames)
+            if memory > maxsize:
+                failure_string = (
+                    f"{round(memory / (1024 ** 3), 2)} GB needed to write "
+                    f"movie > size threshold {maxsize}"
+                )
+                print(failure_string + "; not writing")
+                return failure_string
+        write_fits_array(
+            band,
+            depth,
+            filenames["movie"].replace(".gz", ""),
+            results["movie_dict"],
+            clean_up=True,
+            wcs=results["wcs"],
+        )
+        stopwatch.click()
+    return "successful"
