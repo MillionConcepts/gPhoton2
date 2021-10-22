@@ -6,10 +6,10 @@ source_catalog_file = (
 
 if __name__ == "__main__":
     pipeline(
-        28391,
+        16055,
         "NUV",
         depth=5,
-        threads=4,
+        threads=None,
         data_root="test_data",
         recreate=False,
         maxsize=16*1024**3,

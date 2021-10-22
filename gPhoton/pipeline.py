@@ -131,6 +131,9 @@ def pipeline(
         results["wcs"],
         source_table=sources,
     )
+    # failure messages due to low exptime or no data
+    if isinstance(source_table, str):
+        return f"return code: {source_table}"
     stopwatch.click()
     # if source_table is None at this point, it should mean that DAOStarFinder
     # didn't find anything

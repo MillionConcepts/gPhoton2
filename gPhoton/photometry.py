@@ -50,12 +50,12 @@ def find_sources(
     if not image_dict["cnt"].max():
         print(f"{eclipse} appears to contain nothing in {band}.")
         Path(datapath, f"No{band}").touch()
-        return None, None
+        return f"{eclipse} appears to contain nothing in {band}."
     exptime = image_dict["exptimes"][0]
     if exptime < 300:
         print("Skipping low exposure time visit.")
         Path(datapath, "LowExpt").touch()
-        return None, None
+        return "Skipping low exposure time visit."
     if source_table is None:
         print("Extracting sources with DAOFIND.")
         with warnings.catch_warnings():
