@@ -70,16 +70,11 @@ def find_sources(
             Path(datapath, f"No{band}").touch()
             return None, None
     else:
-        sources = [
-            radec.values[0]
-            for _, radec
-            in source_table[["ra", "dec"]].groupby(by=["ra", "dec"])
-        ]
-        print(f"Using specified catalog of {len(sources)} sources.")
+        print(f"Using specified catalog of {len(source_table)} sources.")
         positions = np.vstack(
             [
-                wcs.wcs_world2pix([source], 1, ra_dec_order=True)
-                for source in sources
+                wcs.wcs_world2pix([position], 1, ra_dec_order=True)
+                for position in source_table[["ra", "dec"]].values
             ]
         )
         source_table[["xcentroid", "ycentroid"]] = positions

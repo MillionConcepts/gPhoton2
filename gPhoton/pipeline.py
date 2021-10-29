@@ -118,11 +118,9 @@ def pipeline(
 
     if source_catalog_file is not None:
         import pandas as pd
-
         sources = pd.read_csv(source_catalog_file)
-        sources = sources.loc[sources["eclipse"] == eclipse].reset_index(
-            drop=True
-        )
+        sources = sources.loc[sources["eclipse"] == eclipse]
+        sources = sources[~sources.duplicated()].reset_index(drop=True)
     else:
         sources = None
     source_table = find_sources(
