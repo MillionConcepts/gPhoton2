@@ -71,10 +71,15 @@ def find_sources(
             return None, None
     else:
         print(f"Using specified catalog of {len(source_table)} sources.")
+        sources = [
+            radec.values
+            for _, radec
+            in source_table[["ra", "dec"]].groupby(by=["ra", "dec"])
+        ]
         positions = np.vstack(
             [
-                wcs.wcs_world2pix([position], 1, ra_dec_order=True)
-                for position in source_table[["ra", "dec"]].values
+                wcs.wcs_world2pix([source], 1, ra_dec_order=True)
+                for source in sources
             ]
         )
         source_table[["xcentroid", "ycentroid"]] = positions
