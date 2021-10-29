@@ -6,6 +6,7 @@ from typing import Optional, Sequence, Mapping
 import warnings
 
 import gPhoton.constants as c
+from gPhoton._pipe_components import retrieve_raw6
 from gPhoton.pipeline_start import eclipse_to_files, Stopwatch
 
 warnings.filterwarnings(action="ignore", category=RuntimeWarning)
@@ -66,9 +67,9 @@ def pipeline(
                 )
             raw6path = Path(shutil.copy(remote_files["raw6"], temp_directory))
         if not raw6path.exists() and (download is True):
-            from gfcat.gfcat_utils import download_raw6
-
-            raw6file = download_raw6(eclipse, band, data_directory=data_root)
+            raw6file = retrieve_raw6(
+                eclipse, band, str(Path(data_root, str(eclipse).zfill(5)))
+            )
             if raw6file is not None:
                 raw6path = Path(raw6file)
         if not raw6path.exists():
@@ -112,11 +113,12 @@ def pipeline(
         find_sources,
         extract_photometry,
         count_full_depth_image,
-        write_exptime_file
+        write_exptime_file,
     )
 
     if source_catalog_file is not None:
         import pandas as pd
+
         sources = pd.read_csv(source_catalog_file)
         sources = sources.loc[sources["eclipse"] == eclipse].reset_index(
             drop=True
