@@ -18,7 +18,6 @@ from pyarrow import parquet
 
 # gPhoton imports.
 
-from gPhoton.CalUtils import find_fuv_offset
 from gPhoton.MCUtils import print_inline
 from gPhoton._pipe_components import (
     retrieve_aspect_solution,
@@ -33,6 +32,7 @@ from gPhoton._pipe_components import (
     chunk_data,
     process_chunk_in_unshared_memory,
 )
+from gPhoton.gphoton_utils import find_fuv_offset
 
 # ------------------------------------------------------------------------------
 

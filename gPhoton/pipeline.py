@@ -90,6 +90,13 @@ def pipeline(
             if str(value_error).startswith("bad distortion correction"):
                 print(str(value_error))
                 return "return code: bad distortion correction solution"
+            if "probably not a valid FUV observation" in str(value_error):
+                print(str(value_error))
+                return "return code: not a valid FUV observation"
+            if "FUV temperature out of range" in str(value_error):
+                print(str(value_error))
+                return "return code: FUV temperature value out of range"
+            raise
     else:
         print(f"using existing photon list {photonpath}")
     stopwatch.click()

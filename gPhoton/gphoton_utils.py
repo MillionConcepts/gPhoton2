@@ -35,6 +35,12 @@ import gPhoton.galextools as gt
 import gPhoton.dbasetools as dt
 
 # ------------------------------------------------------------------------------
+
+from gPhoton import cal
+
+from gPhoton.MCUtils import get_fits_header
+
+
 def read_lc(csvfile, comment="|"):
     """
     Read a light curve csv file from gAperture.
@@ -508,6 +514,75 @@ def make_wcs_from_radec(radec):
     )
     # imsz = (3200, 3200)
     return gfu.make_wcs(center_skypos, imsz=imsz, pixsz=c.DEGPERPIXEL)
+
+
+
+# ------
+
+# modified from CalUtils to throw an error for invalid FUV observations
+def find_fuv_offset(scstfile, raise_invalid = True):
+    """
+    Computes NUV->FUV center offset based on a lookup table.
+
+    :param scstfile: Name of the spacecraft state (-scst) FITS file.
+
+    :type scstfile: str
+
+    :returns: tuple -- A two-element tuple containing the x and y offsets.
+    """
+
+    fodx_coef_0, fody_coef_0, fodx_coef_1, fody_coef_1 = (0.0, 0.0, 0.0, 0.0)
+
+    scsthead = get_fits_header(scstfile)
+
+    print("Reading header values from scst file: ", scstfile)
+
+    try:
+        eclipse = int(scsthead["eclipse"])
+    except:
+        print("WARNING: ECLIPSE is not defined in SCST header.")
+        try:
+            eclipse = int(scstfile.split("/")[-1].split("-")[0][1:])
+            print("         Using {e} from filename.".format(e=eclipse))
+        except:
+            print("         Unable to infer eclipse from filename.")
+            return 0.0, 0.0
+
+    try:
+        fdttdc = float(scsthead["FDTTDC"])
+    except KeyError:
+        print("WARNING: FUV temperature value missing from SCST.")
+        print("         This is probably not a valid FUV observation.")
+        if raise_invalid is True:
+            raise ValueError("This is probably not a valid FUV observation.")
+        return 0.0, 0.0
+
+    print(
+        "Offsetting FUV image for eclipse {e} at {t} degrees.".format(
+            e=eclipse, t=fdttdc
+        )
+    )
+
+    fodx_coef_0 = cal.offset("x")[eclipse - 1, 1]
+    fody_coef_0 = cal.offset("y")[eclipse - 1, 1]
+
+    fodx_coef_1 = 0.0
+    fody_coef_1 = 0.3597
+
+    if (fdttdc <= 20.0) or (fdttdc >= 40.0):
+        print("ERROR: FDTTDC is out of range at {t}".format(t=fdttdc))
+        if raise_invalid is True:
+            raise ValueError("FUV temperature out of range.")
+        return 0.0, 0.0
+    else:
+        xoffset = fodx_coef_0 - (fodx_coef_1 * (fdttdc - 29.0))
+        yoffset = fody_coef_0 - (fody_coef_1 * (fdttdc - 29.0))
+        print(
+            "Setting FUV offsets to x={x}, y={y}".format(x=xoffset, y=yoffset)
+        )
+
+    return xoffset, yoffset
+
 
 # def load_full_depth_image(eclipse, datapath):
 #     prefix = f"e{eclipse}-full-"
