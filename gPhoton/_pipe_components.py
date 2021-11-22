@@ -6,7 +6,7 @@ import numpy as np
 from astropy.io import fits as pyfits
 
 from gPhoton import cal as cal, constants as c
-from gPhoton.CalUtils import (
+from cal_utils import (
     compute_stimstats,
     post_csp_caldata,
     rtaph_yac,
@@ -666,32 +666,6 @@ def perform_yac_correction(band, eclipse, stims, data):
     data["x"] = corrected_x
     data["y"] = corrected_y
     return data
-
-
-def apply_yac_correction(band, eclipse, q, raw6file, x, xb, y, ya, yamc, yb):
-    (Mx, Bx, My, By, stimsep, yactbl) = compute_stimstats(
-        raw6file, band, eclipse
-    )
-    wig2, wig2data, wlk2, wlk2data, clk2, clk2data = post_csp_caldata()
-    x = Mx * x + Bx
-    y = My * y + By
-    yac = rtaph_yac(yactbl, ya, yb, yamc, eclipse)
-    y = y - yac
-    yac = rtaph_yac2(
-        q,
-        xb,
-        yb,
-        ya,
-        y,
-        wig2,
-        wig2data,
-        wlk2,
-        wlk2data,
-        clk2,
-        clk2data,
-    )
-    y = y + yac
-    return x, y
 
 
 def apply_stim_distortion_correction(

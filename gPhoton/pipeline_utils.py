@@ -5,7 +5,6 @@ incompatible imports.
 from collections import defaultdict, Collection
 from itertools import product
 from statistics import mode
-from sys import stdout
 
 import numpy as np
 from pyarrow import parquet
@@ -80,18 +79,3 @@ def listify(thing):
         if not isinstance(thing, str):
             return list(thing)
     return [thing]
-
-
-# def load_full_depth_image(eclipse, datapath):
-#     prefix = f"e{eclipse}-full-"
-#     full_depth = read_image(Path(datapath, f"{prefix}cnt.fits.zstd"))
-#     flag = read_image(Path(datapath, f"{prefix}flag.fits.zstd"))["image"]
-#     edge = read_image(Path(datapath, f"{prefix}edge.fits.zstd"))["image"]
-#     image_dict = {
-#         "cnt": full_depth["image"],
-#         "flag": flag,
-#         "edge": edge,
-#         "exptime": full_depth["exptimes"][0],
-#     }
-#     wcs = full_depth["wcs"]
-#     return image_dict, wcs

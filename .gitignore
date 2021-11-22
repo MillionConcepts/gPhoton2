@@ -17,3 +17,7 @@
 **scratch**
 **egg-info**
 *.pkl
+*.tar.gz
+*htmlcov
+*coverage
+e*.fits.gz
