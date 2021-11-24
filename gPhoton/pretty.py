@@ -1,0 +1,151 @@
+# TODO, maybe: much of this is vendored / slightly modified from [redacted]
+#  pull it all out into a shared module somewhere...?
+
+import datetime as dt
+import logging
+import threading
+from functools import reduce
+from math import floor
+from operator import add
+from typing import TYPE_CHECKING
+
+
+import rich
+from rich.highlighter import RegexHighlighter
+from rich.progress import Progress, TextColumn
+from rich.spinner import Spinner
+from rich.text import Text
+from rich.theme import Theme
+
+
+# class PHOTONLIGHTER(RegexHighlighter):
+#     base_style = "GPHOTON."
+#     highlights = [
+#         r"(?P<missing>(skipping))",
+#         r"(?P<prep>(loaded|generated|found|converted))",
+#         r"(?P<output>(wrote|completed))",
+#         r"(?<=[Z _])(?P<id>[R|L]\d[RGB]?)",
+#         r"(?P<id>(zcam|ZCAM)\d\d\d\d\d)",
+#         r"(?P<id>(sol|SOL)\d{2,4})",
+#         r"(?P<selection>\(\d{1,3}\))",
+#         r"(?P<marslab>(-roi.fits)|(-marslab.*csv))",
+#     ]
+#
+#
+# PHOTONTHEME = Theme(
+#     {
+#         "GPHOTON.output": "green1",
+#         "GPHOTON.prep": "aquamarine3",
+#         "GPHOTON.id": "dark_turquoise",
+#         "GPHOTON.selection": "bold",
+#         "GPHOTON.missing": "purple4",
+#         "GPHOTON.marslab": "italic orchid1",
+#         "FORBIDDEN": "hot_pink on black",
+#         "FORBIDDEN.warning": "slate_blue1 on black",
+#     }
+# )
+
+GPHOTON_CONSOLE = rich.console.Console()
+GPHOTON_PROGRESS = Progress(console=GPHOTON_CONSOLE)
+
+
+def stamp() -> str:
+    return f"{dt.datetime.utcnow().isoformat()[:-7]}: "
+
+
+def console_and_log(message, level="info", style=None):
+    GPHOTON_CONSOLE.print(message, style=style)
+    getattr(logging, level)(message)
+
+
+def mb(b, round_to=2):
+    return round(int(b) / 1024 ** 2, round_to)
+
+
+def render_spinners(spinners, task):
+    return reduce(
+        add, [spinner.render(task.get_time()) for spinner in spinners]
+    )
+
+
+class SpinTextColumn(TextColumn):
+    def __init__(
+        self,
+        text_format: str,
+        spinner_names=None,
+        postspinner_names=None,
+        style="none",
+        speed: float = 1.0,
+        **kwargs,
+    ) -> None:
+        super().__init__(text_format, style, **kwargs)
+        if spinner_names:
+            self.spinners = [
+                Spinner(spinner_name, style=style, speed=speed)
+                for spinner_name in spinner_names
+            ]
+        else:
+            self.spinners = []
+        if postspinner_names:
+            self.postspinners = [
+                Spinner(spinner_name, style=style, speed=speed)
+                for spinner_name in postspinner_names
+            ]
+        else:
+            self.postspinners = []
+
+    def render(self, task: "Task"):
+        _text = self.text_format.format(task=task)
+        if self.markup:
+            text = Text.from_markup(
+                _text, style=self.style, justify=self.justify
+            )
+        else:
+            text = Text(_text, style=self.style, justify=self.justify)
+        if self.highlighter:
+            self.highlighter.highlight(text)
+        if self.spinners:
+            text = render_spinners(self.spinners, task) + text
+        if self.postspinners:
+            text = text + render_spinners(self.postspinners, task)
+        return text
+
+
+GPHOTON_PROGRESS_SPIN = Progress(
+    SpinTextColumn(
+        text_format="{task.description}                            ",
+        spinner_names=["star"],
+    ),
+    console=GPHOTON_CONSOLE,
+    expand=True,
+)
+
+
+class LogMB:
+    def __init__(self, progress=False, chunksize=25, filesize=None):
+        self._seen_so_far = 0
+        self._lock = threading.Lock()
+        if (progress is True) and (filesize is not None):
+            self._progress = GPHOTON_PROGRESS
+        else:
+            self._progress = GPHOTON_PROGRESS_SPIN
+        self._chunksize = chunksize
+        if filesize is not None:
+            self._task_id = self._progress.add_task(
+                "downloading", total=floor(filesize / chunksize)
+            )
+        else:
+            self._task_id = self._progress.add_task("fownloading")
+
+    def _advance(self, n_bytes):
+        console_and_log(
+            stamp() + f"transferred {mb(n_bytes)}MB", style="blue"
+        )
+        self._progress.advance(self._task_id)
+
+    def __call__(self, bytes_amount):
+        with self._lock:
+            extra = self._seen_so_far + bytes_amount
+            if mb(extra - self._seen_so_far) > self._chunksize:
+                self._advance(extra)
+            self._seen_so_far = extra

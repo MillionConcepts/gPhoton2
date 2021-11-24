@@ -43,6 +43,7 @@ from gPhoton._shared_memory_pipe_components import (
     get_column_from_shared_memory,
 )
 
+
 def photonpipe(
     outfile,
     band,
@@ -128,25 +129,27 @@ def photonpipe(
 
     aspect = retrieve_aspect_solution(aspfile, eclipse, retries, verbose)
 
-    cal_data = load_cal_data(raw6file, band, eclipse)
-    if share_memory is True:
-        cal_data = send_cals_to_shared_memory(cal_data)
-
     data, nphots = load_raw6(band, eclipse, raw6file, verbose)
+    # the stims are only actually used for post-CSP corrections, but we
+    # temporarily retain them in both cases for brevity.
+    # the use of a 90.001 separation angle and fixed stim coefficients
+    # post-CSP is per original mission pipeline; see rtaph.c #1391;
     if eclipse > 37460:
-        stim_coefficients = (5105.48, 0.0) # post-CSP only use the default per rtaph.c #1391
+        stims, _ = create_ssd_from_decoded_data(
+            data, band, eclipse, verbose, margin=90.001
+        )
+        stim_coefficients = (5105.48, 0.0)
     else:
         stims, stim_coefficients = create_ssd_from_decoded_data(
             data, band, eclipse, verbose, margin=20
         )
-        del stims
     # Post-CSP 'yac' corrections.
     if eclipse > 37460:
-        stims_for_yac, yac_coef = create_ssd_from_decoded_data(
-            data, band, eclipse, verbose, margin=90.001
-        )
-        data = perform_yac_correction(band, eclipse, stims_for_yac, data)
-        del stims_for_yac, yac_coef
+        data = perform_yac_correction(band, eclipse, stims, data)
+    cal_data = load_cal_data(stims, band, eclipse)
+    if share_memory is True:
+        cal_data = send_cals_to_shared_memory(cal_data)
+
     if share_memory is True:
         chunks = slice_into_shared_chunks(chunksz, data, nphots)
         chunk_function = process_chunk_in_shared_memory
@@ -206,19 +209,19 @@ def photonpipe(
     proc_count = len(array_dict["t"])
 
     variables_for_which_dictionary_compression_is_useful = [
-                         "t",
-                         "flags",
-                         "y",
-                         "xa",
-                         "xb",
-                         "ya",
-                         "yb",
-                         "yamc",
-                         "xamc",
-                         "q",
-                         "mask",
-                         "detrad"
-                     ]
+        "t",
+        "flags",
+        "y",
+        "xa",
+        "xb",
+        "ya",
+        "yb",
+        "yamc",
+        "xamc",
+        "q",
+        "mask",
+        "detrad",
+    ]
     if band == "FUV":
         variables_for_which_dictionary_compression_is_useful.append("x")
 

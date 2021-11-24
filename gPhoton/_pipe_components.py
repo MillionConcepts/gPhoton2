@@ -948,7 +948,7 @@ def chunk_data(chunksz, data, nphots, copy=True):
     }
 
 
-def load_cal_data(raw6file, band, eclipse):
+def load_cal_data(stims, band, eclipse):
     cal_data = NestingDict()
     for cal_type in ("wiggle", "walk", "linearity"):
         print_inline(f"Loading {cal_type} files...")
@@ -962,15 +962,19 @@ def load_cal_data(raw6file, band, eclipse):
     cal_data["mask"]["array"] = cal_data["mask"]["array"].astype(np.uint8)
     # This is for the post-CSP stim distortion corrections.
     # TODO: it gets applied elsewhere, too. change feedback?
+    #  ...actually just document the data flow here better, as best we can,
+    #  given our limited knowledge
     print_inline("Loading distortion files...")
     if eclipse > 37460:
-        c.STIMSEP = compute_stimstats(raw6file,band,eclipse)[-2]
-        print_inline(f" Using stim separation of : {c.STIMSEP}")
+        stimsep = compute_stimstats_2(stims, band)[-2]
+    else:
+        stimsep = c.STIMSEP
+    print_inline(f" Using stim separation of : {stimsep}")
     cal_data["distortion"]["x"], distortion_header = cal.distortion(
-        band, "x", eclipse, c.STIMSEP
+        band, "x", eclipse, stimsep
     )
     cal_data["distortion"]["y"], _ = cal.distortion(
-        band, "y", eclipse, c.STIMSEP
+        band, "y", eclipse, stimsep
     )
     cal_data["distortion"]["header"] = np.array(
         [
