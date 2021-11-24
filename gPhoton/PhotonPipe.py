@@ -8,17 +8,13 @@
 from multiprocessing import Pool
 import time
 import warnings
-
-# Core and Third Party imports.
 from pathlib import Path
 
 import numpy as np
 import pyarrow
 from pyarrow import parquet
 
-# gPhoton imports.
-
-from gPhoton.MCUtils import print_inline
+from gPhoton.pretty import print_inline
 from gPhoton._pipe_components import (
     retrieve_aspect_solution,
     retrieve_raw6,
@@ -235,21 +231,17 @@ def photonpipe(
         version="2.0",
     )
     stopt = time.time()
-    # TODO: consider:  awswrangler.s3.to_parquet()
     print_inline("")
     print("")
     if verbose:
+        seconds = stopt-startt
+        rate = nphots / seconds
         print("Runtime statistics:")
-        print(
-            " runtime		=	{seconds} sec. = ({minutes} min.)".format(
-                seconds=stopt - startt, minutes=(stopt - startt) / 60.0
-            )
-        )
+        print(f" runtime		=	{seconds} sec. = ({seconds/60} min.)")
         print(f"	processed	=	{str(proc_count)} of {str(nphots)} events.")
         if proc_count < nphots:
             print("		WARNING: MISSING EVENTS! ")
-        print(f"rate		=	{str(nphots / (stopt - startt))} photons/sec.")
-        print("")
+        print(f"rate		=	{rate} photons/sec.\n")
     return outfile
 
 

@@ -1,22 +1,13 @@
 import os
 from itertools import product
 
+
+from astropy.io import fits as pyfits
+from dustgoggles.structures import NestingDict
 import fitsio
 import numpy as np
-from astropy.io import fits as pyfits
 
-from gPhoton import cal as cal, constants as c
-from cal_utils import (
-    post_csp_caldata,
-    rtaph_yac,
-    rtaph_yac2,
-    find_stims_index,
-    clk_cen_scl_slp,
-    avg_stimpos,
-    rtaph_yap,
-)
-from gPhoton.MCUtils import print_inline
-from gPhoton.pipeline_utils import NestingDict
+from gPhoton import cal_data as cal, constants as c
 import gPhoton.galextools as gt
 from gPhoton.FileUtils import load_aspect, web_query_aspect, download_data
 from gPhoton._numbafied_pipe_components import (
@@ -36,6 +27,7 @@ from gPhoton._shared_memory_pipe_components import (
     reference_shared_memory_arrays,
     send_to_shared_memory,
 )
+from gPhoton.cal import avg_stimpos, rtaph_yac, rtaph_yac2
 from gPhoton.gnomonic import gnomfwd_simple, gnomrev_simple
 
 
@@ -45,6 +37,7 @@ from gPhoton.gnomonic import gnomfwd_simple, gnomrev_simple
 #  propagated flag.
 #  flag 12 is intended to be for gaps < 2s in aspect sol. we will use 12 in
 #  photometry but not 7.
+from gPhoton.pretty import print_inline
 
 
 def retrieve_aspect_solution(aspfile, eclipse, retries, verbose):
@@ -182,7 +175,7 @@ def calibrate_photons_inline(band, cal_data, chunk):
     output_columns = {
         "col": col,
         "row": row,
-        "detrad": np.sqrt((col - 400) ** 2 + (row - 400) ** 2)
+        "detrad": np.sqrt((col - 400) ** 2 + (row - 400) ** 2),
     }
     for field, values in det_fields.items():
         output_columns[field] = np.full(
@@ -361,10 +354,10 @@ def convert_to_detector_coordinates(
     )
     # TODO: this slice / cast is being computed both here and in
     #  calibrate_photons_inline()
-#    col_ix = col[ok_indices].astype(np.int32)
-#    row_ix = row[ok_indices].astype(np.int32)
-#    cut[ok_indices] = (mask[col_ix, row_ix] == 1.0)
-#    flags[~cut] = 6
+    #    col_ix = col[ok_indices].astype(np.int32)
+    #    row_ix = row[ok_indices].astype(np.int32)
+    #    cut[ok_indices] = (mask[col_ix, row_ix] == 1.0)
+    #    flags[~cut] = 6
     return xi, eta, col, row, flags
 
 
@@ -690,7 +683,9 @@ def apply_stim_distortion_correction(
         cube_nd,
         cube_nc,
         cube_nr,
-    ) = distortion["header"]  # unpacking for numba compiler introspection
+    ) = distortion[
+        "header"
+    ]  # unpacking for numba compiler introspection
     col, depth, ok_indices, row, xshift, yshift = unfancy_distortion_component(
         cube_x0,
         cube_dx,
@@ -951,13 +946,13 @@ def load_cal_data(stims, band, eclipse):
     cal_data = NestingDict()
     for cal_type in ("wiggle", "walk", "linearity"):
         print_inline(f"Loading {cal_type} files...")
-        cal_data[cal_type]["x"], _ = getattr(cal, cal_type)(band, "x")
-        cal_data[cal_type]["y"], _ = getattr(cal, cal_type)(band, "y")
+        cal_data[cal_type]["x"], _ = getattr(cal_data, cal_type)(band, "x")
+        cal_data[cal_type]["y"], _ = getattr(cal_data, cal_type)(band, "y")
     print_inline("Loading flat field...")
-    cal_data["flat"]["array"], _ = cal.flat(band)
+    cal_data["flat"]["array"], _ = cal_data.flat(band)
     print_inline("Loading mask...")
     print_inline("Loading mask file...")
-    cal_data["mask"]["array"], _ = cal.mask(band)
+    cal_data["mask"]["array"], _ = cal_data.mask(band)
     cal_data["mask"]["array"] = cal_data["mask"]["array"].astype(np.uint8)
     # This is for the post-CSP stim distortion corrections.
     # TODO: it gets applied elsewhere, too. change feedback?

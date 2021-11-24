@@ -1,21 +1,20 @@
 """
 .. module:: gnomonic
    :synopsis: This module contains gnomonic projection methods for translating
-       between detector and sky coordinates.
+       between detector and sky coordinates. They are compiled using the
+       numba just-in-time compiler to accelerate the complex trig operations
+       involved.
 """
-
-from __future__ import absolute_import, division, print_function
-# Core and Third Party imports.
 import numpy as np
 
-from numba import jit, njit
+from numba import njit
 
-# ------------------------------------------------------------------------------
+
+# being obvious is helpful to numba.
 R2D = 180./3.141592658979
-# ------------------------------------------------------------------------------
+
 
 # ------------------------------------------------------------------------------
-
 @njit(cache=True)
 def gnomrev_simple(xi, eta, ra0, dec0, crota, cdelt, cenpix):
     """
@@ -87,7 +86,7 @@ def gnomrev_simple(xi, eta, ra0, dec0, crota, cdelt, cenpix):
     ra[ix] += 360
 
     return ra, dec
-# ------------------------------------------------------------------------------
+
 
 # ------------------------------------------------------------------------------
 @njit(cache=True)
@@ -145,4 +144,3 @@ def gnomfwd_simple(ra, dec, ra0, dec0, crota, cdelt, cenpix):
     eta = y*R2D/cdelt + cenpix
 
     return xi, eta
-# ------------------------------------------------------------------------------

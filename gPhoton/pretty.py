@@ -7,6 +7,7 @@ import threading
 from functools import reduce
 from math import floor
 from operator import add
+from sys import stdout
 
 import rich
 from rich.progress import Progress, TextColumn, Task
@@ -156,3 +157,22 @@ class LogMB:
             if mb(extra - self._seen_so_far) >= self._chunk_size:
                 self._advance(extra)
             self._seen_so_far = extra
+
+
+def print_inline(text, blanks=60):
+    """
+    For updating text in place without a carriage return.
+
+    :param text: Message to print to standard out.
+
+    :type text: str
+
+    :param blanks: Number of white spaces to prepend to message.
+
+    :type blanks: int
+    """
+
+    stdout.write(" "*blanks+"\r")
+    stdout.write(str(str(text)+'\r'))
+    stdout.flush()
+    return

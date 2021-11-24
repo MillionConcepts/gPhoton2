@@ -5,6 +5,7 @@ from typing import Optional, Union
 import warnings
 
 import astropy.io.fits as pyfits
+from dustgoggles.structures import NestingDict
 import fast_histogram as fh
 import numpy as np
 import scipy.sparse
@@ -21,11 +22,8 @@ from gPhoton._shared_memory_pipe_components import (
     slice_into_memory,
     send_to_shared_memory,
 )
-from gPhoton.gphoton_utils import make_wcs_from_radec
-from gPhoton.pipeline_utils import (
-    table_values,
-    NestingDict,
-)
+from gPhoton.gphoton_utils import make_bounding_wcs
+from gPhoton.pipeline_utils import table_values
 
 
 def booleanize_for_fits(array):
@@ -338,7 +336,7 @@ def sm_make_map(block_directory, map_name, imsz):
 
 
 def generate_wcs_components(event_table):
-    wcs = make_wcs_from_radec(table_values(event_table, ["ra", "dec"]))
+    wcs = make_bounding_wcs(table_values(event_table, ["ra", "dec"]))
     # This is a bottleneck, so only do it once.
     foc = wcs.sip_pix2foc(
         wcs.wcs_world2pix(table_values(event_table, ["ra", "dec"]), 1), 1

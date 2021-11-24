@@ -2,7 +2,6 @@
 temporary home for pipeline utilities to reduce need for expensive and maybe
 incompatible imports.
 """
-from collections import defaultdict, Collection
 from itertools import product
 from statistics import mode
 
@@ -49,20 +48,6 @@ def get_fits_radec(header, endpoints_only=True):
     return ranges
 
 
-class NestingDict(defaultdict):
-    """
-    shorthand for automatically-nesting dictionary -- i.e.,
-    insert a series of keys at any depth into a NestingDict
-    and it automatically creates all needed levels above.
-    """
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.default_factory = NestingDict
-
-    __repr__ = dict.__repr__
-
-
 def diff_photonlist_and_movie_coords(movie_radec, photon_radec):
     diffs = {}
     minmax_funcs = {"min": min, "max": max}
@@ -71,11 +56,3 @@ def diff_photonlist_and_movie_coords(movie_radec, photon_radec):
             minmax_funcs[op](movie_radec[coord]) - photon_radec[coord][op]
         )
     return diffs
-
-
-def listify(thing):
-    """Always a list, for things that want lists"""
-    if isinstance(thing, Collection):
-        if not isinstance(thing, str):
-            return list(thing)
-    return [thing]
