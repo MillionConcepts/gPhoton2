@@ -117,30 +117,42 @@ GPHOTON_PROGRESS_SPIN = Progress(
 
 
 class LogMB:
-    def __init__(self, progress=False, chunksize=25, filesize=None):
+    def __init__(
+        self,
+        progress=False,
+        chunk_size=25,
+        file_size=None,
+        filename=None,
+        log=False,
+    ):
         self._seen_so_far = 0
         self._lock = threading.Lock()
-        if (progress is True) and (filesize is not None):
+        if (progress is True) and (file_size is not None):
             self.progress_object = GPHOTON_PROGRESS
         else:
             self.progress_object = GPHOTON_PROGRESS_SPIN
-        self._chunksize = chunksize
-        if filesize is not None:
+        self._chunk_size = chunk_size
+        description = "downloading"
+        if filename is not None:
+            description += f" {filename}"
+        if file_size is not None:
             self._task_id = self.progress_object.add_task(
-                "downloading", total=floor(filesize / chunksize)
+                description, total=floor(file_size / chunk_size)
             )
         else:
-            self._task_id = self.progress_object.add_task("fownloading")
+            self._task_id = self.progress_object.add_task(description)
+        self.log = log
 
     def _advance(self, n_bytes):
-        console_and_log(
-            stamp() + f"transferred {mb(n_bytes)}MB", style="blue"
-        )
+        if self.log is True:
+            console_and_log(
+                stamp() + f"transferred {mb(n_bytes)}MB", style="blue"
+            )
         self.progress_object.advance(self._task_id)
 
     def __call__(self, bytes_amount):
         with self._lock:
             extra = self._seen_so_far + bytes_amount
-            if mb(extra - self._seen_so_far) > self._chunksize:
+            if mb(extra - self._seen_so_far) >= self._chunk_size:
                 self._advance(extra)
             self._seen_so_far = extra

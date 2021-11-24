@@ -7,7 +7,6 @@ from astropy.io import fits as pyfits
 
 from gPhoton import cal as cal, constants as c
 from cal_utils import (
-    compute_stimstats,
     post_csp_caldata,
     rtaph_yac,
     rtaph_yac2,
