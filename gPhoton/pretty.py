@@ -7,16 +7,11 @@ import threading
 from functools import reduce
 from math import floor
 from operator import add
-from typing import TYPE_CHECKING
-
 
 import rich
-from rich.highlighter import RegexHighlighter
-from rich.progress import Progress, TextColumn
+from rich.progress import Progress, TextColumn, Task
 from rich.spinner import Spinner
 from rich.text import Text
-from rich.theme import Theme
-
 
 # class PHOTONLIGHTER(RegexHighlighter):
 #     base_style = "GPHOTON."
@@ -94,7 +89,7 @@ class SpinTextColumn(TextColumn):
         else:
             self.postspinners = []
 
-    def render(self, task: "Task"):
+    def render(self, task: Task):
         _text = self.text_format.format(task=task)
         if self.markup:
             text = Text.from_markup(
@@ -126,22 +121,22 @@ class LogMB:
         self._seen_so_far = 0
         self._lock = threading.Lock()
         if (progress is True) and (filesize is not None):
-            self._progress = GPHOTON_PROGRESS
+            self.progress_object = GPHOTON_PROGRESS
         else:
-            self._progress = GPHOTON_PROGRESS_SPIN
+            self.progress_object = GPHOTON_PROGRESS_SPIN
         self._chunksize = chunksize
         if filesize is not None:
-            self._task_id = self._progress.add_task(
+            self._task_id = self.progress_object.add_task(
                 "downloading", total=floor(filesize / chunksize)
             )
         else:
-            self._task_id = self._progress.add_task("fownloading")
+            self._task_id = self.progress_object.add_task("fownloading")
 
     def _advance(self, n_bytes):
         console_and_log(
             stamp() + f"transferred {mb(n_bytes)}MB", style="blue"
         )
-        self._progress.advance(self._task_id)
+        self.progress_object.advance(self._task_id)
 
     def __call__(self, bytes_amount):
         with self._lock:

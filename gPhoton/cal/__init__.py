@@ -27,9 +27,9 @@ def check_xy(xy):
     return xy
 
 def read_data(fn, dim=0):
-    path = _os.path.join(cal_dir, fn)
+    path = os.path.join(cal_dir, fn)
     # Download the file if it doesn't exist locally.
-    if not _os.path.exists(path):
+    if not os.path.exists(path):
         data_url='{b}/{f}'.format(b=cal_url,f=fn)
         fitsdata = download_with_progress_bar(data_url, path)
     if '.fits' in fn:
