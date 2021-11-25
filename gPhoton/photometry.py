@@ -8,7 +8,7 @@ import pandas as pd
 from photutils import DAOStarFinder, CircularAperture, aperture_photometry
 import scipy.sparse
 
-from gPhoton import MCUtils as mc
+from gPhoton.pretty import print_inline
 
 
 def count_full_depth_image(source_table, aperture_size, image_dict, wcs):
@@ -90,7 +90,7 @@ def extract_frame(frame, apertures):
 def _extract_photometry_unthreaded(movie, apertures):
     photometry = {}
     for ix, frame in enumerate(movie):
-        mc.print_inline(f"extracting frame {ix}")
+        print_inline(f"extracting frame {ix}")
         photometry[ix] = extract_frame(frame, apertures)
     return photometry
 

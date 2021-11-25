@@ -20,7 +20,7 @@ def check_band(band):
 
 
 def check_xy(xy):
-    if not xy in ["x", "y"]:
+    if xy not in ["x", "y"]:
         raise ValueError("xy must be x or y.")
     return xy
 
@@ -81,22 +81,8 @@ def linearity(band, xy):
     return read_data(fn)
 
 
-def addbuffer(fn):
-    # Adds a 1 pixel buffer around all masked (==0) regions of a map.
-    m, h = read_data(fn)
-    ix = np.where(m == 0)
-    for i in range(-1, 2):
-        for j in range(-1, 2):
-            try:
-                m[ix[0] + i, ix[1] + j] = 0
-            except IndexError:
-                continue
-    return m, h
-
-
-def flat(band, buffer=False):
-    fn = "{b}_flat.fits".format(b=check_band(band))
-    return addbuffer(fn) if buffer else read_data(fn)
+def flat(band):
+    return read_data(f"{check_band(band)}_flat.fits")
 
 
 def distortion(band, xy, eclipse, raw_stimsep):
@@ -120,6 +106,5 @@ def offset(xy):
     return read_data(fn)
 
 
-def mask(band, buffer=False):
-    fn = "{b}_mask.fits".format(b=check_band(band))
-    return addbuffer(fn) if buffer else read_data(fn)
+def mask(band):
+    return read_data(f"{check_band(band)}_mask.fits")

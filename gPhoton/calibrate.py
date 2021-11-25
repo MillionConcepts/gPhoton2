@@ -86,7 +86,7 @@ def post_csp_caldata():
 
     print("Loading post-CSP clock file...")
 
-    clk2fits, clk2head = cal.clock2()
+    clk2fits, clk2head = cals.clock2()
     clk2 = np.zeros([100, 8])
 
     clk2[clk2fits["yy"], clk2fits["YB"]] = clk2fits["ycor"]
@@ -386,3 +386,85 @@ def rtaph_yac2(
     yac_as[ix] = clk2[np.array(ii[ix], dtype="int64"), yb[ix]]
 
     return yac_as / c.ASPUM
+
+
+def flat_scale_parameters(band):
+    """
+    Return the flat scaling parameters for a given band.
+
+    :param band: The band to use, either 'FUV' or 'NUV'.
+
+    :type band: str
+
+    :returns: tuple -- A three-element tuple containing the flat scaling
+        parameters.
+    """
+
+    if band == 'NUV':
+        flat_correct = -0.0154
+        flat_t0 = 840418779.02
+        flat_correct_0 = 1.9946352
+        flat_correct_1 = -1.9679445e-09
+        flat_correct_2 = 9.3025231e-19
+    elif band == 'FUV':
+        flat_correct = -0.0031
+        flat_t0 = 840418779.02
+        flat_correct_0 = 1.2420282
+        flat_correct_1 = -2.8843099e-10
+        flat_correct_2 = 0.000
+    else:
+        print("Band not specified.")
+        exit(1)
+
+    # It turns out that flat_correct and flat_t0 never get used.
+    # They are only retained above for historical purposes.
+    return flat_correct_0, flat_correct_1, flat_correct_2
+
+
+def compute_flat_scale(t, band, verbose=0):
+    """
+    Return the flat scale factor for a given time.
+        These are empirically determined linear scales to the flat field
+        as a function of time due to diminished detector response. They
+        were determined by Tom Barlow and are in the original GALEX pipeline
+        but there is no published source of which I am aware.
+
+    :param t: Time stamp(s) to retrieve the scale factor for.
+
+    :type t: numpy.ndarray
+
+    :param band: The band to use, either 'FUV' or 'NUV'.
+
+    :type band: str
+
+    :param verbose: Verbosity level, a value of 0 is minimum verbosity.
+
+    :type verbose: int
+
+    :returns: numpy.ndarray
+    """
+
+    if verbose:
+        print("Calculating flat scale for t=", t, ", and band=", band)
+
+    (flat_correct_0, flat_correct_1,
+     flat_correct_2) = flat_scale_parameters(band)
+
+    t = np.array(t)
+
+    flat_scale = flat_correct_0+(flat_correct_1*t)+(flat_correct_2*t)*t
+
+    # There's a bulk shift in the response after the CSP
+    ix = np.where(t >= 881881215.995)
+
+    if len(ix[0]):
+        try:
+            flat_scale[ix] *= 1.018
+        except (TypeError, IndexError):
+            # If it does not have '__getitem__' (because it's a scalar)
+            flat_scale *= 1.018 if t >= 881881215.995 else 1.
+
+    if verbose:
+        print("         flat scale = ", flat_scale)
+
+    return flat_scale

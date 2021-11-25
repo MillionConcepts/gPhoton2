@@ -12,7 +12,7 @@ import astropy.wcs
 import numpy as np
 
 import gPhoton.constants as c
-from gPhoton import cal
+from gPhoton import cals
 from gPhoton.MCUtils import get_fits_header
 
 
@@ -29,7 +29,7 @@ from gPhoton.MCUtils import get_fits_header
 def make_wcs(
     skypos: Sequence,
     pixsz: float=0.000416666666666667,
-    imsz: Sequence[int, int] = (3200, 3200),
+    imsz: Sequence[int] = (3200, 3200),
 ) -> astropy.wcs.WCS:
     """
     makes a WCS object from passed center ra/dec, scale, and image size
@@ -104,8 +104,8 @@ def find_fuv_offset(scstfile, raise_invalid = True):
         )
     )
 
-    fodx_coef_0 = cal.offset("x")[eclipse - 1, 1]
-    fody_coef_0 = cal.offset("y")[eclipse - 1, 1]
+    fodx_coef_0 = cals.offset("x")[eclipse - 1, 1]
+    fody_coef_0 = cals.offset("y")[eclipse - 1, 1]
 
     fodx_coef_1 = 0.0
     fody_coef_1 = 0.3597

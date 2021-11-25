@@ -17,7 +17,7 @@ PIPELINE_CASES = [
         "write": {"movie": True, "image": True}
     },
     {
-        "eclipse": 33333,
+        "eclipse": 39971,
         "band": "NUV",
         "depth": 60,
         "threads": 4,

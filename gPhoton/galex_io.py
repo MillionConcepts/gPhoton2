@@ -1,26 +1,42 @@
 """
-.. module:: FileUtils
+.. module:: io
    :synopsis: Methods for retrieving and reading GALEX aspect ("scst") and raw
-   data ("raw6") files.
+   data ("raw6") files, including communication w/MAST.
 """
+# NOTE: contains some functions previously -- and perhaps one day again! --
+# housed in FileUtils and GQuery.
 
 
-from collections import Sequence
 import os
+from typing import Sequence
 
 from astropy.io import fits as pyfits
 import numpy as np
 
 # gPhoton imports.
-import gPhoton.gQuery as gQuery
+from gPhoton import time_id
 from gPhoton.netutils import (
     download_with_progress_bar,
     manage_networked_sql_request,
 )
 
 
+# The following global variables are used in constructing a properly
+# formatted query to the MAST database. Don't change them unless you know what
+# you're doing!
+
+# All queries from the same _run_ of the photon tools should have identical
+# time_id, providing a quick way to troubleshoot issues on the server side.
+baseURL = (
+    "https://mastcomp.stsci.edu/portal/Mashup/MashupQuery.asmx/Galex"
+    "PhotonListQueryTest?query="
+)
+MCATDB = "GR6Plus7.dbo"
+formatURL = " -- " + str(time_id) + "&format=extjs"
+
+
 def get_raw_paths(eclipse, verbose=0):
-    url = gQuery.raw_data_paths(eclipse)
+    url = raw_data_paths(eclipse)
     if verbose > 1:
         print(url)
     r = manage_networked_sql_request(url)
@@ -35,11 +51,11 @@ def get_raw_paths(eclipse, verbose=0):
 
 def download_data(eclipse, band, ftype, datadir="./", verbose=0):
     urls = get_raw_paths(eclipse, verbose=verbose)
-    if not ftype in ["raw6", "scst"]:
+    if ftype not in ["raw6", "scst"]:
         raise ValueError("ftype must be either raw6 or scst")
-    if not band in ["NUV", "FUV"]:
+    if band not in ["NUV", "FUV"]:
         raise ValueError("band must be either NUV or FUV")
-    url = urls[band] if ftype is "raw6" else urls["scst"]
+    url = urls[band] if ftype == "raw6" else urls["scst"]
     if not url:
         print("Unable to locate {f} file on MAST server.".format(f=ftype))
         return None
@@ -54,11 +70,7 @@ def download_data(eclipse, band, ftype, datadir="./", verbose=0):
     filename = url.split("/")[-1]
     opath = "{d}{f}".format(d=datadir, f=filename)
     if os.path.isfile(opath):
-        print(
-            "Using {f} file already at {d}".format(
-                f=ftype, d=os.path.abspath(opath)
-            )
-        )
+        print(f"Using {ftype} file already at {os.path.abspath(opath)}")
     else:
         # TODO: investigate handling options for different error cases
         try:
@@ -68,7 +80,9 @@ def download_data(eclipse, band, ftype, datadir="./", verbose=0):
             raise
     return opath
 
+
 # ------------------------------------------------------------------------------
+# TODO: check if this is actually working as it should in current pipeline
 def load_aspect(aspfiles: Sequence[str]):
     """
     Loads a set of aspect files into a bunch of arrays.
@@ -79,10 +93,8 @@ def load_aspect(aspfiles: Sequence[str]):
 
     :returns: tuple -- Returns a six-element tuple containing the RA, DEC,
         twist (roll), time, header, and aspect flags. Each of these EXCEPT for
-        header, are returned as numpy.ndarrays. The header is returned as a
-        dict
-        containing the RA, DEC, and roll from the headers of the aspec files in
-        numpy.ndarrays.
+        header are returned as np.ndarrays. The header is returned as a dict
+        containing the RA, DEC, and roll from the headers of the files.
     """
     ra, dec = np.array([]), np.array([])
     twist, time, aspflags = np.array([]), np.array([]), np.array([])
@@ -119,6 +131,7 @@ def load_aspect(aspfiles: Sequence[str]):
     ix = np.argsort(time)
     return ra[ix], dec[ix], twist[ix], time[ix], header, aspflags[ix]
 
+
 # ------------------------------------------------------------------------------
 def web_query_aspect(eclipse, retries=20, quiet=False):
     """
@@ -141,7 +154,7 @@ def web_query_aspect(eclipse, retries=20, quiet=False):
 
     if not quiet:
         print("Attempting to query MAST database for aspect records.")
-    entries = gQuery.getArray(gQuery.aspect_ecl(eclipse), retries=retries)
+    entries = getArray(aspect_ecl(eclipse), retries=retries)
     n = len(entries)
     if not quiet:
         print("		Located " + str(n) + " aspect entries.")
@@ -180,23 +193,119 @@ def web_query_aspect(eclipse, retries=20, quiet=False):
         np.array(flags)[ix],
     )
 
+
 # ------------------------------------------------------------------------------
-def create_ssd_filename(band, eclipse):
+
+
+def hasNaN(query):
     """
-    Returns the Stim Separation Data (SSD) calibration file name.
+    Check if there is NaN in a query (or any string) and, if so, raise an
+        exception because that probably indicates that something has gone wrong.
 
-    :param band: The band to create the SSD for, either 'FUV' or 'NUV'.
+    :param query: The query string to check.
 
-    :type band: str
+    :type query: str
+    """
 
-    :param eclipse: The eclipse number to create the SSD file for.
+    if "NaN" in query:
+        raise RuntimeError("Malformed query: contains NaN values.")
+
+    return
+
+
+def getArray(query, verbose=0, retries=100):
+    """
+    Manage a database call which returns an array of values.
+
+    :param query: The query to run.
+
+    :type query: str
+
+    :param verbose: Verbosity level, a value of 0 is minimum verbosity.
+
+    :type verbose: int
+
+    :param retries: Number of query retries to attempt before giving up.
+
+    :type retries: int
+
+    :returns: requests.Response or None -- The response from the server. If the
+        query does not receive a response, returns None.
+    """
+
+    hasNaN(query)
+
+    out = manage_networked_sql_request(query, maxcnt=retries, verbose=verbose)
+
+    if out is not None:
+        try:
+            out = out.json()["data"]["Tables"][0]["Rows"]
+        except:
+            print("Failed: {q}".format(q=query))
+            raise
+        return out
+    else:
+        print("Failed: {q}".format(q=query))
+        raise ValueError(
+            "Query never finished on server, run with verbose"
+            " turned on for more info."
+        )
+
+
+def obstype(objid):
+    """
+    Get the dither pattern type based on the object id.
+
+    :param objid: The MCAT Object ID to return the observation type data from.
+
+    :type objid: long
+
+    :returns: str -- The query to submit to the database.
+    """
+
+    return (
+        "{baseURL}select distinct vpe.mpstype as survey, vpe.tilename,"
+        " vpe.photoextractid, vpe.petal, vpe.nlegs, vpe.leg, vpe.eclipse,"
+        " vpe.img, vpe.subvis from {MCATDB}.visitPhotoextract as vpe inner"
+        " join {MCATDB}.imgrun as iv on vpe.photoextractid=iv.imgrunid"
+        " inner join {MCATDB}.visitphotoobjall as p on vpe.photoextractid"
+        "=p.photoextractid where p.objid={objid}{formatURL}".format(
+            baseURL=baseURL, MCATDB=MCATDB, objid=objid, formatURL=formatURL
+        )
+    )
+
+
+def raw_data_paths(eclipse):
+    """
+    Construct a query that returns a data structure containing the download
+    paths
+
+    :param eclipse: GALEX eclipse number.
+
+    :type flag: int
+
+    :returns: str -- The query to submit to the database.
+    """
+    return "https://mastcomp.stsci.edu/portal/Mashup/MashupQuery.asmx/GalexPhotonListQueryTest?query=spGetRawUrls {ecl}&format=extjs".format(
+        ecl=int(eclipse)
+    )
+
+
+def aspect_ecl(eclipse):
+    """
+    Return the aspect information based upon an eclipse number.
+
+    :param eclipse: The eclipse to return aspect information for.
 
     :type eclipse: int
 
-    :returns: str -- The name of the SSD file to create.
+    :returns: str -- The query to submit to the database.
     """
 
-    return "SSD_" + band.lower() + "_" + str(eclipse) + ".tbl"
-
-
-# ------------------------------------------------------------------------------
+    return str(
+        baseURL
+    ) + "select eclipse, filename, time, ra, dec, twist, flag, ra0, dec0," " twist0 from aspect where eclipse=" + str(
+        eclipse
+    ) + " order by time" + str(
+        formatURL
+    )

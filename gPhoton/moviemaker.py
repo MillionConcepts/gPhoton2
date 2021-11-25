@@ -13,8 +13,8 @@ import sh
 from more_itertools import windowed
 from pyarrow import parquet
 
-from gPhoton import MCUtils as mc
 from gPhoton import __version__
+from gPhoton.pretty import print_inline
 from gPhoton._numbafied_pipe_components import between, slice_between
 from gPhoton._shared_memory_pipe_components import (
     reference_shared_memory_arrays,
@@ -159,7 +159,7 @@ def make_movies(
     exposure_array: np.ndarray,
     map_ix_dict: dict,
     total_trange: tuple[int, int],
-    imsz: Sequence[int, int],
+    imsz: tuple[int, int],
     band: str,
     lil: bool = False,
     threads: Optional[int] = 4,
@@ -262,7 +262,7 @@ def make_movies(
 def sm_compute_movie_frame(
     band, map_block_info, exposure_block_info, trange, imsz, lil, headline
 ):
-    mc.print_inline(headline)
+    print_inline(headline)
     if exposure_block_info is None:
         exptime = 0
         cntmap, edgemap, flagmap = zero_frame(imsz, lil)

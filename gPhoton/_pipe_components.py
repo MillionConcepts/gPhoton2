@@ -7,7 +7,8 @@ from dustgoggles.structures import NestingDict
 import fitsio
 import numpy as np
 
-from gPhoton import cal_data as cal, constants as c
+import gPhoton.calibrate
+from gPhoton import cals, constants as c
 import gPhoton.galextools as gt
 from gPhoton.FileUtils import load_aspect, web_query_aspect, download_data
 from gPhoton._numbafied_pipe_components import (
@@ -27,7 +28,8 @@ from gPhoton._shared_memory_pipe_components import (
     reference_shared_memory_arrays,
     send_to_shared_memory,
 )
-from gPhoton.cal import avg_stimpos, rtaph_yac, rtaph_yac2
+from gPhoton.calibrate import avg_stimpos, rtaph_yac, rtaph_yac2, \
+    clk_cen_scl_slp, rtaph_yap, post_csp_caldata, find_stims_index
 from gPhoton.gnomonic import gnomfwd_simple, gnomrev_simple
 
 
@@ -168,7 +170,7 @@ def calibrate_photons_inline(band, cal_data, chunk):
     det_fields = {
         "mask": cal_data["mask"]["array"][col_ix, row_ix] == 0,
         "flat": cal_data["flat"]["array"][col_ix, row_ix],
-        "scale": gt.compute_flat_scale(chunk["t"][det_indices], band),
+        "scale": gPhoton.calibrate.compute_flat_scale(chunk["t"][det_indices], band),
     }
     del col_ix, row_ix
     det_fields["response"] = det_fields["flat"] * det_fields["scale"]
@@ -946,13 +948,13 @@ def load_cal_data(stims, band, eclipse):
     cal_data = NestingDict()
     for cal_type in ("wiggle", "walk", "linearity"):
         print_inline(f"Loading {cal_type} files...")
-        cal_data[cal_type]["x"], _ = getattr(cal_data, cal_type)(band, "x")
-        cal_data[cal_type]["y"], _ = getattr(cal_data, cal_type)(band, "y")
+        cal_data[cal_type]["x"], _ = getattr(cals, cal_type)(band, "x")
+        cal_data[cal_type]["y"], _ = getattr(cals, cal_type)(band, "y")
     print_inline("Loading flat field...")
-    cal_data["flat"]["array"], _ = cal_data.flat(band)
+    cal_data["flat"]["array"], _ = cals.flat(band)
     print_inline("Loading mask...")
     print_inline("Loading mask file...")
-    cal_data["mask"]["array"], _ = cal_data.mask(band)
+    cal_data["mask"]["array"], _ = cals.mask(band)
     cal_data["mask"]["array"] = cal_data["mask"]["array"].astype(np.uint8)
     # This is for the post-CSP stim distortion corrections.
     # TODO: it gets applied elsewhere, too. change feedback?
@@ -964,10 +966,10 @@ def load_cal_data(stims, band, eclipse):
     else:
         stimsep = c.STIMSEP
     print_inline(f" Using stim separation of : {stimsep}")
-    cal_data["distortion"]["x"], distortion_header = cal.distortion(
+    cal_data["distortion"]["x"], distortion_header = cals.distortion(
         band, "x", eclipse, stimsep
     )
-    cal_data["distortion"]["y"], _ = cal.distortion(
+    cal_data["distortion"]["y"], _ = cals.distortion(
         band, "y", eclipse, stimsep
     )
     cal_data["distortion"]["header"] = np.array(

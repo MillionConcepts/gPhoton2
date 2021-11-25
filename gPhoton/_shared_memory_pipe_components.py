@@ -1,8 +1,7 @@
 from multiprocessing.shared_memory import SharedMemory
 
+from dustgoggles.structures import NestingDict
 import numpy as np
-
-from gPhoton.pipeline_utils import NestingDict
 
 
 def get_column_from_shared_memory(results, column_name, unlink=True):
