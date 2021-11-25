@@ -6,9 +6,9 @@ source_catalog_file = (
 
 if __name__ == "__main__":
     pipeline(
-        37359,
-        "FUV",
-        depth=5,
+        39971,
+        "NUV",
+        depth=60,
         threads=None,
         data_root="test_data",
         recreate=False,
