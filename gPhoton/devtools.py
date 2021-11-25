@@ -28,22 +28,3 @@ def pm():
 LP = LineProfiler()
 
 
-class Stopwatch:
-    def __init__(self, digits=2):
-        self.digits = digits
-        self.last_time = None
-
-    def peek(self):
-        return round(time() - self.last_time, self.digits)
-
-    def start(self):
-        print("starting timer")
-        self.last_time = time()
-
-    def click(self):
-        if self.last_time is None:
-            return self.start()
-        print(
-            f"{self.peek()} elapsed seconds, restarting timer"
-        )
-        self.last_time = time()

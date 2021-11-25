@@ -1,125 +1,161 @@
+"""
+primary handler module for the 'full' gPhoton execute_pipeline. can:
+1. retrieve data from MAST or another specified location
+2. create calibrated photonlists
+3. create full-depth FITS images and movies of any number of specified depths
+4. generate lightcurves and photonlists using detected or specified sources
+These steps can also be performed separately using methods from the
+gPhoton.io, gPhoton.photonpipe, gPhoton.moviemaker, and gPhoton.lightcurve
+modules. This module is intended to perform them with optimized transitions
+and endpoints / output suitable for remote automation.
+"""
+
+from pathlib import Path
 import shutil
 from time import time
-from pathlib import Path
+from types import MappingProxyType
+from typing import Optional, Sequence, Mapping
+import warnings
 
-from gPhoton import PhotonPipe
-from gfcat import gfcat_utils as gfu
-from gPhoton.gphoton_utils import get_parquet_stats, eclipse_to_files
-from gPhoton.moviemaker import handle_movie_and_image_creation, write_movie
-from gPhoton.photometry import (
-    find_sources,
-    extract_photometry,
-    write_photometry_tables
-)
-from gPhoton.devtools import Stopwatch
+from gPhoton.reference import eclipse_to_paths, Stopwatch
 
-stopwatch = Stopwatch()
+# oh no! divide by zero! i am very distracting!
+warnings.filterwarnings(action="ignore", category=RuntimeWarning)
 
 
-def pipeline(
+def execute_pipeline(
     eclipse,
     band,
     depth,
     threads=None,
-    recreate=False,
     data_root="test_data",
-    distinct_raw6_root=None,
-    download=True
+    remote_root=None,
+    download=True,
+    recreate=False,
+    verbose=2,
+    maxsize=None,
+    source_catalog_file: Optional[str] = None,
+    write: Mapping = MappingProxyType({"image": True, "movie": True}),
+    # sizes of apertures in arcseconds
+    aperture_sizes: Sequence[float] = tuple([12.8]),
+    lil=True,
 ):
+    stopwatch = Stopwatch()
     startt = time()
     stopwatch.click()
-    # TODO: this unnecessarily moves raw6 files around in some
-    #  unlikely use cases
     if eclipse > 47000:
-        print('CAUSE data w/ eclipse>47000 are not yet supported.')
-        return 'CAUSE data w/ eclipse>47000 are not yet supported.'
-    clean_raw6 = lambda _: None
-    if download is True:
-        raw6file = gfu.download_raw6(eclipse, band, data_directory=data_root)
-    elif distinct_raw6_root is None:
-        raw6file = eclipse_to_files(eclipse, data_root)[band]["raw6"]
-    else:
-        remote_raw6file = eclipse_to_files(
-            eclipse, distinct_raw6_root
-        )[band]["raw6"]
-        print(f"making temp local copy of {remote_raw6file}")
-        raw6file = shutil.copy(remote_raw6file, data_root)
-        clean_raw6 = Path(raw6file).unlink
-    if (raw6file is None) or not Path(str(raw6file)).exists():
-        print("couldn't find raw6 file.")
-        return "couldn't find raw6 file."
-    filenames = eclipse_to_files(eclipse, data_root, depth)[band]
-    photonpath = Path(filenames["photonfile"])
+        print("CAUSE data w/eclipse>47000 are not yet supported.")
+        return "return code: CAUSE data w/eclipse>47000 are not yet supported."
+    names = eclipse_to_paths(eclipse, data_root, depth)[band]
+    remote_files = eclipse_to_paths(eclipse, remote_root)[band]
+    temp_directory = Path(data_root, "temp", str(eclipse).zfill(5))
+    if not temp_directory.exists():
+        temp_directory.mkdir(parents=True)
+    photonpath = Path(names["photonfile"])
     if not photonpath.parent.exists():
         photonpath.parent.mkdir(parents=True)
     stopwatch.click()
+    if (remote_root is not None) and (recreate is False):
+        # check for remote photon list.
+        if Path(remote_files["photonfile"]).exists():
+            print(
+                f"making temp local copy of photon file from remote: "
+                f"{remote_files['photonfile']}"
+            )
+            photonpath = Path(
+                shutil.copy(Path(remote_files["photonfile"]), temp_directory)
+            )
     if recreate or not photonpath.exists():
-        PhotonPipe.photonpipe(
-            photonpath,
-            band,
-            raw6file=raw6file,
-            verbose=2,
-            chunksz=1000000,
-            threads=threads
-        )
+        # find raw6 file.
+        # first look locally. then look in remote (like s3) if provided.
+        # if it's still not found, download if download was set True.
+        raw6path = Path(names["raw6"])
+        if not raw6path.exists() and (remote_root is not None):
+            if Path(remote_files["raw6"]).exists():
+                print(
+                    f"making temp local copy of raw6 file from remote: "
+                    f"{remote_files['raw6']}"
+                )
+            raw6path = Path(shutil.copy(remote_files["raw6"], temp_directory))
+        if not raw6path.exists() and (download is True):
+            from gPhoton.io.fetch import retrieve_raw6
+
+            raw6file = retrieve_raw6(eclipse, band, raw6path)
+            if raw6file is not None:
+                raw6path = Path(raw6file)
+        if not raw6path.exists():
+            print("couldn't find raw6 file.")
+            return "return code: couldn't find raw6 file."
+        from gPhoton.photonpipe import execute_photonpipe
+
+        try:
+            execute_photonpipe(
+                photonpath,
+                band,
+                raw6file=str(raw6path),
+                verbose=verbose,
+                chunksz=1000000,
+                threads=threads,
+            )
+        except ValueError as value_error:
+            if str(value_error).startswith("bad distortion correction"):
+                print(str(value_error))
+                return "return code: bad distortion correction solution"
+            if "probably not a valid FUV observation" in str(value_error):
+                print(str(value_error))
+                return "return code: not a valid FUV observation"
+            if "FUV temperature out of range" in str(value_error):
+                print(str(value_error))
+                return "return code: FUV temperature value out of range"
+            raise
     else:
         print(f"using existing photon list {photonpath}")
     stopwatch.click()
+    from gPhoton.parquet_utils import get_parquet_stats
+
     file_stats = get_parquet_stats(str(photonpath), ["flags", "ra"])
     if (file_stats["flags"]["min"] > 6) or (file_stats["ra"]["max"] is None):
         print(f"no unflagged data in {photonpath}. bailing out.")
-        clean_raw6()
-        return f"no unflagged data (stopped after photon list)"
-    results = handle_movie_and_image_creation(
-        str(photonpath),
-        depth,
-        band,
-        lil=True,
-        threads=threads
+        return "return code: no unflagged data (stopped after photon list)"
+    from gPhoton.moviemaker import (
+        create_images_and_movies,
+        write_moviemaker_results,
+    )
+
+    results = create_images_and_movies(
+        str(photonpath), depth, band, lil, threads, maxsize
     )
     stopwatch.click()
-    source_table, apertures = find_sources(
+    if results["movie_dict"] == {}:
+        print("No movies available, halting before photometry.")
+        write_moviemaker_results(
+            results, names, depth, band, write, maxsize, stopwatch
+        )
+        return "return code: " + results["status"]
+    from gPhoton.lightcurve import make_lightcurves
+
+    photometry_result = make_lightcurves(
+        results,
         eclipse,
         band,
-        str(photonpath.parent),
-        results["image_dict"],
-        results["wcs"],
+        aperture_sizes,
+        photonpath,
+        source_catalog_file,
+        threads,
+        names,
+        stopwatch,
     )
-    if source_table is not None:
-        stopwatch.click()
-        source_table = extract_photometry(
-            results["movie_dict"], source_table, apertures, threads
-        )
-        stopwatch.click()
-        write_photometry_tables(
-            filenames["photomfile"],
-            filenames["expfile"],
-            source_table,
-            results["movie_dict"]
-        )
-        stopwatch.click()
-    write_movie(
-        band,
-        None,
-        filenames["image"].replace(".gz", ""),
-        results["image_dict"],
-        clean_up=True,
-        wcs=results["wcs"]
+    write_result = write_moviemaker_results(
+        results, names, depth, band, write, maxsize, stopwatch
     )
-    del results["image_dict"]
-    stopwatch.click()
-    write_movie(
-        band,
-        depth,
-        filenames["movie"].replace(".gz", ""),
-        results["movie_dict"],
-        clean_up=True,
-        wcs=results["wcs"]
+    print(
+        f"{(time() - startt).__round__(2)} seconds for pipeline execution"
     )
-    stopwatch.click()
-    clean_raw6()
-    print(f"{(time() - startt).__round__(2)} seconds for pipeline execution")
-    if source_table is None:
-        return "skipped photometry due to low exptime or other issue"
-    return "successful"
-
+    failures = [
+        result
+        for result in (photometry_result, write_result)
+        if result != "successful"
+    ]
+    if len(failures) > 0:
+        return "return code: " + ";".join(failures)
+    return "return code: successful"

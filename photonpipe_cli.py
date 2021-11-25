@@ -21,7 +21,7 @@ def photonpipe_cli_endpoint(
         f"e{eclipse}-{band.lower()[0]}d",
     )
     print(f"Photon data file: {photonfile}.parquet")
-    PhotonPipe.photonpipe(
+    PhotonPipe.execute_photonpipe(
         photonfile, band, raw6file=raw6file, verbose=2, chunksz=1000000,
         threads=None
     )

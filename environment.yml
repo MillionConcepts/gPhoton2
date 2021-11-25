@@ -34,4 +34,8 @@ dependencies:
   - python-snappy
   - more-itertools
   - sh
+  - pip
+  - pip:
+      - git+https://github.com/MillionConcepts/dustgoggles.git
+
 prefix: /home/michael/miniconda3/envs/glcat
