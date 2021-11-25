@@ -1,8 +1,4 @@
-"""
-.. module:: MCUtils
-   :synopsis: A library of generic utilities programs that C. Million wants to
-       keep separate in order to re-use across other projects.
-"""
+"""generic wrappers for astropy.io.fits (pyfits) methods."""
 
 from astropy.io import fits as pyfits
 import numpy as np

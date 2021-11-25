@@ -1,11 +1,12 @@
 """
-.. module:: CalUtils
+.. module:: calibrate
    :synopsis: Numerous methods for calibrating the raw photon event data.
        Many of these instantiate or make use of specific detector hardware
        parameters / constants related to the "static" or detector-space event
        calibration, including walk, wiggle, linearity, post-CSP, and stim
        scaling corrections.
 """
+from numba import njit
 import numpy as np
 
 from gPhoton import cals
@@ -13,6 +14,10 @@ import gPhoton.constants as c
 
 
 # ------------------------------------------------------------------------------
+
+from gPhoton.io.fits_utils import get_fits_header
+
+
 def clk_cen_scl_slp(band, eclipse):
     """
     Return the detector clock, center, scale, and slope constants. These are
@@ -426,7 +431,7 @@ def compute_flat_scale(t, band, verbose=0):
     Return the flat scale factor for a given time.
         These are empirically determined linear scales to the flat field
         as a function of time due to diminished detector response. They
-        were determined by Tom Barlow and are in the original GALEX pipeline
+        were determined by Tom Barlow and are in the original GALEX execute_pipeline
         but there is no published source of which I am aware.
 
     :param t: Time stamp(s) to retrieve the scale factor for.
@@ -468,3 +473,136 @@ def compute_flat_scale(t, band, verbose=0):
         print("         flat scale = ", flat_scale)
 
     return flat_scale
+
+
+def find_fuv_offset(scstfile, raise_invalid = True):
+    """
+    Computes NUV->FUV center offset based on a lookup table.
+
+    :param scstfile: Name of the spacecraft state (-scst) FITS file.
+
+    :type scstfile: str
+
+    :returns: tuple -- A two-element tuple containing the x and y offsets.
+    """
+
+    fodx_coef_0, fody_coef_0, fodx_coef_1, _ = (0.0, 0.0, 0.0, 0.0)
+
+    scsthead = get_fits_header(scstfile)
+
+    print("Reading header values from scst file: ", scstfile)
+
+    try:
+        eclipse = int(scsthead["eclipse"])
+    except:
+        print("WARNING: ECLIPSE is not defined in SCST header.")
+        try:
+            eclipse = int(scstfile.split("/")[-1].split("-")[0][1:])
+            print("         Using {e} from filename.".format(e=eclipse))
+        except:
+            print("         Unable to infer eclipse from filename.")
+            return 0.0, 0.0
+
+    try:
+        fdttdc = float(scsthead["FDTTDC"])
+    except KeyError:
+        print("WARNING: FUV temperature value missing from SCST.")
+        print("         This is probably not a valid FUV observation.")
+        if raise_invalid is True:
+            raise ValueError("This is probably not a valid FUV observation.")
+        return 0.0, 0.0
+
+    print(
+        "Offsetting FUV image for eclipse {e} at {t} degrees.".format(
+            e=eclipse, t=fdttdc
+        )
+    )
+
+    fodx_coef_0 = cals.offset("x")[eclipse - 1, 1]
+    fody_coef_0 = cals.offset("y")[eclipse - 1, 1]
+
+    fodx_coef_1 = 0.0
+    fody_coef_1 = 0.3597
+
+    if (fdttdc <= 20.0) or (fdttdc >= 40.0):
+        print("ERROR: FDTTDC is out of range at {t}".format(t=fdttdc))
+        if raise_invalid is True:
+            raise ValueError("FUV temperature out of range.")
+        return 0.0, 0.0
+    else:
+        xoffset = fodx_coef_0 - (fodx_coef_1 * (fdttdc - 29.0))
+        yoffset = fody_coef_0 - (fody_coef_1 * (fdttdc - 29.0))
+        print(
+            "Setting FUV offsets to x={x}, y={y}".format(x=xoffset, y=yoffset)
+        )
+
+    return xoffset, yoffset
+
+
+# two components of the expensive center-and-scale step that can be
+# accelerated effectively with numba
+
+@njit(cache=True)
+def plus7_mod32_minus16(array):
+    return ((array + 7) % 32) - 16
+
+
+@njit(cache=True)
+def center_scale_step_1(xa, yb, xb, xclk, yclk, xamc, yamc):
+    xraw0 = xb * xclk + xamc
+    yraw0 = yb * yclk + yamc
+    ya = (((yraw0 / (2 * yclk) - xraw0 / (2 * xclk)) + 10) * 32) + xa
+    return xraw0, ya, yraw0
+
+
+def center_and_scale(band, data, eclipse):
+    (xclk, yclk, xcen, ycen, xscl, yscl, xslp, yslp) = clk_cen_scl_slp(
+        band, eclipse
+    )
+    xraw0, ya, yraw0 = center_scale_step_1(
+        data["xa"],
+        data["yb"],
+        data["xb"],
+        xclk,
+        yclk,
+        data["xamc"],
+        data["yamc"],
+    )
+    data["ya"] = np.array(ya, dtype="int64") % 32
+    xraw = (
+        xraw0 + np.array(plus7_mod32_minus16(data["xa"]), dtype="int64") * xslp
+    )
+    data["x"] = (xraw - xcen) * xscl
+    yraw = (
+        yraw0 + np.array(plus7_mod32_minus16(data["ya"]), dtype="int64") * yslp
+    )
+    data["y"] = (yraw - ycen) * yscl
+    return data
+
+
+def compute_shutter(timeslice, flagslice, trange, shutgap=0.05):
+    ix = np.where(flagslice == 0)
+    t = np.hstack([trange[0], np.unique(timeslice[ix]), +trange[1]])
+    ix = np.where(t[1:] - t[:-1] >= shutgap)
+    shutter = np.array(t[1:] - t[:-1])[ix].sum()
+    return shutter
+
+
+def compute_exptime(timeslice, flagslice, band, trange):
+    shutter = compute_shutter(timeslice, flagslice, trange)
+    # Calculate deadtime
+    model = {
+        "NUV": [-0.000434730599193, 77.217817988],
+        "FUV": [-0.000408075976406, 76.3000943221],
+    }
+    rawexpt = trange[1] - trange[0]
+    rawexpt -= shutter
+    if rawexpt == 0:
+        return rawexpt
+    ix = np.where(flagslice == 0)
+    gcr = len(timeslice[ix]) / rawexpt
+    feeclkratio = 0.966
+    refrate = model[band][1] / feeclkratio
+    scr = model[band][0] * gcr + model[band][1]
+    deadtime = 1 - scr / feeclkratio / refrate
+    return rawexpt * (1.0 - deadtime)

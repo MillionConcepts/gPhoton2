@@ -1,3 +1,5 @@
+"""pretty-printing / console-formatting classes and methods."""
+
 # TODO, maybe: much of this is vendored / slightly modified from [redacted]
 #  pull it all out into a shared module somewhere...?
 

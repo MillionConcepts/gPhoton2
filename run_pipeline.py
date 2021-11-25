@@ -1,11 +1,11 @@
-from gPhoton.pipeline import pipeline
+from gPhoton.pipeline import execute_pipeline
 
 source_catalog_file = (
     "/home/michael/Desktop/galex_swarm/wdcat_eclipse_list.csv"
 )
 
 if __name__ == "__main__":
-    pipeline(
+    execute_pipeline(
         39971,
         "NUV",
         depth=60,

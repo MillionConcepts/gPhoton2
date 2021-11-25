@@ -1,24 +1,22 @@
 """
-.. module:: io
-   :synopsis: Methods for retrieving and reading GALEX aspect ("scst") and raw
-   data ("raw6") files, including communication w/MAST.
+.. module:: fetch
+   :synopsis: Methods for retrieving GALEX files from MAST
 """
 # NOTE: contains some functions previously -- and perhaps one day again! --
-# housed in FileUtils and GQuery.
+# housed in FileUtils & GQuery
 
 
 import os
+import time
 from typing import Sequence
 
+import requests
 from astropy.io import fits as pyfits
 import numpy as np
 
 # gPhoton imports.
 from gPhoton import time_id
-from gPhoton.netutils import (
-    download_with_progress_bar,
-    manage_networked_sql_request,
-)
+from gPhoton.io.netutils import download_with_progress_bar
 
 
 # The following global variables are used in constructing a properly
@@ -27,6 +25,8 @@ from gPhoton.netutils import (
 
 # All queries from the same _run_ of the photon tools should have identical
 # time_id, providing a quick way to troubleshoot issues on the server side.
+from gPhoton.pretty import print_inline
+
 baseURL = (
     "https://mastcomp.stsci.edu/portal/Mashup/MashupQuery.asmx/Galex"
     "PhotonListQueryTest?query="
@@ -82,8 +82,8 @@ def download_data(eclipse, band, ftype, datadir="./", verbose=0):
 
 
 # ------------------------------------------------------------------------------
-# TODO: check if this is actually working as it should in current pipeline
-def load_aspect(aspfiles: Sequence[str]):
+# TODO: check if this is actually working as it should in current execute_pipeline
+def load_aspect_files(aspfiles: Sequence[str]):
     """
     Loads a set of aspect files into a bunch of arrays.
 
@@ -133,7 +133,7 @@ def load_aspect(aspfiles: Sequence[str]):
 
 
 # ------------------------------------------------------------------------------
-def web_query_aspect(eclipse, retries=20, quiet=False):
+def retrieve_aspect(eclipse, retries=20, quiet=False):
     """
     Grabs the aspect data from MAST databases based on eclipse.
 
@@ -309,3 +309,118 @@ def aspect_ecl(eclipse):
     ) + " order by time" + str(
         formatURL
     )
+
+
+def retrieve_scstfile(band, eclipse, outbase, scstfile):
+    if not scstfile:
+        if not eclipse:
+            raise ValueError("Must specifiy eclipse if no scstfile.")
+        else:
+            scstfile = download_data(
+                eclipse, band, "scst", datadir=os.path.dirname(outbase)
+            )
+        if scstfile is None:
+            raise ValueError("Unable to retrieve SCST file for this eclipse.")
+    return scstfile
+
+
+def retrieve_raw6(eclipse, band, outbase):
+    if not eclipse:
+        raise ValueError("Must specify eclipse if no raw6file.")
+    else:
+        raw6file = download_data(
+            eclipse, band, "raw6", datadir=os.path.dirname(outbase)
+        )
+        if raw6file is None:
+            raise ValueError("Unable to retrieve raw6 file for this eclipse.")
+    return raw6file
+
+
+def manage_networked_sql_request(
+    query, maxcnt=100, wait=1, timeout=60, verbose=0
+):
+    """
+    Manage calls via `requests` to SQL servers behind HTTP interfaces,
+    providing better feedback and making them more robust against network
+    errors.
+
+    :param query: The URL containing the query.
+
+    :type query: str
+
+    :param maxcnt: The maximum number of attempts to make before failure.
+
+    :type maxcnt: int
+
+    :param wait: The length of time to wait before attempting the query again.
+        Currently a placeholder.
+
+    :type wait: int
+
+    :param timeout: The length of time to wait for the server to send data
+        before giving up, specified in seconds.
+
+    :type timeout: float
+
+    :param verbose: If > 0, print additional messages to STDOUT. Higher value
+        represents more verbosity.
+
+    :type verbose: int
+
+    :returns: requests.Response or None -- The response from the server. If the
+        query does not receive a response, returns None.
+    """
+
+    # Keep track of the number of failures.
+    cnt = 0
+
+    # This will keep track of whether we've gotten at least one
+    # successful response.
+    successful_response = False
+
+    while cnt < maxcnt:
+        if cnt > 1:
+            time.sleep(wait)
+        try:
+            r = requests.get(query, timeout=timeout)
+            successful_response = True
+        except requests.exceptions.ConnectTimeout:
+            if verbose:
+                print("Connection time out.")
+            cnt += 1
+            continue
+        except requests.exceptions.ConnectionError:
+            if verbose:
+                print("Domain does not resolve.")
+            cnt += 1
+            continue
+        except Exception as ex:
+            if verbose:
+                print(f'bad query? {query}: {type(ex)}: {ex}')
+            cnt += 1
+            continue
+        if r.json()['status'] == 'EXECUTING':
+            if verbose > 1:
+                print_inline('EXECUTING')
+            cnt = 0
+            continue
+        elif r.json()['status'] == 'COMPLETE':
+            if verbose > 1:
+                print_inline('COMPLETE')
+            break
+        elif r.json()['status'] == 'ERROR':
+            print('ERROR')
+            print('Unsuccessful query: {q}'.format(q=query))
+            raise ValueError(r.json()['msg'])
+        else:
+            print('Unknown return: {s}'.format(s=r.json()['status']))
+            cnt += 1
+            continue
+
+    if not successful_response:
+        # Initiate an empty response object in case
+        # the try statement is never executed.
+        # r = requests.Response()
+        r = None
+
+    return r

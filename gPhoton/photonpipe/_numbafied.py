@@ -25,7 +25,7 @@ def find_null_indices(
     aspect_slice: np.ndarray,
     asptime: np.ndarray,
     flags: np.ndarray,
-    ok_indices: np.ndarray
+    ok_indices: np.ndarray,
 ) -> (np.ndarray, np.ndarray):
     flag_slice = flags[ok_indices]
     cut = (
@@ -49,8 +49,7 @@ def find_null_indices(
 def unfancy_detector_coordinates(
     band, dx, dy, flags, xp_as, xshift, yp_as, yshift
 ):
-    flip = {"NUV": 1.0,
-            "FUV":-1.0}[band]
+    flip = {"NUV": 1.0, "FUV": -1.0}[band]
     # TODO: is xi always 0? so can half of this be removed?
     #  probably? go look at the C code
     # The detectors aren't oriented the same way.
@@ -74,14 +73,14 @@ def unfancy_detector_coordinates(
 
 def xi_eta_to_col_row(xi, eta):
     col = (
-            ((xi / 36000.0) / (c.DETSIZE / 2.0) * c.FILL_VALUE + 1.0)
-            * c.PIXELS_PER_AXIS
-            / 2
+        ((xi / 36000.0) / (c.DETSIZE / 2.0) * c.FILL_VALUE + 1.0)
+        * c.PIXELS_PER_AXIS
+        / 2
     )
     row = (
-            ((eta / 36000.0) / (c.DETSIZE / 2.0) * c.FILL_VALUE + 1.0)
-            * c.PIXELS_PER_AXIS
-            / 2
+        ((eta / 36000.0) / (c.DETSIZE / 2.0) * c.FILL_VALUE + 1.0)
+        * c.PIXELS_PER_AXIS
+        / 2
     )
     return col, row
 
@@ -177,17 +176,6 @@ def unfancy_distortion_component(
     return col, depth, ok_indices, row, xshift, yshift
 
 
-def plus7_mod32_minus16(array):
-    return ((array + 7) % 32) - 16
-
-
-def center_scale_step_1(xa, yb, xb, xclk, yclk, xamc, yamc):
-    xraw0 = xb * xclk + xamc
-    yraw0 = yb * yclk + yamc
-    ya = (((yraw0 / (2 * yclk) - xraw0 / (2 * xclk)) + 10) * 32) + xa
-    return xraw0, ya, yraw0
-
-
 # If you don't use numba, this function is horribly slow. Use this instead:
 # def float_between_wiggled_points(blt_u, floor_xy, wig_xy, xya_ix):
 #     return wig_xy[xya_ix, floor_xy] * (1 - blt_u) \
@@ -199,14 +187,6 @@ def float_between_wiggled_points(blt_u, floor_xy, wig_xy, xya_ix):
         wigix.append(wig_xy[xya_ix[npix], floor_xy[npix]])
         wigix1.append(wig_xy[xya_ix[npix], floor_xy[npix] + 1])
     return np.array(wigix) * (1 - blt_u) + np.array(wigix1) * blt_u
-
-
-def between(reference, t0, t1):
-    return np.where((reference >= t0) & (reference < t1))
-
-
-def slice_between(subject, reference, t0, t1):
-    return subject[between(reference, t0, t1)]
 
 
 jit_module(nopython=True, cache=True)

@@ -1,3 +1,10 @@
+"""
+.. module:: sharing
+   :synopsis: Utilities for working with python shared memory structures.
+"""
+
+# TODO, maybe: consider moving this up to dustgoggles?
+
 from multiprocessing.shared_memory import SharedMemory
 
 from dustgoggles.structures import NestingDict
@@ -112,8 +119,8 @@ def slice_chunk_into_memory(
     return block_directory
 
 
-def send_cals_to_shared_memory(cal_data):
-    cal_block_info = {}
-    for cal_name, cal_content in cal_data.items():
-        cal_block_info[cal_name] = send_to_shared_memory(cal_content)
-    return cal_block_info
+def send_mapping_to_shared_memory(mapping):
+    block_directory = {}
+    for key, value in mapping.items():
+        block_directory[key] = send_to_shared_memory(value)
+    return block_directory

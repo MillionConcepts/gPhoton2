@@ -1,6 +1,5 @@
 """
-temporary home for pipeline utilities to reduce need for expensive and maybe
-incompatible imports.
+utilities for skimming and reading parquet-format files
 """
 
 import numpy as np
@@ -16,5 +15,5 @@ def get_parquet_stats(fn, columns, row_group=0):
     return statistics
 
 
-def table_values(table, columns):
+def parquet_to_ndarray(table, columns):
     return np.array([table[column].to_numpy() for column in columns]).T

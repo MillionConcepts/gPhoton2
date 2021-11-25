@@ -1,3 +1,15 @@
+"""
+primary handler module for the 'full' gPhoton execute_pipeline. can:
+1. retrieve data from MAST or another specified location
+2. create calibrated photonlists
+3. create full-depth FITS images and movies of any number of specified depths
+4. generate lightcurves and photonlists using detected or specified sources
+These steps can also be performed separately using methods from the
+gPhoton.io, gPhoton.photonpipe, gPhoton.moviemaker, and gPhoton.lightcurve
+modules. This module is intended to perform them with optimized transitions
+and endpoints / output suitable for remote automation.
+"""
+
 from pathlib import Path
 import shutil
 from time import time
@@ -5,14 +17,13 @@ from types import MappingProxyType
 from typing import Optional, Sequence, Mapping
 import warnings
 
-import gPhoton.constants as c
-from gPhoton._pipe_components import retrieve_raw6
-from gPhoton.pipeline_start import eclipse_to_files, Stopwatch
+from gPhoton.reference import eclipse_to_paths, Stopwatch
 
+# oh no! divide by zero! i am very distracting!
 warnings.filterwarnings(action="ignore", category=RuntimeWarning)
 
 
-def pipeline(
+def execute_pipeline(
     eclipse,
     band,
     depth,
@@ -35,8 +46,8 @@ def pipeline(
     if eclipse > 47000:
         print("CAUSE data w/eclipse>47000 are not yet supported.")
         return "return code: CAUSE data w/eclipse>47000 are not yet supported."
-    names = eclipse_to_files(eclipse, data_root, depth)[band]
-    remote_files = eclipse_to_files(eclipse, remote_root)[band]
+    names = eclipse_to_paths(eclipse, data_root, depth)[band]
+    remote_files = eclipse_to_paths(eclipse, remote_root)[band]
     temp_directory = Path(data_root, "temp", str(eclipse).zfill(5))
     if not temp_directory.exists():
         temp_directory.mkdir(parents=True)
@@ -58,7 +69,7 @@ def pipeline(
         # find raw6 file.
         # first look locally. then look in remote (like s3) if provided.
         # if it's still not found, download if download was set True.
-        raw6path = Path(eclipse_to_files(eclipse, data_root)[band]["raw6"])
+        raw6path = Path(names["raw6"])
         if not raw6path.exists() and (remote_root is not None):
             if Path(remote_files["raw6"]).exists():
                 print(
@@ -67,18 +78,18 @@ def pipeline(
                 )
             raw6path = Path(shutil.copy(remote_files["raw6"], temp_directory))
         if not raw6path.exists() and (download is True):
-            raw6file = retrieve_raw6(
-                eclipse, band, str(Path(data_root, str(eclipse).zfill(5)))
-            )
+            from gPhoton.io.fetch import retrieve_raw6
+
+            raw6file = retrieve_raw6(eclipse, band, raw6path)
             if raw6file is not None:
                 raw6path = Path(raw6file)
         if not raw6path.exists():
             print("couldn't find raw6 file.")
             return "return code: couldn't find raw6 file."
-        from gPhoton import PhotonPipe
+        from gPhoton.photonpipe import execute_photonpipe
 
         try:
-            PhotonPipe.photonpipe(
+            execute_photonpipe(
                 photonpath,
                 band,
                 raw6file=str(raw6path),
@@ -100,81 +111,51 @@ def pipeline(
     else:
         print(f"using existing photon list {photonpath}")
     stopwatch.click()
-    from gPhoton.pipeline_utils import get_parquet_stats
+    from gPhoton.parquet_utils import get_parquet_stats
 
     file_stats = get_parquet_stats(str(photonpath), ["flags", "ra"])
     if (file_stats["flags"]["min"] > 6) or (file_stats["ra"]["max"] is None):
         print(f"no unflagged data in {photonpath}. bailing out.")
         return "return code: no unflagged data (stopped after photon list)"
-    from gPhoton.moviemaker import handle_movie_and_image_creation, write_fits
+    from gPhoton.moviemaker import (
+        create_images_and_movies,
+        write_moviemaker_results,
+    )
 
-    results = handle_movie_and_image_creation(
+    results = create_images_and_movies(
         str(photonpath), depth, band, lil, threads, maxsize
     )
     stopwatch.click()
     if results["movie_dict"] == {}:
-        print("No movies available, halting pipeline before photometry.")
-        write_fits(results, names, depth, band, write, maxsize, stopwatch)
+        print("No movies available, halting before photometry.")
+        write_moviemaker_results(
+            results, names, depth, band, write, maxsize, stopwatch
+        )
         return "return code: " + results["status"]
-    from gPhoton.photometry import (
-        find_sources,
-        extract_photometry,
-        count_full_depth_image,
-        write_exptime_file,
-    )
+    from gPhoton.lightcurve import make_lightcurves
 
-    if source_catalog_file is not None:
-        import pandas as pd
-        sources = pd.read_csv(source_catalog_file)
-        sources = sources.loc[sources["eclipse"] == eclipse]
-        sources = sources[~sources.duplicated()].reset_index(drop=True)
-    else:
-        sources = None
-    source_table = find_sources(
+    photometry_result = make_lightcurves(
+        results,
         eclipse,
         band,
-        str(photonpath.parent),
-        results["image_dict"],
-        results["wcs"],
-        source_table=sources,
+        aperture_sizes,
+        photonpath,
+        source_catalog_file,
+        threads,
+        names,
+        stopwatch,
     )
-    # failure messages due to low exptime or no data
-    if isinstance(source_table, str):
-        return f"return code: {source_table}"
-    stopwatch.click()
-    # if source_table is None at this point, it should mean that DAOStarFinder
-    # didn't find anything
-    if source_table is not None:
-        for aperture_size in aperture_sizes:
-            aperture_size_px = aperture_size / c.ARCSECPERPIXEL
-            source_table, apertures = count_full_depth_image(
-                source_table,
-                aperture_size_px,
-                results["image_dict"],
-                results["wcs"],
-            )
-            stopwatch.click()
-            source_table = extract_photometry(
-                results["movie_dict"], source_table, apertures, threads
-            )
-            photomfile = (
-                names["photomfile"]
-                + str(aperture_size).replace(".", "_")
-                + ".csv"
-            )
-            print(f"writing source table to {photomfile}")
-            source_table.to_csv(photomfile, index=False)
-            stopwatch.click()
-        write_exptime_file(names["expfile"], results["movie_dict"])
-    write_result = write_fits(
+    write_result = write_moviemaker_results(
         results, names, depth, band, write, maxsize, stopwatch
     )
-    print(f"{(time() - startt).__round__(2)} seconds for pipeline execution")
-    failures = []
-    if sources is None:
-        failures.append("skipped photometry due to low exptime or other issue")
-    if write_result != "successful":
-        failures.append(write_result)
+    print(
+        f"{(time() - startt).__round__(2)} seconds for pipeline execution"
+    )
+    failures = [
+        result
+        for result in (photometry_result, write_result)
+        if result != "successful"
+    ]
     if len(failures) > 0:
         return "return code: " + ";".join(failures)
     return "return code: successful"

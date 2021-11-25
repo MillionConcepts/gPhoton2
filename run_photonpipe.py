@@ -19,7 +19,7 @@ def run_photonpipe(eclipse,band='NUV',data_directory = "test_data",rerun=False):
     print(f"Photon data file: {photonfile}.parquet")
     if Path(str(photonfile)+".parquet").exists() and not rerun:
         return
-    PhotonPipe.photonpipe(
+    PhotonPipe.execute_photonpipe(
         photonfile, band, raw6file=raw6file, verbose=2, chunksz=1000000,
         threads=6
     )

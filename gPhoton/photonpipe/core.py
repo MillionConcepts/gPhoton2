@@ -1,10 +1,5 @@
-"""
-.. module:: PhotonPipe
-   :synopsis: A recreation / port of key functionality of the GALEX mission
-       pipeline to generate calibrated and sky-projected photon-level data from
-       raw spacecraft and detector telemetry. Generates time-tagged photon lists
-       given mission-produced -raw6, -scst, and -asprta data.
-"""
+"""top-level handler module for gPhoton.execute_photonpipe"""
+
 from multiprocessing import Pool
 import time
 import warnings
@@ -15,32 +10,28 @@ import pyarrow
 from pyarrow import parquet
 
 from gPhoton.pretty import print_inline
-from gPhoton._pipe_components import (
+from gPhoton.photonpipe._steps import (
     retrieve_aspect_solution,
-    retrieve_raw6,
     create_ssd_from_decoded_data,
-    retrieve_scstfile,
-    get_eclipse_from_header,
     perform_yac_correction,
     load_cal_data,
-    load_raw6,
     process_chunk_in_shared_memory,
     chunk_data,
     process_chunk_in_unshared_memory,
 )
-from gPhoton.gphoton_utils import find_fuv_offset
 
-# ------------------------------------------------------------------------------
-
-from gPhoton._shared_memory_pipe_components import (
+from gPhoton.calibrate import find_fuv_offset
+from gPhoton.io.fetch import retrieve_scstfile, retrieve_raw6
+from gPhoton.io.raw6 import load_raw6, get_eclipse_from_header
+from gPhoton.sharing import (
     unlink_nested_block_dict,
     slice_into_shared_chunks,
-    send_cals_to_shared_memory,
+    send_mapping_to_shared_memory,
     get_column_from_shared_memory,
 )
 
 
-def photonpipe(
+def execute_photonpipe(
     outfile,
     band,
     raw6file=None,
@@ -129,7 +120,7 @@ def photonpipe(
     # the stims are only actually used for post-CSP corrections, but we
     # temporarily retain them in both cases for brevity.
     # the use of a 90.001 separation angle and fixed stim coefficients
-    # post-CSP is per original mission pipeline; see rtaph.c #1391;
+    # post-CSP is per original mission execute_pipeline; see rtaph.c #1391;
     if eclipse > 37460:
         stims, _ = create_ssd_from_decoded_data(
             data, band, eclipse, verbose, margin=90.001
@@ -144,7 +135,7 @@ def photonpipe(
         data = perform_yac_correction(band, eclipse, stims, data)
     cal_data = load_cal_data(stims, band, eclipse)
     if share_memory is True:
-        cal_data = send_cals_to_shared_memory(cal_data)
+        cal_data = send_mapping_to_shared_memory(cal_data)
 
     if share_memory is True:
         chunks = slice_into_shared_chunks(chunksz, data, nphots)
@@ -234,7 +225,7 @@ def photonpipe(
     print_inline("")
     print("")
     if verbose:
-        seconds = stopt-startt
+        seconds = stopt - startt
         rate = nphots / seconds
         print("Runtime statistics:")
         print(f" runtime		=	{seconds} sec. = ({seconds/60} min.)")

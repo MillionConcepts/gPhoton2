@@ -1,3 +1,8 @@
+"""
+methods for generating lightcurves from FITS images/movies. intended to be
+used on files produced by gPhoton.moviemaker methods.
+"""
+
 from multiprocessing import Pool
 from pathlib import Path
 from typing import Union, Optional

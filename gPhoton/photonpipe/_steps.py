@@ -1,17 +1,11 @@
-import os
 from itertools import product
 
-
-from astropy.io import fits as pyfits
 from dustgoggles.structures import NestingDict
-import fitsio
 import numpy as np
 
-import gPhoton.calibrate
 from gPhoton import cals, constants as c
-import gPhoton.galextools as gt
-from gPhoton.FileUtils import load_aspect, web_query_aspect, download_data
-from gPhoton._numbafied_pipe_components import (
+from gPhoton.io.fetch import load_aspect_files, retrieve_aspect
+from gPhoton.photonpipe._numbafied import (
     interpolate_aspect_solutions,
     find_null_indices,
     unfancy_detector_coordinates,
@@ -19,55 +13,50 @@ from gPhoton._numbafied_pipe_components import (
     or_reduce_minus_999,
     init_wiggle_arrays,
     float_between_wiggled_points,
-    center_scale_step_1,
-    plus7_mod32_minus16,
     unfancy_distortion_component,
     sum_corners,
 )
-from gPhoton._shared_memory_pipe_components import (
+from gPhoton.sharing import (
     reference_shared_memory_arrays,
     send_to_shared_memory,
 )
-from gPhoton.calibrate import avg_stimpos, rtaph_yac, rtaph_yac2, \
-    clk_cen_scl_slp, rtaph_yap, post_csp_caldata, find_stims_index
-from gPhoton.gnomonic import gnomfwd_simple, gnomrev_simple
+from gPhoton.calibrate import (
+    avg_stimpos,
+    compute_flat_scale,
+    rtaph_yac,
+    rtaph_yac2,
+    rtaph_yap,
+    post_csp_caldata,
+    find_stims_index,
+)
+from gPhoton.coords.gnomonic import gnomfwd_simple, gnomrev_simple
 
 
 # TODO, IMPORTANT: flag 7 is intended to be for gaps >= 2s in aspect sol
 #  or actually-bad flags. in post-CSP aspect solutions, it's possible that
 #  all data has some flag that we should ignore; examine aspect solution for
 #  propagated flag.
-#  flag 12 is intended to be for gaps < 2s in aspect sol. we will use 12 in
-#  photometry but not 7.
+#  flag 12 is intended to be for gaps < 2s in aspect sol. we will (eventually)
+#  use 12 in photometry but not 7.
 from gPhoton.pretty import print_inline
 
 
 def retrieve_aspect_solution(aspfile, eclipse, retries, verbose):
     print_inline("Loading aspect data...")
     if aspfile:
-        (aspra, aspdec, asptwist, asptime, aspheader, aspflags) = load_aspect(
-            aspfile
-        )
+        result = load_aspect_files(aspfile)
     else:
-        (
-            aspra,
-            aspdec,
-            asptwist,
-            asptime,
-            aspheader,
-            aspflags,
-        ) = web_query_aspect(eclipse, retries=retries)
+        result = retrieve_aspect(eclipse, retries=retries)
+    (aspra, aspdec, asptwist, asptime, aspheader, aspflags) = result
     minasp, maxasp = min(asptime), max(asptime)
     trange = [minasp, maxasp]
     if verbose > 1:
-        print("			trange= ( {t0} , {t1} )".format(t0=trange[0], t1=trange[1]))
+        print(f"			trange= ( {trange[0]} , {trange[1]} )")
     ra0, dec0, roll0 = aspheader["RA"], aspheader["DEC"], aspheader["ROLL"]
     if verbose > 1:
         print(
-            "			[avgRA, avgDEC, avgROLL] = [{RA}, {DEC}, "
-            "{ROLL}]".format(
-                RA=aspra.mean(), DEC=aspdec.mean(), ROLL=asptwist.mean()
-            )
+            f"			[avgRA, avgDEC, avgROLL] = [{aspra.mean()}, "
+            f"{aspdec.mean()}, {asptwist.mean()}]"
         )
     # This projects the aspect solutions onto the MPS field centers.
     print_inline("Computing aspect vectors...")
@@ -97,7 +86,7 @@ def process_chunk_in_unshared_memory(
         xoffset,
         yoffset,
     )
-    return chunk | calibrate_photons_inline(band, cal_data, chunk)
+    return chunk | calibrate_photons_inline(band, cal_data, chunk, chunkid)
 
 
 def apply_all_corrections(
@@ -150,7 +139,7 @@ def process_chunk_in_shared_memory(
         xoffset,
         yoffset,
     )
-    chunk |= calibrate_photons_inline(band, cal_data, chunk)
+    chunk |= calibrate_photons_inline(band, cal_data, chunk, chunk_title)
     processed_block_info = send_to_shared_memory(chunk)
     for block in chunk_blocks.values():
         block.close()
@@ -158,8 +147,8 @@ def process_chunk_in_shared_memory(
     return processed_block_info
 
 
-def calibrate_photons_inline(band, cal_data, chunk):
-    print_inline("Applying detector-space calibrations.")
+def calibrate_photons_inline(band, cal_data, chunk, chunkid):
+    print_inline(f"{chunkid}Applying detector-space calibrations...")
     col, row = chunk["col"], chunk["row"]
     # compute all data on detector to allow maximally flexible selection of
     # edge radii downstream
@@ -170,7 +159,7 @@ def calibrate_photons_inline(band, cal_data, chunk):
     det_fields = {
         "mask": cal_data["mask"]["array"][col_ix, row_ix] == 0,
         "flat": cal_data["flat"]["array"][col_ix, row_ix],
-        "scale": gPhoton.calibrate.compute_flat_scale(chunk["t"][det_indices], band),
+        "scale": compute_flat_scale(chunk["t"][det_indices], band),
     }
     del col_ix, row_ix
     det_fields["response"] = det_fields["flat"] * det_fields["scale"]
@@ -180,6 +169,8 @@ def calibrate_photons_inline(band, cal_data, chunk):
         "detrad": np.sqrt((col - 400) ** 2 + (row - 400) ** 2),
     }
     for field, values in det_fields.items():
+        if field == "mask":
+            print_inline(chunkid + "Applying hotspot mask...")
         output_columns[field] = np.full(
             chunk["t"].size, np.nan, dtype=values.dtype
         )
@@ -315,11 +306,9 @@ def apply_on_detector_corrections(
     )
     xi, eta, col, row, flags = convert_to_detector_coordinates(
         band,
-        chunkid,
         dx,
         dy,
         flags,
-        cal_data["mask"]["array"],
         xp_as,
         xshift,
         yp_as,
@@ -330,17 +319,14 @@ def apply_on_detector_corrections(
 
 def convert_to_detector_coordinates(
     band,
-    chunkid,
     dx,
     dy,
     flags,
-    mask,
     xp_as,
     xshift,
     yp_as,
     yshift,
 ):
-    print_inline(chunkid + "Applying hotspot mask...")
     # TODO: this is for numba. consider replacing fancy indexing in mask below
     #  with a for-loop to numba-fy the rest of the function...although casting
     #  to int is weirdly slow in numpy, so maybe not.
@@ -354,12 +340,6 @@ def convert_to_detector_coordinates(
         yp_as,
         yshift,
     )
-    # TODO: this slice / cast is being computed both here and in
-    #  calibrate_photons_inline()
-    #    col_ix = col[ok_indices].astype(np.int32)
-    #    row_ix = row[ok_indices].astype(np.int32)
-    #    cut[ok_indices] = (mask[col_ix, row_ix] == 1.0)
-    #    flags[~cut] = 6
     return xi, eta, col, row, flags
 
 
@@ -508,8 +488,6 @@ def compute_stimstats_2(stims, band):
         + (stim2avg[1] - stim4avg[1])
     ) / 4.0
     # Compute means and RMS values for each stim for each YA value stim1.
-    # TODO: the code in the original compute_stimstats for this does nothing,
-    #  assigning these calculations to an unused variable (ix) repeatedly.
 
     # This returns the pre-CSP stim positions (because eclipse==0).
     avgstim = avg_stimpos(band, 0)
@@ -593,6 +571,7 @@ def compute_stimstats_2(stims, band):
     )
 
     print("NOTE: Found,", len(w8), "points for YA correction fit.")
+    # noinspection PyTupleAssignmentBalance
     yac_coef1, yac_coef0 = np.polyfit(x8, y8, 1)
 
     print("Scal: YA correction coef for YB=2:", yac_coef0, yac_coef1)
@@ -726,29 +705,6 @@ def apply_stim_distortion_correction(
     return xshift, yshift, flags, ok_indices
 
 
-def decode_telemetry(band, chunkbeg, chunkend, chunkid, eclipse, raw6hdulist):
-    data = bitwise_decode_photonbytes(
-        band, unpack_raw6(chunkbeg, chunkend, chunkid, raw6hdulist)
-    )
-    data = center_and_scale(band, data, eclipse)
-    data["t"] = data["t"].byteswap().newbyteorder()
-    return data
-
-
-def unpack_raw6(chunkbeg, chunkend, chunkid, raw6hdulist):
-    print_inline(chunkid + "Unpacking raw6 data...")
-    photonbyte_cols = [f"phb{byte + 1}" for byte in range(5)]
-    table_chunk = raw6hdulist[1][chunkbeg:chunkend][["t"] + photonbyte_cols]
-    photonbytes_as_short = table_chunk[photonbyte_cols].astype(
-        [(col, np.int16) for col in photonbyte_cols]
-    )
-    photonbytes = {}
-    for byte in range(5):
-        photonbytes[byte + 1] = photonbytes_as_short[photonbyte_cols[byte]]
-    photonbytes["t"] = table_chunk["t"]
-    return photonbytes
-
-
 def create_ssd_from_decoded_data(data, band, eclipse, verbose, margin=90.001):
     all_stim_indices = find_stims_index(
         data["x"], data["y"], band, eclipse, margin
@@ -818,107 +774,12 @@ def create_ssd_from_decoded_data(data, band, eclipse, verbose, margin=90.001):
         sep.append(stim_sep)
         num.append(stim_num)
 
+    # noinspection PyTupleAssignmentBalance
     m, C = np.polyfit(avt, sep, 1)
     if verbose > 1:
         print("	    stim_coef0, stim_coef1 = " + str(C) + ", " + str(m))
 
     return stims, (C, m)
-
-
-def bitwise_decode_photonbytes(band, photonbytes):
-    print_inline("Band is {band}.".format(band=band))
-    data = {"t": photonbytes["t"]}
-    # Bitwise "decoding" of the raw6 telemetry.
-    data["xb"] = photonbytes[1] >> 5
-    data["xamc"] = (
-        np.array(((photonbytes[1] & 31) << 7), dtype="int16")
-        + np.array(((photonbytes[2] & 254) >> 1), dtype="int16")
-        - np.array(((photonbytes[1] & 16) << 8), dtype="int16")
-    )
-    data["yb"] = ((photonbytes[2] & 1) << 2) + ((photonbytes[3] & 192) >> 6)
-    data["yamc"] = (
-        np.array(((photonbytes[3] & 63) << 6), dtype="int16")
-        + np.array(((photonbytes[4] & 252) >> 2), dtype="int16")
-        - np.array(((photonbytes[3] & 32) << 7), dtype="int16")
-    )
-    data["q"] = ((photonbytes[4] & 3) << 3) + ((photonbytes[5] & 224) >> 5)
-    data["xa"] = (
-        ((photonbytes[5] & 16) >> 4)
-        + ((photonbytes[5] & 3) << 3)
-        + ((photonbytes[5] & 12) >> 1)
-    )
-    return data
-
-
-def center_and_scale(band, data, eclipse):
-    (xclk, yclk, xcen, ycen, xscl, yscl, xslp, yslp) = clk_cen_scl_slp(
-        band, eclipse
-    )
-    xraw0, ya, yraw0 = center_scale_step_1(
-        data["xa"],
-        data["yb"],
-        data["xb"],
-        xclk,
-        yclk,
-        data["xamc"],
-        data["yamc"],
-    )
-    data["ya"] = np.array(ya, dtype="int64") % 32
-    # del ya
-    xraw = (
-        xraw0 + np.array(plus7_mod32_minus16(data["xa"]), dtype="int64") * xslp
-    )
-    # del xraw0
-    data["x"] = (xraw - xcen) * xscl
-    # del xraw
-    yraw = (
-        yraw0 + np.array(plus7_mod32_minus16(data["ya"]), dtype="int64") * yslp
-    )
-    # del yraw0
-    data["y"] = (yraw - ycen) * yscl
-    # del yraw
-    return data
-
-
-def retrieve_raw6(eclipse, band, outbase):
-    if not eclipse:
-        raise ValueError("Must specify eclipse if no raw6file.")
-    else:
-        raw6file = download_data(
-            eclipse, band, "raw6", datadir=os.path.dirname(outbase)
-        )
-        if raw6file is None:
-            raise ValueError("Unable to retrieve raw6 file for this eclipse.")
-    return raw6file
-
-
-def retrieve_scstfile(band, eclipse, outbase, scstfile):
-    if not scstfile:
-        if not eclipse:
-            raise ValueError("Must specifiy eclipse if no scstfile.")
-        else:
-            scstfile = download_data(
-                eclipse, band, "scst", datadir=os.path.dirname(outbase)
-            )
-        if scstfile is None:
-            raise ValueError("Unable to retrieve SCST file for this eclipse.")
-    return scstfile
-
-
-def get_eclipse_from_header(eclipse, raw6file):
-    # note that astropy is much faster than fitsio for the specific purpose of
-    # skimming a FITS header from a compressed FITS file
-    hdulist = pyfits.open(raw6file)
-    hdr = hdulist[0].header
-    hdulist.close()
-    if eclipse and (eclipse != hdr["eclipse"]):  # just a consistency check
-        print(
-            "Warning: eclipse mismatch {e0} vs. {e1} (header)".format(
-                e0=eclipse, e1=hdr["eclipse"]
-            )
-        )
-    eclipse = hdr["eclipse"]
-    return eclipse
 
 
 def unpack_data_chunk(data, chunkbeg, chunkend, copy=True):
@@ -989,15 +850,3 @@ def load_cal_data(stims, band, eclipse):
         ]
     )
     return cal_data
-
-
-def load_raw6(band, eclipse, raw6file, verbose):
-    print_inline("Loading raw6 file...")
-    raw6hdulist = fitsio.FITS(raw6file)
-    raw6htab = raw6hdulist[1].read_header()
-    nphots = raw6htab["NAXIS2"]
-    if verbose > 1:
-        print("		" + str(nphots) + " events")
-    data = decode_telemetry(band, 0, None, "", eclipse, raw6hdulist)
-    raw6hdulist.close()
-    return data, nphots

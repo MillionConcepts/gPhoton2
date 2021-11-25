@@ -5,8 +5,8 @@ import os
 import numpy as np
 
 from gPhoton import cal_dir
-from gPhoton.MCUtils import get_fits_data, get_fits_header, get_tbl_data
-from gPhoton.netutils import download_with_progress_bar
+from gPhoton.io.fits_utils import get_fits_data, get_fits_header, get_tbl_data
+from gPhoton.io.netutils import download_with_progress_bar
 
 
 # Remote repository for GALEX calibration files.
