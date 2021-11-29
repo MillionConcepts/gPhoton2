@@ -1,14 +1,20 @@
-import warnings
+"""
+.. module:: _steps
+   :synopsis: individual components of gPhoton movie- and image-making
+   processes. generally should not be called on their own.
+"""
 from pathlib import Path
-from typing import Sequence
+from typing import Mapping
+import warnings
 
-import fast_histogram as fh
-import numpy as np
-import scipy.sparse
-import sh
+import pyarrow
 from astropy.io import fits as pyfits
 from dustgoggles.structures import NestingDict
+import fast_histogram as fh
+import numpy as np
 from pyarrow import parquet
+import scipy.sparse
+import sh
 
 from gPhoton import __version__
 from gPhoton.calibrate import compute_exptime
@@ -21,18 +27,37 @@ from gPhoton.sharing import (
     unlink_nested_block_dict,
     send_to_shared_memory,
 )
+from gPhoton.types import Pathlike
 from gPhoton.vorpal import between, slice_between
 
 
-def booleanize_for_fits(array):
-    # not actually casting to bool because FITS does not have a boolean
-    # data type and astropy will not cast boolean arrays to unsigned
-    # integers, which is the closest thing FITS does have.
+def booleanize_for_fits(array: np.ndarray) -> np.ndarray:
+    """
+    many things in FITS arrays are too big. it would be nice if FITS had a
+    1-bit data type. It does not. Furthermore, astropy.io.fits will not even
+    cast boolean arrays to unsigned integers, which is the closest thing FITS
+    does have. This function does that, after fake-booleanizing them.
+    :param array: numpy array to faux-booleanize
+    :return: faux-booleanized array
+    """
     mask = array.astype(bool)
     return np.ones(shape=array.shape, dtype=np.uint8) * mask
 
 
-def make_frame(foc, weights, imsz, booleanize=False):
+def make_frame(
+    foc: np.ndarray,
+    weights: np.ndarray,
+    imsz: tuple[int, int],
+    booleanize: bool = False,
+) -> np.ndarray:
+    """
+
+    :param foc: 2-column array containing positions in detector space
+    :param weights: 1-D array containing counts at each position
+    :param imsz: x/y dimensions of output image
+    :param booleanize: reduce this to "boolean" (uint8 valued as 0 or 1)?
+    :return: ndarray containing single image made from 2D histogram of inputs
+    """
     frame = fh.histogram2d(
         foc[:, 1] - 0.5,
         foc[:, 0] - 0.5,
@@ -45,8 +70,11 @@ def make_frame(foc, weights, imsz, booleanize=False):
     return frame
 
 
-def shared_compute_exptime(event_block_info, band, trange):
+def shared_compute_exptime(
+    event_block_info: Mapping, band: str, trange: tuple[float, float]
+) -> float:
     """
+    unlike unshared_compute_exptime(),
     this retrieves exptime in presliced chunks from shared memory; thus
     no time indexing needs to happen inside this function.
     """
@@ -56,14 +84,22 @@ def shared_compute_exptime(event_block_info, band, trange):
 
 
 def unshared_compute_exptime(
-    events: np.ndarray, band: str, trange: Sequence[int]
+    events: np.ndarray, band: str, trange: tuple[float, float]
 ) -> float:
     times = events[:, 0]
     tix = np.where((times >= trange[0]) & (times < trange[1]))
     return compute_exptime(times[tix], events[:, 1][tix], band, trange)
 
 
-def select_on_detector(event_table, threshold=400):
+def select_on_detector(
+    event_table: pyarrow.Table, threshold: int = 400
+) -> pyarrow.Table:
+    """
+    select events "on" the detector
+    :param event_table: pyarrow Table that contains a detector radius column
+    :param threshold: how many pixels away from center still counts as "on"?
+    :return: Table consisting of rows of event_table "on" detector
+    """
     detrad = event_table["detrad"].to_numpy()
     return event_table.take(
         # TODO: is isfinite() necessary?
@@ -207,7 +243,9 @@ def generate_wcs_components(event_table):
     return foc, wcs
 
 
-def load_image_tables(photonfile):
+def load_image_tables(
+    photonfile: Pathlike
+) -> tuple[pyarrow.Table, np.ndarray]:
     event_table = parquet.read_table(
         photonfile,
         columns=[
@@ -220,8 +258,9 @@ def load_image_tables(photonfile):
             "detrad",
         ],
     )
-    # Only deal with data actually on the 800x800 detector grid
+    # retain time and flag for every event for exposure time computations
     exposure_array = parquet_to_ndarray(event_table, ["t", "flags"])
+    # but otherwise only deal with data actually on the 800x800 detector grid
     event_table = select_on_detector(event_table)
     return event_table, exposure_array
 

@@ -4,7 +4,7 @@ import os
 
 import numpy as np
 
-from gPhoton import cal_dir
+from gPhoton import CAL_DIR
 from gPhoton.io.fits_utils import get_fits_data, get_fits_header, get_tbl_data
 from gPhoton.io.netutils import download_with_progress_bar
 
@@ -26,7 +26,7 @@ def check_xy(xy):
 
 
 def read_data(fn, dim=0):
-    path = os.path.join(cal_dir, fn)
+    path = os.path.join(CAL_DIR, fn)
     # Download the file if it doesn't exist locally.
     if not os.path.exists(path):
         data_url = "{b}/{f}".format(b=CAL_URL, f=fn)

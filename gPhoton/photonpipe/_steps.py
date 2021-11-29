@@ -4,7 +4,8 @@ from dustgoggles.structures import NestingDict
 import numpy as np
 
 from gPhoton import cals, constants as c
-from gPhoton.io.fetch import load_aspect_files, retrieve_aspect
+from gPhoton.io.fetch import retrieve_aspect
+from gPhoton.io.aspect import load_aspect_files
 from gPhoton.photonpipe._numbafied import (
     interpolate_aspect_solutions,
     find_null_indices,

@@ -405,13 +405,13 @@ def flat_scale_parameters(band):
         parameters.
     """
 
-    if band == 'NUV':
+    if band == "NUV":
         flat_correct = -0.0154
         flat_t0 = 840418779.02
         flat_correct_0 = 1.9946352
         flat_correct_1 = -1.9679445e-09
         flat_correct_2 = 9.3025231e-19
-    elif band == 'FUV':
+    elif band == "FUV":
         flat_correct = -0.0031
         flat_t0 = 840418779.02
         flat_correct_0 = 1.2420282
@@ -452,12 +452,15 @@ def compute_flat_scale(t, band, verbose=0):
     if verbose:
         print("Calculating flat scale for t=", t, ", and band=", band)
 
-    (flat_correct_0, flat_correct_1,
-     flat_correct_2) = flat_scale_parameters(band)
+    (flat_correct_0, flat_correct_1, flat_correct_2) = flat_scale_parameters(
+        band
+    )
 
     t = np.array(t)
 
-    flat_scale = flat_correct_0+(flat_correct_1*t)+(flat_correct_2*t)*t
+    flat_scale = (
+        flat_correct_0 + (flat_correct_1 * t) + (flat_correct_2 * t) * t
+    )
 
     # There's a bulk shift in the response after the CSP
     ix = np.where(t >= 881881215.995)
@@ -467,7 +470,7 @@ def compute_flat_scale(t, band, verbose=0):
             flat_scale[ix] *= 1.018
         except (TypeError, IndexError):
             # If it does not have '__getitem__' (because it's a scalar)
-            flat_scale *= 1.018 if t >= 881881215.995 else 1.
+            flat_scale *= 1.018 if t >= 881881215.995 else 1.0
 
     if verbose:
         print("         flat scale = ", flat_scale)
@@ -475,7 +478,7 @@ def compute_flat_scale(t, band, verbose=0):
     return flat_scale
 
 
-def find_fuv_offset(scstfile, raise_invalid = True):
+def find_fuv_offset(scstfile, raise_invalid=True):
     """
     Computes NUV->FUV center offset based on a lookup table.
 
@@ -542,6 +545,7 @@ def find_fuv_offset(scstfile, raise_invalid = True):
 # two components of the expensive center-and-scale step that can be
 # accelerated effectively with numba
 
+
 @njit(cache=True)
 def plus7_mod32_minus16(array):
     return ((array + 7) % 32) - 16
@@ -588,7 +592,12 @@ def compute_shutter(timeslice, flagslice, trange, shutgap=0.05):
     return shutter
 
 
-def compute_exptime(timeslice, flagslice, band, trange):
+def compute_exptime(
+    timeslice: np.ndarray,
+    flagslice: np.ndarray,
+    band: str,
+    trange: tuple[float, float],
+) -> float:
     shutter = compute_shutter(timeslice, flagslice, trange)
     # Calculate deadtime
     model = {

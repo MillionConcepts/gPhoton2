@@ -6,15 +6,14 @@ source_catalog_file = (
 
 if __name__ == "__main__":
     execute_pipeline(
-        39971,
+        28391,
         "NUV",
-        depth=60,
-        threads=None,
+        depth=30,
+        threads=4,
         data_root="test_data",
         recreate=False,
-        maxsize=16*1024**3,
-        source_catalog_file=source_catalog_file,
+        maxsize=20*1024**3,
+        source_catalog_file=None,
         aperture_sizes=[12.8, 25.6, 51.2],
         write={"movie": True, "image": True},
     )
-
