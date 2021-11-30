@@ -1,5 +1,5 @@
 """
-primary handler module for the 'full' gPhoton execute_pipeline. can:
+primary handler module for the 'full' gPhoton pipeline. can:
 1. retrieve data from MAST or another specified location
 2. create calibrated photonlists
 3. create full-depth FITS images and movies of any number of specified depths
@@ -14,21 +14,23 @@ from pathlib import Path
 import shutil
 from time import time
 from types import MappingProxyType
-from typing import Optional, Sequence, Mapping, Literal
+from typing import Optional, Sequence, Mapping
 import warnings
 
 from gPhoton.reference import eclipse_to_paths, Stopwatch
+from gPhoton.types import GalexBand, Pathlike
 
 # oh no! divide by zero! i am very distracting!
+
 warnings.filterwarnings(action="ignore", category=RuntimeWarning)
 
 
 def execute_pipeline(
     eclipse: int,
-    band: Literal["NUV", "FUV"],
+    band: GalexBand,
     depth: int,
     threads: Optional[int] = None,
-    data_root: str = "test_data",
+    local_root: str = "test_data",
     remote_root: Optional[str] = None,
     download: bool = True,
     recreate: bool = False,
@@ -37,7 +39,8 @@ def execute_pipeline(
     source_catalog_file: Optional[str] = None,
     write: Mapping = MappingProxyType({"image": True, "movie": True}),
     aperture_sizes: Sequence[float] = tuple([12.8]),
-    lil=True,
+    lil: bool = True,
+    coregister_lightcurves: bool = False,
 ) -> str:
     """
     :param eclipse: GALEX eclipse number to run
@@ -49,7 +52,7 @@ def execute_pipeline(
     single thread (not recommended except for test purposes). Increasing
     thread count increases execution speed but also increases memory pressure,
     particularly for movie creation.
-    :param data_root: path to write pipeline results to
+    :param local_root: path to write pipeline results to
     :param remote_root: additional path to check for preexisting raw6 and
     photonlist files (intended primarily for multiple servers referencing a
     shared set of remote resources)
@@ -59,7 +62,7 @@ def execute_pipeline(
     should we recreate (and possibly overwrite) it?
     :param verbose: how many messages do you want to see? 0 turns almost all
     output off; levels up to 4 are meaningful.
-    TODO: make this more consistent across the codebase
+    TODO: make verbosity more consistent across the codebase
     :param maxsize: maximum working memory size in bytes. if estimated memory
     cost of generating image or movie frames exceeds this threshold, the
     pipeline will stop. Note that estimates are not 100% reliable!
@@ -71,7 +74,11 @@ def execute_pipeline(
     for? multiple sizes may be useful for background estimation, etc.
     :param lil: should we use matrix sparsification techniques on movies?
     introduces some CPU overhead but can significantly reduce memory usage,
-    especially for large numbers of frames.
+    especially for large numbers of frames, and especially during the frame
+    integration and photometry steps.
+    :param coregister_lightcurves: should we pin the start time of the first
+    movie frame / lightcurve bin to the start time of the other band's first
+    movie frame / lightcurve bin (if it exists)?
     :returns: "return code: successful" for fully successful
     execution; "return code: {other_thing}" for various known failure states
     (many of which produce a subset of valid output products)
@@ -79,19 +86,18 @@ def execute_pipeline(
 
     # SETUP AND FILE RETRIEVAL
     stopwatch = Stopwatch()
-    startt = time()
     stopwatch.click()
     if eclipse > 47000:
         print("CAUSE data w/eclipse>47000 are not yet supported.")
         return "return code: CAUSE data w/eclipse>47000 are not yet supported."
-    names, photonpath, remote_files, temp_directory = _set_up_paths(
-        eclipse, band, data_root, remote_root, depth, recreate
+    local_files, photonpath, remote_files, temp_directory = _set_up_paths(
+        eclipse, band, local_root, remote_root, depth, recreate
     )
 
     # PHOTONLIST CREATION
     if recreate or not photonpath.exists():
         raw6path = _look_for_raw6(
-            eclipse, band, download, names, remote_files, temp_directory
+            eclipse, band, download, local_files, remote_files, temp_directory
         )
         if not raw6path.exists():
             print("couldn't find raw6 file.")
@@ -108,16 +114,7 @@ def execute_pipeline(
                 threads=threads,
             )
         except ValueError as value_error:
-            if str(value_error).startswith("bad distortion correction"):
-                print(str(value_error))
-                return "return code: bad distortion correction solution"
-            if "probably not a valid FUV observation" in str(value_error):
-                print(str(value_error))
-                return "return code: not a valid FUV observation"
-            if "FUV temperature out of range" in str(value_error):
-                print(str(value_error))
-                return "return code: FUV temperature value out of range"
-            raise
+            return parse_photonpipe_error(value_error)
     else:
         print(f"using existing photon list {photonpath}")
     stopwatch.click()
@@ -134,14 +131,19 @@ def execute_pipeline(
         write_moviemaker_results,
     )
 
+    # check to see if we're pinning our frame / lightcurve time series to
+    # the time series of existing analysis for the other band
+    fixed_start_time = check_fixed_start_time(
+        eclipse, depth, local_root, remote_root, band, coregister_lightcurves
+    )
     results = create_images_and_movies(
-        str(photonpath), depth, band, lil, threads, maxsize
+        str(photonpath), depth, band, lil, threads, maxsize, fixed_start_time
     )
     stopwatch.click()
     if results["movie_dict"] == {}:
         print("No movies available, halting before photometry.")
         write_moviemaker_results(
-            results, names, depth, band, write, maxsize, stopwatch
+            results, local_files, depth, band, write, maxsize, stopwatch
         )
         return "return code: " + results["status"]
 
@@ -156,13 +158,15 @@ def execute_pipeline(
         photonpath,
         source_catalog_file,
         threads,
-        names,
+        local_files,
         stopwatch,
     )
+
+    # CLEANUP & CLOSEOUT SECTION
     write_result = write_moviemaker_results(
-        results, names, depth, band, write, maxsize, stopwatch
+        results, local_files, depth, band, write, maxsize, stopwatch
     )
-    print(f"{(time() - startt).__round__(2)} seconds for pipeline execution")
+    print(f"{round(time() - stopwatch.start_time, 2)} seconds for execution")
     failures = [
         result
         for result in (photometry_result, write_result)
@@ -175,7 +179,7 @@ def execute_pipeline(
 
 def _look_for_raw6(
     eclipse: int,
-    band: Literal["NUV", "FUV"],
+    band: GalexBand,
     download: bool,
     names: Mapping,
     remote_files: Optional[Mapping],
@@ -212,7 +216,7 @@ def _look_for_raw6(
 
 def _set_up_paths(
     eclipse: int,
-    band: Literal["NUV", "FUV"],
+    band: GalexBand,
     data_root: str,
     remote_root: Optional[str],
     depth: int,
@@ -233,7 +237,7 @@ def _set_up_paths(
     :return: tuple of: primary filename dict, path to photon list we'll be
     using, remote filename dict, name of temp/scratch directory
     """
-    names = eclipse_to_paths(eclipse, data_root, depth)[band]
+    local_files = eclipse_to_paths(eclipse, data_root, depth)[band]
     if remote_root is not None:
         remote_files = eclipse_to_paths(eclipse, remote_root)[band]
     else:
@@ -241,7 +245,7 @@ def _set_up_paths(
     temp_directory = Path(data_root, "temp", str(eclipse).zfill(5))
     if not temp_directory.exists():
         temp_directory.mkdir(parents=True)
-    photonpath = Path(names["photonfile"])
+    photonpath = Path(local_files["photonfile"])
     if not photonpath.parent.exists():
         photonpath.parent.mkdir(parents=True)
     if (remote_root is not None) and (recreate is False):
@@ -253,4 +257,51 @@ def _set_up_paths(
             photonpath = Path(
                 shutil.copy(Path(remote_files["photonfile"]), temp_directory)
             )
-    return names, photonpath, remote_files, temp_directory
+    return local_files, photonpath, remote_files, temp_directory
+
+
+def parse_photonpipe_error(value_error: ValueError) -> str:
+    if str(value_error).startswith("bad distortion correction"):
+        print(str(value_error))
+        return "return code: bad distortion correction solution"
+    if "probably not a valid FUV observation" in str(value_error):
+        print(str(value_error))
+        return "return code: not a valid FUV observation"
+    if "FUV temperature out of range" in str(value_error):
+        print(str(value_error))
+        return "return code: FUV temperature value out of range"
+    raise value_error
+
+
+def check_fixed_start_time(
+    eclipse,
+    depth,
+    local: Pathlike,
+    remote: Optional[Pathlike],
+    band: GalexBand,
+    coregister: bool,
+) -> Optional[str]:
+    if coregister is not True:
+        return None
+    other = "NUV" if band == "FUV" else "FUV"
+    expfile = None
+    for location in (remote, local):
+        if location is None:
+            continue
+        exp_fn = eclipse_to_paths(eclipse, location, depth)[other]["expfile"]
+        if Path(exp_fn).exists():
+            expfile = exp_fn
+            break
+    if expfile is None:
+        print(
+            f"Cross-band frame coregistration requested, but exposure "
+            f"time table at this depth for {other} was not found."
+        )
+        return None
+    import pandas as pd
+
+    print(f"pinning first bin to first bin from {expfile}")
+    # these files are small enough that we do not need to bother scratching
+    # them to disk, even from a remote / fake filesystem
+    coreg_exptime = pd.read_csv(expfile)
+    return coreg_exptime["t0"].iloc[0]

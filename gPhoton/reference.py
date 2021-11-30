@@ -6,9 +6,16 @@ library modules should be used, at least as module-level imports.
 """
 
 from time import time
+from typing import Optional
+
+from gPhoton.types import Pathlike
 
 
-def eclipse_to_paths(eclipse, data_directory="data", depth=None):
+def eclipse_to_paths(
+    eclipse: int,
+    data_directory: Pathlike = "data",
+    depth: Optional[int] = None
+) -> dict[str, dict[str, str]]:
     """
     generate canonical paths for files associated with a given eclipse,
     optionally including files at a specific depth
@@ -39,6 +46,7 @@ def eclipse_to_paths(eclipse, data_directory="data", depth=None):
 
 class FakeStopwatch:
     """fake simple timer object"""
+
     def click(self):
         return
 
@@ -51,13 +59,16 @@ class Stopwatch(FakeStopwatch):
     def __init__(self, digits=2):
         self.digits = digits
         self.last_time = None
+        self.start_time = None
 
     def peek(self):
         return round(time() - self.last_time, self.digits)
 
     def start(self):
         print("starting timer")
-        self.last_time = time()
+        now = time()
+        self.start_time = now
+        self.last_time = now
 
     def click(self):
         if self.last_time is None:

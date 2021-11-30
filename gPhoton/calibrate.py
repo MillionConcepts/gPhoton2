@@ -6,6 +6,8 @@
        calibration, including walk, wiggle, linearity, post-CSP, and stim
        scaling corrections.
 """
+from typing import Sequence
+
 from numba import njit
 import numpy as np
 
@@ -18,20 +20,16 @@ import gPhoton.constants as c
 from gPhoton.io.fits_utils import get_fits_header
 
 
-def clk_cen_scl_slp(band, eclipse):
+def clk_cen_scl_slp(band: str, eclipse: int) -> tuple:
     """
     Return the detector clock, center, scale, and slope constants. These are
         empirically determined detector-space calibration parameters that help
-        define the relationship between raw event data and its physical position
-        on the detector.
+        define the relationship between raw event data and the physical
+        positions of events on the detector.
 
     :param band: The band to return the constants for, either 'FUV' or 'NUV'.
 
-    :type band: str
-
     :param eclipse: The eclipse number to return the constants for.
-
-    :type eclipse: int
 
     :returns: tuple -- a tuple containing the x-clock, y-clock, x-center,
         y-center, x-scale, y-scale, x-slope, and y-slope constants.
@@ -596,7 +594,7 @@ def compute_exptime(
     timeslice: np.ndarray,
     flagslice: np.ndarray,
     band: str,
-    trange: tuple[float, float],
+    trange: Sequence[float],
 ) -> float:
     shutter = compute_shutter(timeslice, flagslice, trange)
     # Calculate deadtime

@@ -4,7 +4,7 @@
    processes. generally should not be called on their own.
 """
 from pathlib import Path
-from typing import Mapping
+from typing import Mapping, Sequence, Optional
 import warnings
 
 import pyarrow
@@ -84,7 +84,7 @@ def shared_compute_exptime(
 
 
 def unshared_compute_exptime(
-    events: np.ndarray, band: str, trange: tuple[float, float]
+    events: np.ndarray, band: str, trange: Sequence[float]
 ) -> float:
     times = events[:, 0]
     tix = np.where((times >= trange[0]) & (times < trange[1]))
@@ -244,7 +244,7 @@ def generate_wcs_components(event_table):
 
 
 def load_image_tables(
-    photonfile: Pathlike
+    photonfile: Pathlike,
 ) -> tuple[pyarrow.Table, np.ndarray]:
     event_table = parquet.read_table(
         photonfile,
@@ -255,7 +255,7 @@ def load_image_tables(
             "response",
             "flags",
             "mask",
-            "detrad",
+            "detrad"
         ],
     )
     # retain time and flag for every event for exposure time computations

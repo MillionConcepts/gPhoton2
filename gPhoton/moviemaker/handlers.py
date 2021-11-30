@@ -1,7 +1,7 @@
 """top-level handler module for gPhoton.moviemaker"""
 
 from multiprocessing import Pool
-from typing import Optional, Union
+from typing import Optional, Union, Literal
 
 from dustgoggles.structures import NestingDict
 from more_itertools import windowed
@@ -15,8 +15,10 @@ from gPhoton.moviemaker._steps import (
     unshared_compute_exptime,
     make_frame,
     write_fits_array,
-    predict_movie_memory, prep_image_inputs,
+    predict_movie_memory,
+    prep_image_inputs,
 )
+from gPhoton.types import Pathlike, GalexBand
 
 
 def make_movies(
@@ -29,6 +31,7 @@ def make_movies(
     lil: bool = False,
     threads: Optional[int] = 4,
     maxsize: Optional[int] = None,
+    fixed_start_time: Optional[float] = None,
 ) -> tuple[str, dict]:
     """
     :param depth: framesize in seconds
@@ -40,7 +43,13 @@ def make_movies(
     :param lil: sparsify matrices to reduce memory footprint, at compute cost
     :param threads: how many threads to use to calculate frames
     :param maxsize: terminate if predicted size (in bytes) of cntmap > maxsize
+    :param fixed_start_time: externally-defined time for start of first frame,
+    primarily intended to help coregister NUV and FUV frames
     """
+    if fixed_start_time is not None:
+        total_trange = (fixed_start_time, total_trange[1])
+    t0s = np.arange(total_trange[0], total_trange[1] + depth, depth)
+    tranges = list(windowed(t0s, 2))
     # TODO, maybe: at very short depths, slicing arrays into memory becomes a
     #  meaningful single-core-speed-dependent bottleneck. overhead of
     #  distributing across processes may not be worth it anyway.
@@ -48,9 +57,8 @@ def make_movies(
     #  needed _is_ an option if rigorous thread safety is practiced, although
     #  this will significantly increase the memory pressure of this portion
     #  of the execute_pipeline.
-    t0s = np.arange(total_trange[0], total_trange[1] + depth, depth)
-    tranges = list(windowed(t0s, 2))
     if maxsize is not None:
+        # TODO: this is jury-rigged and ignores unsparsified cases etc. etc.
         # we're ignoring most of the per-frame overhead at this point because
         # it is probably (?) trivial for large arrays.
         # sparse = 0.08 if lil else 1
@@ -138,6 +146,8 @@ def make_full_depth_image(
             )
             print(failure_string + "; halting execute_pipeline")
             return failure_string, {}
+    # TODO: this weird arithmetic cartwheel doesn't seem _wrong_, but it can't
+    #  be _necessary_, right?
     interval = total_trange[1] - total_trange[0]
     trange = np.arange(total_trange[0], total_trange[1] + interval, interval)
     exptime = unshared_compute_exptime(exposure_array, band, trange)
@@ -200,12 +210,13 @@ def write_moviemaker_results(
 
 
 def create_images_and_movies(
-    photonfile,
-    depth,
-    band,
+    photonfile: Pathlike,
+    depth: int,
+    band: GalexBand,
     lil=False,
     threads=None,
     maxsize=None,
+    fixed_start_time: Optional[int] = None,
     edge_threshold: int = 350,
 ) -> Union[dict, str]:
     print(f"making images from {photonfile}")
@@ -234,7 +245,11 @@ def create_images_and_movies(
     if (depth is not None) and status.startswith("success"):
         print(f"making {depth}-second depth movies")
         status, movie_dict = make_movies(
-            depth=depth, lil=lil, threads=threads, **render_kwargs
+            depth=depth,
+            lil=lil,
+            threads=threads,
+            fixed_start_time=fixed_start_time,
+            **render_kwargs,
         )
     return {
         "wcs": wcs,

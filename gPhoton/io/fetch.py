@@ -6,11 +6,13 @@
 # housed in FileUtils & GQuery
 
 import os
+from typing import Optional
 
 import numpy as np
 
 from gPhoton.io.netutils import download_with_progress_bar
 from gPhoton.io.query import mast_url, get_array, manage_networked_sql_request
+from gPhoton.types import GalexBand, Pathlike
 
 
 def get_raw_paths(eclipse, verbose=0):
@@ -124,7 +126,6 @@ def retrieve_aspect(eclipse, retries=20, quiet=False):
 # ------------------------------------------------------------------------------
 
 
-
 def raw_data_paths(eclipse):
     """
     Construct a query that returns a data structure containing the download
@@ -155,10 +156,15 @@ def aspect_ecl(eclipse):
     )
 
 
-def retrieve_scstfile(band, eclipse, outbase, scstfile):
+def retrieve_scstfile(
+    band: GalexBand,
+    eclipse: Optional[int],
+    outbase: Pathlike,
+    scstfile: Optional[Pathlike],
+) -> str:
     if not scstfile:
         if not eclipse:
-            raise ValueError("Must specifiy eclipse if no scstfile.")
+            raise ValueError("Must specify eclipse if no scstfile.")
         else:
             scstfile = download_data(
                 eclipse, band, "scst", datadir=os.path.dirname(outbase)
@@ -178,5 +184,3 @@ def retrieve_raw6(eclipse, band, outbase):
         if raw6file is None:
             raise ValueError("Unable to retrieve raw6 file for this eclipse.")
     return raw6file
-
-

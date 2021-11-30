@@ -4,6 +4,7 @@ from multiprocessing import Pool
 import time
 import warnings
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import pyarrow
@@ -29,21 +30,22 @@ from gPhoton.sharing import (
     send_mapping_to_shared_memory,
     get_column_from_shared_memory,
 )
+from gPhoton.types import GalexBand, Pathlike
 
 
 def execute_photonpipe(
-    outfile,
-    band,
-    raw6file=None,
-    scstfile=None,
-    aspfile=None,
-    verbose=0,
-    retries=20,
-    eclipse=None,
-    overwrite=True,
-    chunksz=1000000,
-    threads=4,
-    share_memory=None,
+    outfile: Pathlike,
+    band: GalexBand,
+    raw6file: Optional[str] = None,
+    scstfile: Optional[str] = None,
+    aspfile: Optional[str] = None,
+    verbose: int = 0,
+    retries: int = 20,
+    eclipse: Optional[int] = None,
+    overwrite: int = True,
+    chunksz: int = 1000000,
+    threads: int = 4,
+    share_memory: Optional[bool] = None,
 ):
     """
     Apply static and sky calibrations to -raw6 GALEX data, producing fully

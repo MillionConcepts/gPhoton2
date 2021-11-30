@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Mapping, Collection
 
 import gPhoton.constants as c
 from gPhoton.lightcurve._steps import (
@@ -8,13 +9,14 @@ from gPhoton.lightcurve._steps import (
     write_exptime_file,
 )
 from gPhoton.reference import FakeStopwatch, eclipse_to_paths
+from gPhoton.types import GalexBand
 
 
 def make_lightcurves(
-    sky_arrays,
-    eclipse,
-    band,
-    aperture_sizes,
+    sky_arrays: Mapping,
+    eclipse: int,
+    band: GalexBand,
+    aperture_sizes: Collection[float],
     photonlist_path,
     source_catalog_file=None,
     threads=None,
