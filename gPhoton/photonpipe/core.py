@@ -71,10 +71,6 @@ def execute_photonpipe(
 
     :type aspfile: int
 
-    :param nullfile: Name of output file to record NULL lines.
-
-    :type nullfile: int
-
     :param verbose: Verbosity level, to be detailed later.
 
     :type verbose: int
@@ -92,7 +88,6 @@ def execute_photonpipe(
             "This incurs a performance cost to no end."
         )
     outfile = Path(outfile)
-    outbase = outfile.stem
     if outfile.exists():
         if overwrite:
             print(f"{outfile} already exists... deleting")
@@ -105,24 +100,23 @@ def execute_photonpipe(
 
     # download raw6 if local file is not passed
     if raw6file is None:
-        raw6file = retrieve_raw6(eclipse, band, outbase)
+        raw6file = retrieve_raw6(eclipse, band, outfile)
     # get / check eclipse # from raw6 header --
-    eclipse = get_eclipse_from_header(eclipse, raw6file)
+    eclipse = get_eclipse_from_header(raw6file, eclipse)
     print_inline("Processing eclipse {eclipse}".format(eclipse=eclipse))
-
     if band == "FUV":
-        scstfile = retrieve_scstfile(band, eclipse, outbase, scstfile)
+        scstfile = retrieve_scstfile(band, eclipse, outfile, scstfile)
         xoffset, yoffset = find_fuv_offset(scstfile)
     else:
         xoffset, yoffset = 0.0, 0.0
 
     aspect = retrieve_aspect_solution(aspfile, eclipse, retries, verbose)
 
-    data, nphots = load_raw6(band, eclipse, raw6file, verbose)
+    data, nphots = load_raw6(raw6file, verbose)
     # the stims are only actually used for post-CSP corrections, but we
     # temporarily retain them in both cases for brevity.
     # the use of a 90.001 separation angle and fixed stim coefficients
-    # post-CSP is per original mission execute_pipeline; see rtaph.c #1391;
+    # post-CSP is per original mission execute_pipeline; see rtaph.c #1391
     if eclipse > 37460:
         stims, _ = create_ssd_from_decoded_data(
             data, band, eclipse, verbose, margin=90.001
@@ -221,7 +215,7 @@ def execute_photonpipe(
         ),
         outfile,
         use_dictionary=variables_for_which_dictionary_compression_is_useful,
-        version="2.0",
+        version="2.6",
     )
     stopt = time.time()
     print_inline("")

@@ -140,6 +140,7 @@ def execute_pipeline(
         str(photonpath), depth, band, lil, threads, maxsize, fixed_start_time
     )
     stopwatch.click()
+    # TODO: allow photometry on full-depth images only
     if results["movie_dict"] == {}:
         print("No movies available, halting before photometry.")
         write_moviemaker_results(

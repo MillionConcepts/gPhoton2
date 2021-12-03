@@ -2,19 +2,32 @@
 .. module:: raw6
    :synopsis: Methods for reading raw GALEX data ("raw6") files
 """
+from typing import Optional
+
 from astropy.io import fits as pyfits
 import fitsio
 import numpy as np
 
 from gPhoton.calibrate import center_and_scale
 from gPhoton.pretty import print_inline
+from gPhoton.types import Pathlike
 
 
-def load_raw6(band, eclipse, raw6file, verbose):
+def load_raw6(raw6file: Pathlike, verbose: int):
+    """
+    open and decode a GALEX raw telemetry (.raw6) file and return it as a
+    DataFrame. This function replicates mission-standard L0 data processing.
+    :param raw6file: path/filename of raw6 file to load
+    :param verbose: verbosity level -- higher is more messages
+    :return:
+    """
     if verbose > 0:
         print_inline("Loading raw6 file...")
     raw6hdulist = fitsio.FITS(raw6file)
+    raw6header = raw6hdulist[0].read_header()
     raw6htab = raw6hdulist[1].read_header()
+    band = "NUV" if raw6header["BAND"] == 1 else "FUV"
+    eclipse = raw6header["ECLIPSE"]
     nphots = raw6htab["NAXIS2"]
     if verbose > 1:
         print("		" + str(nphots) + " events")
@@ -23,7 +36,7 @@ def load_raw6(band, eclipse, raw6file, verbose):
     return data, nphots
 
 
-def get_eclipse_from_header(eclipse, raw6file):
+def get_eclipse_from_header(raw6file: Pathlike, eclipse: Optional[int] = None):
     # note that astropy is much faster than fitsio for the specific purpose of
     # skimming a FITS header from a compressed FITS file
     hdulist = pyfits.open(raw6file)

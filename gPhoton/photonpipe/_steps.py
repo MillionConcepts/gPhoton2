@@ -1,5 +1,8 @@
 from itertools import product
+from statistics import mean
+from typing import Mapping
 
+import pandas as pd
 from dustgoggles.structures import NestingDict
 import numpy as np
 
@@ -40,6 +43,7 @@ from gPhoton.coords.gnomonic import gnomfwd_simple, gnomrev_simple
 #  flag 12 is intended to be for gaps < 2s in aspect sol. we will (eventually)
 #  use 12 in photometry but not 7.
 from gPhoton.pretty import print_inline
+from gPhoton.types import GalexBand
 
 
 def retrieve_aspect_solution(aspfile, eclipse, retries, verbose):
@@ -477,54 +481,46 @@ def apply_wiggle_correction(chunkid, x, y):
 
 def compute_stimstats_2(stims, band):
     print("Computing stim statistics and post-CSP corrections...")
-    stim1avg = [stims[1]["x"].mean() * c.ASPUM, stims[1]["y"].mean() * c.ASPUM]
-    stim2avg = [stims[2]["x"].mean() * c.ASPUM, stims[2]["y"].mean() * c.ASPUM]
-    stim3avg = [stims[3]["x"].mean() * c.ASPUM, stims[3]["y"].mean() * c.ASPUM]
-    stim4avg = [stims[4]["x"].mean() * c.ASPUM, stims[4]["y"].mean() * c.ASPUM]
+    stimavg = {
+        stim: {
+            "x": stims[stim]["x"].mean() * c.ASPUM,
+            "y": stims[stim]["y"].mean() * c.ASPUM,
+        }
+        for stim in range(1, 5)
+    }
     # Compute the stim separation.
     stimsep = (
-        (stim2avg[0] - stim1avg[0])
-        + (stim4avg[0] - stim3avg[0])
-        + (stim1avg[1] - stim3avg[1])
-        + (stim2avg[1] - stim4avg[1])
-    ) / 4.0
+        (stimavg[2]["x"] - stimavg[1]["x"])
+        + (stimavg[4]["x"] - stimavg[3]["x"])
+        + (stimavg[1]["y"] - stimavg[3]["y"])
+        + (stimavg[2]["y"] - stimavg[4]["y"])
+    ) / 4
     # Compute means and RMS values for each stim for each YA value stim1.
 
     # This returns the pre-CSP stim positions (because eclipse==0).
-    avgstim = avg_stimpos(band, 0)
+    pre_csp_avg = avg_stimpos(band, 0)
 
-    # Compute Y scale and shift factors: yprime_as = (m * y_as) + B.
-    y1, y2 = (stim1avg[1] + stim2avg[1]) / 2.0, (
-        stim3avg[1] + stim4avg[1]
-    ) / 2.0
-    Y1, Y2 = (
-        (avgstim["y1"] + avgstim["y2"]) / 2.0,
-        (avgstim["y3"] + avgstim["y4"]) / 2.0,
-    )
-    My = (Y1 - Y2) / (y1 - y2)
-    By = (Y1 - My * y1) / c.ASPUM
-    print("Init: FODC: Y scale and shift (microns): My=", My, "By=", By)
-
-    # Compute X scale and shift factors: yprime_as = (m * x_as) + B.
-    x1, x2 = (stim1avg[0] + stim3avg[0]) / 2.0, (
-        stim2avg[0] + stim4avg[0]
-    ) / 2.0
-    X1, X2 = (
-        (avgstim["x1"] + avgstim["x3"]) / 2.0,
-        (avgstim["x2"] + avgstim["x4"]) / 2.0,
-    )
-    Mx = (X1 - X2) / (x1 - x2)
-    Bx = (X1 - Mx * x1) / c.ASPUM
-    print("Init: FODC: X scale and shift (microns): Mx=", Mx, "Bx=", Bx)
-
-    stims[1]["xs"] = stims[1]["x"] * Mx + Bx
-    stims[1]["ys"] = stims[1]["y"] * My + By
-    stims[2]["xs"] = stims[2]["x"] * Mx + Bx
-    stims[2]["ys"] = stims[2]["y"] * My + By
-    stims[3]["xs"] = stims[3]["x"] * Mx + Bx
-    stims[3]["ys"] = stims[3]["y"] * My + By
-    stims[4]["xs"] = stims[4]["x"] * Mx + Bx
-    stims[4]["ys"] = stims[4]["y"] * My + By
+    # Compute scale and shift factors, e.g. yprime_as = (m * y_as) + B.
+    scale, shift = {}, {}
+    for axis in ("x", "y"):
+        # order of corners differs between axes
+        c1, c2, c3, c4 = (1, 2, 3, 4) if axis == "y" else (1, 3, 2, 4)
+        side_1, side_2 = (
+            (stimavg[c1][axis] + stimavg[c2][axis]) / 2.0,
+            (stimavg[c3][axis] + stimavg[c4][axis]) / 2.0,
+        )
+        side_1_0, side_2_0 = (
+            mean((pre_csp_avg[f"{axis}{c1}"], pre_csp_avg[f"{axis}{c2}"])),
+            mean((pre_csp_avg[f"{axis}{c3}"], pre_csp_avg[f"{axis}{c4}"]))
+        )
+        scale[axis] = (side_1_0 - side_2_0) / (side_1 - side_2)
+        shift[axis] = (side_1_0 - scale[axis] * side_1) / c.ASPUM
+        print(
+            f"Init: FODC: {axis} scale and shift (microns): "
+            f"{scale[axis]}, {shift[axis]}"
+        )
+    for stim, axis in product(range(1, 5), ("x", "y")):
+        stims[stim][f"{axis}s"] = stims[stim][axis] * scale[axis] + shift[axis]
 
     # Compute the new mean positions (in arcseconds).
     stim1avgs = [
@@ -613,10 +609,24 @@ def compute_stimstats_2(stims, band):
             np.array(stims[stim_ix]["yap"], dtype="int64"),
             np.array(stims[stim_ix]["yb"], dtype="int64"),
         ]
-    return Mx, Bx, My, By, stimsep, yac
+    return scale["x"], shift["x"], scale["y"], shift["y"], stimsep, yac
 
 
-def perform_yac_correction(band, eclipse, stims, data):
+def perform_yac_correction(
+    band: GalexBand,
+    eclipse: int,
+    stims: Mapping[int, Mapping],
+    data: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    perform y-axis corrections to raw detector positions.
+    :param band: "NUV" or "FUV:
+    :param eclipse: GALEX eclipse number
+    :param stims: mapping of stim # to stim characteristics, produced by
+    create_ssd_from_decoded_data()
+    :param data: dataframe of L0 event data produced by load_raw6()
+    :return: yac-corrected version of input data
+    """
     Mx, Bx, My, By, stimsep, yactbl = compute_stimstats_2(stims, band)
     wig2, wig2data, wlk2, wlk2data, clk2, clk2data = post_csp_caldata()
     corrected_x = Mx * data["x"] + Bx

@@ -51,7 +51,7 @@ def clk_cen_scl_slp(band: str, eclipse: int) -> tuple:
         xscl, yscl = 8.79, 14.01
         xslp, yslp = 0.53, 0.0
     else:
-        raise ValueError("Band must be either fuv or nuv ... Exiting.")
+        raise ValueError("Band must be either FUV or NUV ... Exiting.")
 
     return xclk, yclk, xcen, ycen, xscl, yscl, xslp, yslp
 
@@ -495,11 +495,13 @@ def find_fuv_offset(scstfile, raise_invalid=True):
 
     try:
         eclipse = int(scsthead["eclipse"])
-    except:
+    except KeyError:
         print("WARNING: ECLIPSE is not defined in SCST header.")
         try:
             eclipse = int(scstfile.split("/")[-1].split("-")[0][1:])
             print("         Using {e} from filename.".format(e=eclipse))
+        # TODO: what's the exception here, and is this really the
+        #  desired behavior?
         except:
             print("         Unable to infer eclipse from filename.")
             return 0.0, 0.0
