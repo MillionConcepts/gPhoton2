@@ -12,7 +12,7 @@ from pyarrow import parquet
 
 from gPhoton.pretty import print_inline
 from gPhoton.photonpipe._steps import (
-    retrieve_aspect_solution,
+    load_aspect_solution,
     create_ssd_from_decoded_data,
     perform_yac_correction,
     load_cal_data,
@@ -38,9 +38,7 @@ def execute_photonpipe(
     band: GalexBand,
     raw6file: Optional[str] = None,
     scstfile: Optional[str] = None,
-    aspfile: Optional[str] = None,
     verbose: int = 0,
-    retries: int = 20,
     eclipse: Optional[int] = None,
     overwrite: int = True,
     chunksz: int = 1000000,
@@ -67,17 +65,10 @@ def execute_photonpipe(
 
     :type outfile: str, pathlib.Path
 
-    :param aspfile: Name of aspect file to use.
-
-    :type aspfile: int
-
     :param verbose: Verbosity level, to be detailed later.
 
     :type verbose: int
 
-    :param retries: Number of query retries to attempt before giving up.
-
-    :type retries: int
     """
     if share_memory is None:
         share_memory = threads is not None
@@ -110,7 +101,7 @@ def execute_photonpipe(
     else:
         xoffset, yoffset = 0.0, 0.0
 
-    aspect = retrieve_aspect_solution(aspfile, eclipse, retries, verbose)
+    aspect = load_aspect_solution(eclipse, verbose)
 
     data, nphots = load_raw6(raw6file, verbose)
     # the stims are only actually used for post-CSP corrections, but we
@@ -216,6 +207,7 @@ def execute_photonpipe(
         outfile,
         use_dictionary=variables_for_which_dictionary_compression_is_useful,
         version="2.6",
+        row_group_size=1000000
     )
     stopt = time.time()
     print_inline("")

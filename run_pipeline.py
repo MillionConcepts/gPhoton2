@@ -6,15 +6,15 @@ source_catalog_file = (
 
 if __name__ == "__main__":
     execute_pipeline(
-        12160,
-        "FUV",
-        depth=60,
-        threads=None,
+        23241,
+        "NUV",
+        depth=240,
+        threads=4,
         local_root="test_data",
         recreate=True,
         maxsize=20*1024**3,
         source_catalog_file=None,
         aperture_sizes=[12.8],
-        write={"movie": True, "image": True},
+        write={"movie": False, "image": True},
         coregister_lightcurves=True
     )

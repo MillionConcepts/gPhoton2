@@ -19,4 +19,5 @@ e*.fits.gz
 /holding/
 /gPhoton_old/
 /gPhoton/test_data/
-/aspect
+/gPhoton/aspect_data/
+aspect_info_raw/

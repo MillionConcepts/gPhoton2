@@ -4,6 +4,7 @@ import time
 __version__ = '3.0.0a0'
 PKG_DIR = os.path.abspath(os.path.dirname(__file__))
 CAL_DIR = os.path.join(PKG_DIR, 'cal_data')
+ASPECT_DIR = os.path.join(PKG_DIR, 'aspect_data')
 
 # this is intended to provide a per-script-execution identifier to help
 # troubleshoot serverside issues.

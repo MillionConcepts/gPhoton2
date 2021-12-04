@@ -1,14 +1,14 @@
 from itertools import product
+from pathlib import Path
 from statistics import mean
 from typing import Mapping
 
 import pandas as pd
 from dustgoggles.structures import NestingDict
 import numpy as np
+from pyarrow import parquet
 
-from gPhoton import cals, constants as c
-from gPhoton.io.fetch import retrieve_aspect
-from gPhoton.io.aspect import load_aspect_files
+from gPhoton import cals, constants as c, ASPECT_DIR
 from gPhoton.photonpipe._numbafied import (
     interpolate_aspect_solutions,
     find_null_indices,
@@ -46,29 +46,59 @@ from gPhoton.pretty import print_inline
 from gPhoton.types import GalexBand
 
 
-def retrieve_aspect_solution(aspfile, eclipse, retries, verbose):
-    print_inline("Loading aspect data...")
-    if aspfile:
-        result = load_aspect_files(aspfile)
-    else:
-        result = retrieve_aspect(eclipse, retries=retries)
-    (aspra, aspdec, asptwist, asptime, aspheader, aspflags) = result
-    minasp, maxasp = min(asptime), max(asptime)
-    trange = [minasp, maxasp]
+def load_aspect_solution(eclipse, verbose):
+    if verbose > 0:
+        print_inline("Loading aspect data from disk...")
+    filters = [("eclipse", "=", eclipse)]
+    aspect = parquet.read_table(
+        Path(ASPECT_DIR, "aspect.parquet"), filters=filters
+    ).to_pandas()
     if verbose > 1:
+        trange = [aspect["time"].min(), aspect["time"].max()]
         print(f"			trange= ( {trange[0]} , {trange[1]} )")
-    ra0, dec0, roll0 = aspheader["RA"], aspheader["DEC"], aspheader["ROLL"]
+    boresight = parquet.read_table(
+        Path(ASPECT_DIR, "boresight.parquet"), filters=filters
+    ).to_pandas()
     if verbose > 1:
-        print(
-            f"			[avgRA, avgDEC, avgROLL] = [{aspra.mean()}, "
-            f"{aspdec.mean()}, {asptwist.mean()}]"
-        )
+        print("aspect averages", aspect[["ra", "dec", "roll"]].mean(axis=0))
     # This projects the aspect solutions onto the MPS field centers.
-    print_inline("Computing aspect vectors...")
-    (xi_vec, eta_vec) = gnomfwd_simple(
-        aspra, aspdec, ra0, dec0, -asptwist, 1.0 / 36000.0, 0.0
+    if verbose > 0:
+        print_inline("Computing aspect vectors...")
+    if len(boresight) > 1:
+        # legs > 0; must distribute boresight positions correctly
+        boresight = distribute_legs(aspect, boresight)
+    xi_vec, eta_vec = gnomfwd_simple(
+        aspect["ra"].values,
+        aspect["dec"].values,
+        boresight["ra0"].values,
+        boresight["dec0"].values,
+        -aspect["roll"].values,
+        1.0 / 36000.0,
+        0.0,
     )
-    return aspdec, aspflags, aspra, asptime, asptwist, eta_vec, xi_vec
+    return (
+        aspect["dec"].values,
+        aspect["flags"].values,
+        aspect["ra"].values,
+        aspect["time"].values,
+        aspect["roll"].values,
+        eta_vec,
+        xi_vec,
+    )
+
+
+def distribute_legs(aspect, boresight):
+    distributed_boresight = pd.DataFrame()
+    distributed_boresight["time"] = aspect["time"]
+    distributed_boresight["ra0"] = np.nan
+    distributed_boresight["dec0"] = np.nan
+    for _, leg in boresight.iterrows():
+        leg_indices = distributed_boresight.loc[
+            distributed_boresight["time"] >= leg["time"]
+        ].index
+        for axis in ("ra0", "dec0"):
+            distributed_boresight.loc[leg_indices, axis] = leg[axis]
+    return distributed_boresight
 
 
 def process_chunk_in_unshared_memory(
@@ -511,7 +541,7 @@ def compute_stimstats_2(stims, band):
         )
         side_1_0, side_2_0 = (
             mean((pre_csp_avg[f"{axis}{c1}"], pre_csp_avg[f"{axis}{c2}"])),
-            mean((pre_csp_avg[f"{axis}{c3}"], pre_csp_avg[f"{axis}{c4}"]))
+            mean((pre_csp_avg[f"{axis}{c3}"], pre_csp_avg[f"{axis}{c4}"])),
         )
         scale[axis] = (side_1_0 - side_2_0) / (side_1 - side_2)
         shift[axis] = (side_1_0 - scale[axis] * side_1) / c.ASPUM
