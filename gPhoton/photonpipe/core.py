@@ -1,8 +1,8 @@
 """top-level handler module for gPhoton.execute_photonpipe"""
 
-from multiprocessing import Pool
 import time
 import warnings
+from multiprocessing import Pool
 from pathlib import Path
 from typing import Optional
 
@@ -10,9 +10,11 @@ import numpy as np
 import pyarrow
 from pyarrow import parquet
 
-from gPhoton.pretty import print_inline
+from gPhoton.aspect import load_aspect_solution
+from gPhoton.calibrate import find_fuv_offset
+from gPhoton.io.fetch import retrieve_raw6
+from gPhoton.io.raw6 import load_raw6, get_eclipse_from_header
 from gPhoton.photonpipe._steps import (
-    load_aspect_solution,
     create_ssd_from_decoded_data,
     perform_yac_correction,
     load_cal_data,
@@ -20,10 +22,7 @@ from gPhoton.photonpipe._steps import (
     chunk_data,
     process_chunk_in_unshared_memory,
 )
-
-from gPhoton.calibrate import find_fuv_offset
-from gPhoton.io.fetch import retrieve_scstfile, retrieve_raw6
-from gPhoton.io.raw6 import load_raw6, get_eclipse_from_header
+from gPhoton.pretty import print_inline
 from gPhoton.sharing import (
     unlink_nested_block_dict,
     slice_into_shared_chunks,
@@ -37,13 +36,13 @@ def execute_photonpipe(
     outfile: Pathlike,
     band: GalexBand,
     raw6file: Optional[str] = None,
-    scstfile: Optional[str] = None,
     verbose: int = 0,
     eclipse: Optional[int] = None,
     overwrite: int = True,
     chunksz: int = 1000000,
     threads: int = 4,
     share_memory: Optional[bool] = None,
+    write_intermediate_variables: bool = False
 ):
     """
     Apply static and sky calibrations to -raw6 GALEX data, producing fully
@@ -88,7 +87,6 @@ def execute_photonpipe(
             return outfile
 
     startt = time.time()
-
     # download raw6 if local file is not passed
     if raw6file is None:
         raw6file = retrieve_raw6(eclipse, band, outfile)
@@ -96,8 +94,7 @@ def execute_photonpipe(
     eclipse = get_eclipse_from_header(raw6file, eclipse)
     print_inline("Processing eclipse {eclipse}".format(eclipse=eclipse))
     if band == "FUV":
-        scstfile = retrieve_scstfile(band, eclipse, outfile, scstfile)
-        xoffset, yoffset = find_fuv_offset(scstfile)
+        xoffset, yoffset = find_fuv_offset(eclipse)
     else:
         xoffset, yoffset = 0.0, 0.0
 
@@ -148,6 +145,7 @@ def execute_photonpipe(
             stim_coefficients,
             xoffset,
             yoffset,
+            write_intermediate_variables
         )
         if pool is None:
             results[chunk_ix] = chunk_function(*process_args)
@@ -182,22 +180,9 @@ def execute_photonpipe(
         del child_dicts
     proc_count = len(array_dict["t"])
 
-    variables_for_which_dictionary_compression_is_useful = [
-        "t",
-        "flags",
-        "y",
-        "xa",
-        "xb",
-        "ya",
-        "yb",
-        "yamc",
-        "xamc",
-        "q",
-        "mask",
-        "detrad",
-    ]
+    dict_comp = VARIABLES_FOR_WHICH_DICTIONARY_COMPRESSION_IS_USEFUL.copy()
     if band == "FUV":
-        variables_for_which_dictionary_compression_is_useful.append("x")
+        dict_comp.append("x")
 
     # noinspection PyArgumentList
     parquet.write_table(
@@ -205,9 +190,8 @@ def execute_photonpipe(
             list(array_dict.values()), names=list(array_dict.keys())
         ),
         outfile,
-        use_dictionary=variables_for_which_dictionary_compression_is_useful,
+        use_dictionary=dict_comp,
         version="2.6",
-        row_group_size=1000000
     )
     stopt = time.time()
     print_inline("")
@@ -225,3 +209,18 @@ def execute_photonpipe(
 
 
 # ------------------------------------------------------------------------------
+
+VARIABLES_FOR_WHICH_DICTIONARY_COMPRESSION_IS_USEFUL = [
+    "t",
+    "flags",
+    "y",
+    "xa",
+    "xb",
+    "ya",
+    "yb",
+    "yamc",
+    "xamc",
+    "q",
+    "mask",
+    "detrad",
+]

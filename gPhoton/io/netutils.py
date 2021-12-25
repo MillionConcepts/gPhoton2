@@ -10,7 +10,9 @@ import requests
 from gPhoton.pretty import mb, LogMB
 
 
-def download_with_progress_bar(url, destination, chunk_size_mb=10):
+def chunked_download(
+    url, destination, chunk_size_mb=10, render_bar=True
+):
     response = requests.get(url, stream=True)
     response.raise_for_status()
     if "Content-Length" in response.headers:
@@ -26,7 +28,12 @@ def download_with_progress_bar(url, destination, chunk_size_mb=10):
     content_iterator = response.iter_content(
         chunk_size=floor(chunk_size_mb * (1024**2))
     )
-    with log_size.progress_object, open(destination, "wb+") as file:
+    if render_bar is True:
+        with log_size.progress_object, open(destination, "wb+") as file:
+            for chunk in content_iterator:
+                log_size(len(chunk))
+                file.write(chunk)
+        return
+    with open(destination, "wb+") as file:
         for chunk in content_iterator:
-            log_size(len(chunk))
             file.write(chunk)

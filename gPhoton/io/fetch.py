@@ -6,11 +6,11 @@
 # housed in FileUtils & GQuery
 
 import os
-from typing import Optional
+from typing import Optional, Literal
 
 import numpy as np
 
-from gPhoton.io.netutils import download_with_progress_bar
+from gPhoton.io.netutils import chunked_download
 from gPhoton.io.query import mast_url, get_array, manage_networked_sql_request
 from gPhoton.types import GalexBand, Pathlike
 
@@ -29,11 +29,17 @@ def get_raw_paths(eclipse, verbose=0):
     return out
 
 
-def download_data(eclipse, band, ftype, datadir="./", verbose=0):
+def download_data(
+    eclipse,
+    ftype: Literal["raw6", "scst"],
+    band: Optional[GalexBand] = None,
+    datadir="./",
+    verbose=0,
+):
     urls = get_raw_paths(eclipse, verbose=verbose)
     if ftype not in ["raw6", "scst"]:
         raise ValueError("ftype must be either raw6 or scst")
-    if band not in ["NUV", "FUV"]:
+    if ftype == "raw6" and band not in ["NUV", "FUV"]:
         raise ValueError("band must be either NUV or FUV")
     url = urls[band] if ftype == "raw6" else urls["scst"]
     if not url:
@@ -54,7 +60,7 @@ def download_data(eclipse, band, ftype, datadir="./", verbose=0):
     else:
         # TODO: investigate handling options for different error cases
         try:
-            download_with_progress_bar(url, opath)
+            chunked_download(url, opath, render_bar=verbose > 0)
         except Exception as ex:
             print(f"Unable to download data from {url}: {type(ex)}: {ex}")
             raise
@@ -157,30 +163,18 @@ def aspect_ecl(eclipse):
 
 
 def retrieve_scstfile(
-    band: GalexBand,
-    eclipse: Optional[int],
-    outbase: Pathlike,
-    scstfile: Optional[Pathlike],
+    eclipse: int, outbase: Pathlike = ".", verbose: int = 0
 ) -> str:
-    if not scstfile:
-        if not eclipse:
-            raise ValueError("Must specify eclipse if no scstfile.")
-        else:
-            scstfile = download_data(
-                eclipse, band, "scst", datadir=os.path.dirname(outbase)
-            )
-        if scstfile is None:
-            raise ValueError("Unable to retrieve SCST file for this eclipse.")
+    scstfile = download_data(eclipse, "scst", datadir=outbase, verbose=verbose)
+    if scstfile is None:
+        raise ValueError("Unable to retrieve SCST file for this eclipse.")
     return scstfile
 
 
 def retrieve_raw6(eclipse, band, outbase):
-    if not eclipse:
-        raise ValueError("Must specify eclipse if no raw6file.")
-    else:
-        raw6file = download_data(
-            eclipse, band, "raw6", datadir=os.path.dirname(outbase)
-        )
-        if raw6file is None:
-            raise ValueError("Unable to retrieve raw6 file for this eclipse.")
+    raw6file = download_data(
+        eclipse, "raw6", band, datadir=os.path.dirname(outbase)
+    )
+    if raw6file is None:
+        raise ValueError("Unable to retrieve raw6 file for this eclipse.")
     return raw6file

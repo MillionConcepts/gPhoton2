@@ -6,7 +6,7 @@ source_catalog_file = (
 
 if __name__ == "__main__":
     execute_pipeline(
-        23241,
+        18051,
         "NUV",
         depth=240,
         threads=4,

@@ -25,6 +25,64 @@ from gPhoton.types import GalexBand, Pathlike
 warnings.filterwarnings(action="ignore", category=RuntimeWarning)
 
 
+def get_photonlist(
+    eclipse,
+    band,
+    local_root: str = "test_data",
+    remote_root: Optional[str] = None,
+    download: bool = True,
+    recreate: bool = False,
+    verbose: int = 1,
+    threads: Optional[int] = None,
+    raise_errors: bool = True
+):
+    """
+    :param recreate: if photonlist file is already present,
+    should we recreate (and possibly overwrite) it?
+    """
+    local_files, photonpath, remote_files, temp_directory = _set_up_paths(
+        eclipse, band, local_root, remote_root
+    )
+    if (remote_root is not None) and (recreate is False):
+        if Path(remote_files["photonfile"]).exists():
+            print(
+                f"making temp local copy of photon file from remote: "
+                f"{remote_files['photonfile']}"
+            )
+            photonpath = Path(
+                shutil.copy(Path(remote_files["photonfile"]), temp_directory)
+            )
+    if recreate or not photonpath.exists():
+        if not photonpath.parent.exists():
+            photonpath.parent.mkdir(parents=True)
+        raw6path = _look_for_raw6(
+            eclipse, band, download, local_files, remote_files, temp_directory
+        )
+        if not raw6path.exists():
+            print("couldn't find raw6 file.")
+            if raise_errors is True:
+                raise OSError("couldn't find raw6 file.")
+            return "return code: couldn't find raw6 file."
+        from gPhoton.photonpipe import execute_photonpipe
+
+        try:
+            execute_photonpipe(
+                photonpath,
+                band,
+                raw6file=str(raw6path),
+                verbose=verbose,
+                chunksz=1000000,
+                threads=threads,
+            )
+        except ValueError as value_error:
+            if raise_errors:
+                raise value_error
+            return parse_photonpipe_error(value_error)
+    else:
+        print(f"using existing photon list {photonpath}")
+    return photonpath
+
+
 def execute_pipeline(
     eclipse: int,
     band: GalexBand,
@@ -90,33 +148,26 @@ def execute_pipeline(
     if eclipse > 47000:
         print("CAUSE data w/eclipse>47000 are not yet supported.")
         return "return code: CAUSE data w/eclipse>47000 are not yet supported."
-    local_files, photonpath, remote_files, temp_directory = _set_up_paths(
-        eclipse, band, local_root, remote_root, depth, recreate
+    # fetch, locate, or create photonlist, as requested
+    get_photonlist_result = get_photonlist(
+        eclipse,
+        band,
+        local_root,
+        remote_root,
+        download,
+        recreate,
+        verbose,
+        threads,
+        raise_errors=False
     )
-
-    # PHOTONLIST CREATION
-    if recreate or not photonpath.exists():
-        raw6path = _look_for_raw6(
-            eclipse, band, download, local_files, remote_files, temp_directory
-        )
-        if not raw6path.exists():
-            print("couldn't find raw6 file.")
-            return "return code: couldn't find raw6 file."
-        from gPhoton.photonpipe import execute_photonpipe
-
-        try:
-            execute_photonpipe(
-                photonpath,
-                band,
-                raw6file=str(raw6path),
-                verbose=verbose,
-                chunksz=1000000,
-                threads=threads,
-            )
-        except ValueError as value_error:
-            return parse_photonpipe_error(value_error)
+    # we received an error return code
+    if isinstance(get_photonlist_result, str):
+        return get_photonlist_result  # this is an error return code
     else:
-        print(f"using existing photon list {photonpath}")
+        photonpath = get_photonlist_result  # strictly explanatory renaming
+    local_files, _, remote_files, _ = _set_up_paths(
+        eclipse, band, local_root, remote_root, depth
+    )
     stopwatch.click()
     from gPhoton.parquet_utils import get_parquet_stats
 
@@ -136,11 +187,12 @@ def execute_pipeline(
     fixed_start_time = check_fixed_start_time(
         eclipse, depth, local_root, remote_root, band, coregister_lightcurves
     )
+    # TODO: whatever led me to cast the photonlist path to str here is bad
     results = create_images_and_movies(
         str(photonpath), depth, band, lil, threads, maxsize, fixed_start_time
     )
     stopwatch.click()
-    # TODO: allow photometry on full-depth images only
+    # TODO: if depth is 0, perform photometry on full-depth images
     if results["movie_dict"] == {}:
         print("No movies available, halting before photometry.")
         write_moviemaker_results(
@@ -151,6 +203,7 @@ def execute_pipeline(
     # PHOTOMETRY SECTION
     from gPhoton.lightcurve import make_lightcurves
 
+    # TODO: whatever led me to pass the photonlist path into this is bad
     photometry_result = make_lightcurves(
         results,
         eclipse,
@@ -220,8 +273,7 @@ def _set_up_paths(
     band: GalexBand,
     data_root: str,
     remote_root: Optional[str],
-    depth: int,
-    recreate: bool,
+    depth: Optional[int] = None,
 ) -> tuple[dict, Path, Optional[dict], Path]:
     """
     initial path setup & file retrieval step for execute_pipeline.
@@ -233,8 +285,7 @@ def _set_up_paths(
     :param remote_root: additional path to check for preexisting raw6 and
     photonlist files (intended primarily for multiple servers referencing a
     shared set of remote resources)
-    :param recreate: if photonlist file is already present,
-    should we recreate (and possibly overwrite) it?
+
     :return: tuple of: primary filename dict, path to photon list we'll be
     using, remote filename dict, name of temp/scratch directory
     """
@@ -247,17 +298,6 @@ def _set_up_paths(
     if not temp_directory.exists():
         temp_directory.mkdir(parents=True)
     photonpath = Path(local_files["photonfile"])
-    if not photonpath.parent.exists():
-        photonpath.parent.mkdir(parents=True)
-    if (remote_root is not None) and (recreate is False):
-        if Path(remote_files["photonfile"]).exists():
-            print(
-                f"making temp local copy of photon file from remote: "
-                f"{remote_files['photonfile']}"
-            )
-            photonpath = Path(
-                shutil.copy(Path(remote_files["photonfile"]), temp_directory)
-            )
     return local_files, photonpath, remote_files, temp_directory
 
 

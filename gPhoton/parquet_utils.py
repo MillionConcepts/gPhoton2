@@ -15,5 +15,13 @@ def get_parquet_stats(fn, columns, row_group=0):
     return statistics
 
 
-def parquet_to_ndarray(table, columns):
+def parquet_to_ndarray(table, columns=None):
+    if columns is None:
+        columns = table.column_names
     return np.array([table[column].to_numpy() for column in columns]).T
+
+
+def parquet_to_ndarrays(table, columns=None):
+    if columns is None:
+        columns = table.column_names
+    return {column: table[column].to_numpy() for column in columns}

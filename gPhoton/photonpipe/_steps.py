@@ -1,14 +1,23 @@
 from itertools import product
-from pathlib import Path
 from statistics import mean
 from typing import Mapping
 
-import pandas as pd
-from dustgoggles.structures import NestingDict
 import numpy as np
-from pyarrow import parquet
+import pandas as pd
+from cytoolz import keyfilter
+from dustgoggles.structures import NestingDict
 
-from gPhoton import cals, constants as c, ASPECT_DIR
+from gPhoton import cals, constants as c
+from gPhoton.calibrate import (
+    avg_stimpos,
+    compute_flat_scale,
+    rtaph_yac,
+    rtaph_yac2,
+    rtaph_yap,
+    post_csp_caldata,
+    find_stims_index,
+)
+from gPhoton.coords.gnomonic import gnomrev_simple
 from gPhoton.photonpipe._numbafied import (
     interpolate_aspect_solutions,
     find_null_indices,
@@ -20,21 +29,6 @@ from gPhoton.photonpipe._numbafied import (
     unfancy_distortion_component,
     sum_corners,
 )
-from gPhoton.sharing import (
-    reference_shared_memory_arrays,
-    send_to_shared_memory,
-)
-from gPhoton.calibrate import (
-    avg_stimpos,
-    compute_flat_scale,
-    rtaph_yac,
-    rtaph_yac2,
-    rtaph_yap,
-    post_csp_caldata,
-    find_stims_index,
-)
-from gPhoton.coords.gnomonic import gnomfwd_simple, gnomrev_simple
-
 
 # TODO, IMPORTANT: flag 7 is intended to be for gaps >= 2s in aspect sol
 #  or actually-bad flags. in post-CSP aspect solutions, it's possible that
@@ -43,62 +37,17 @@ from gPhoton.coords.gnomonic import gnomfwd_simple, gnomrev_simple
 #  flag 12 is intended to be for gaps < 2s in aspect sol. we will (eventually)
 #  use 12 in photometry but not 7.
 from gPhoton.pretty import print_inline
+from gPhoton.sharing import (
+    reference_shared_memory_arrays,
+    send_to_shared_memory,
+)
 from gPhoton.types import GalexBand
 
 
-def load_aspect_solution(eclipse, verbose):
-    if verbose > 0:
-        print_inline("Loading aspect data from disk...")
-    filters = [("eclipse", "=", eclipse)]
-    aspect = parquet.read_table(
-        Path(ASPECT_DIR, "aspect.parquet"), filters=filters
-    ).to_pandas()
-    if verbose > 1:
-        trange = [aspect["time"].min(), aspect["time"].max()]
-        print(f"			trange= ( {trange[0]} , {trange[1]} )")
-    boresight = parquet.read_table(
-        Path(ASPECT_DIR, "boresight.parquet"), filters=filters
-    ).to_pandas()
-    if verbose > 1:
-        print("aspect averages", aspect[["ra", "dec", "roll"]].mean(axis=0))
-    # This projects the aspect solutions onto the MPS field centers.
-    if verbose > 0:
-        print_inline("Computing aspect vectors...")
-    if len(boresight) > 1:
-        # legs > 0; must distribute boresight positions correctly
-        boresight = distribute_legs(aspect, boresight)
-    xi_vec, eta_vec = gnomfwd_simple(
-        aspect["ra"].values,
-        aspect["dec"].values,
-        boresight["ra0"].values,
-        boresight["dec0"].values,
-        -aspect["roll"].values,
-        1.0 / 36000.0,
-        0.0,
-    )
-    return (
-        aspect["dec"].values,
-        aspect["flags"].values,
-        aspect["ra"].values,
-        aspect["time"].values,
-        aspect["roll"].values,
-        eta_vec,
-        xi_vec,
-    )
-
-
-def distribute_legs(aspect, boresight):
-    distributed_boresight = pd.DataFrame()
-    distributed_boresight["time"] = aspect["time"]
-    distributed_boresight["ra0"] = np.nan
-    distributed_boresight["dec0"] = np.nan
-    for _, leg in boresight.iterrows():
-        leg_indices = distributed_boresight.loc[
-            distributed_boresight["time"] >= leg["time"]
-        ].index
-        for axis in ("ra0", "dec0"):
-            distributed_boresight.loc[leg_indices, axis] = leg[axis]
-    return distributed_boresight
+# variables actually used later in the pipeline
+PIPELINE_VARIABLES = (
+    "ra", "dec", "t", "detrad", "flags", "response", "mask"
+)
 
 
 def process_chunk_in_unshared_memory(
@@ -110,6 +59,7 @@ def process_chunk_in_unshared_memory(
     stim_coefficients,
     xoffset,
     yoffset,
+    write_intermediate_variables
 ):
     chunk = apply_all_corrections(
         aspect,
@@ -121,8 +71,10 @@ def process_chunk_in_unshared_memory(
         xoffset,
         yoffset,
     )
-    return chunk | calibrate_photons_inline(band, cal_data, chunk, chunkid)
-
+    output = chunk | calibrate_photons_inline(band, cal_data, chunk, chunkid)
+    if write_intermediate_variables is not True:
+        output = keyfilter(lambda key: key in PIPELINE_VARIABLES, output)
+    return output
 
 def apply_all_corrections(
     aspect,
@@ -143,8 +95,7 @@ def apply_all_corrections(
         xoffset,
         yoffset,
     )
-    chunk |= apply_aspect_solution(aspect, chunk, chunkid)
-    return chunk
+    return chunk | apply_aspect_solution(aspect, chunk, chunkid)
 
 
 def process_chunk_in_shared_memory(
@@ -156,6 +107,7 @@ def process_chunk_in_shared_memory(
     stim_coefficients,
     xoffset,
     yoffset,
+    write_intermediate_variables
 ):
     chunk_blocks, chunk = reference_shared_memory_arrays(block_info)
     cal_data = {}
@@ -175,6 +127,10 @@ def process_chunk_in_shared_memory(
         yoffset,
     )
     chunk |= calibrate_photons_inline(band, cal_data, chunk, chunk_title)
+    if write_intermediate_variables is not True:
+        print(PIPELINE_VARIABLES)
+        chunk = keyfilter(lambda key: key in PIPELINE_VARIABLES, chunk)
+        print(chunk.keys())
     processed_block_info = send_to_shared_memory(chunk)
     for block in chunk_blocks.values():
         block.close()
@@ -213,24 +169,19 @@ def calibrate_photons_inline(band, cal_data, chunk, chunkid):
     return output_columns
 
 
-def apply_aspect_solution(
-    aspect,
-    chunk,
-    chunkid,
-):
-    aspdec, aspflags, aspra, asptime, asptwist, eta_vec, xi_vec = aspect
+def apply_aspect_solution(aspect, chunk, chunkid):
     # This gives the index of the aspect time that comes _before_
     # each photon time. Without the '-1' it will give the index
     # of the aspect time _after_ the photon time.
     print_inline(chunkid + "Mapping photon times to aspect times...")
-    aspix = np.digitize(chunk["t"], asptime) - 1
+    aspix = np.digitize(chunk["t"], aspect["time"]) - 1
     print_inline(chunkid + "Applying dither correction...")
     # Use only photons that are bracketed by valid aspect solutions
     # and have been not themselves been flagged as invalid.
     flags = chunk["flags"]
     cut = (
         (aspix > 0)
-        & (aspix < (len(asptime) - 1))
+        & (aspix < (len(aspect["time"]) - 1))
         & ((flags == 0) | (flags == 6))
     )
     flags[~cut] = 7
@@ -238,21 +189,26 @@ def apply_aspect_solution(
     aspect_slice = aspix[ok_indices]
     print_inline(chunkid + "Interpolating aspect solutions...")
     deta, dxi = interpolate_aspect_solutions(
-        aspect_slice, asptime, eta_vec, ok_indices, chunk["t"], xi_vec
+        aspect_slice,
+        aspect["time"],
+        chunk["t"],
+        aspect["eta"],
+        aspect["xi"],
+        ok_indices,
     )
     print_inline(chunkid + "Mapping to sky...")
     ra, dec = np.zeros(chunk["t"].shape), np.zeros(chunk["t"].shape)
     ra[ok_indices], dec[ok_indices] = gnomrev_simple(
         chunk["xi"][ok_indices] + dxi[ok_indices],
         chunk["eta"][ok_indices] + deta[ok_indices],
-        aspra[aspect_slice],
-        aspdec[aspect_slice],
-        -asptwist[aspect_slice],
+        aspect["ra"][aspect_slice],
+        aspect["dec"][aspect_slice],
+        -aspect["roll"][aspect_slice],
         1 / 36000.0,
         0.0,
     )
     null_ix, flags = find_null_indices(
-        aspflags, aspect_slice, asptime, flags, ok_indices
+        aspect["flags"], aspect_slice, aspect["time"], flags, ok_indices
     )
     ra[null_ix] = np.nan
     dec[null_ix] = np.nan

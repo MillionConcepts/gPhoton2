@@ -12,12 +12,13 @@ from numba import njit
 import numpy as np
 
 from gPhoton import cals
+from gPhoton.aspect import aspect_tables
 import gPhoton.constants as c
+
 
 
 # ------------------------------------------------------------------------------
 
-from gPhoton.io.fits_utils import get_fits_header
 
 
 def clk_cen_scl_slp(band: str, eclipse: int) -> tuple:
@@ -476,75 +477,38 @@ def compute_flat_scale(t, band, verbose=0):
     return flat_scale
 
 
-def find_fuv_offset(scstfile, raise_invalid=True):
+def get_fuv_temp(eclipse: int):
+    return aspect_tables(eclipse, ["metadata"])[0]['fuv_temp'][0].as_py()
+
+
+def find_fuv_offset(eclipse: int):
     """
-    Computes NUV->FUV center offset based on a lookup table.
-
-    :param scstfile: Name of the spacecraft state (-scst) FITS file.
-
-    :type scstfile: str
-
+    Computes NUV->FUV center offset based on lookup tables. Raises a
+    ValueError if no FUV temperature was recorded in the scst (spacecraft
+    state) file -- this generally indicates observations for which the FUV
+    detector wasn't actually powered on.
+    :param eclipse: GALEX eclipse number.
     :returns: tuple -- A two-element tuple containing the x and y offsets.
     """
-
     fodx_coef_0, fody_coef_0, fodx_coef_1, _ = (0.0, 0.0, 0.0, 0.0)
-
-    scsthead = get_fits_header(scstfile)
-
-    print("Reading header values from scst file: ", scstfile)
-
-    try:
-        eclipse = int(scsthead["eclipse"])
-    except KeyError:
-        print("WARNING: ECLIPSE is not defined in SCST header.")
-        try:
-            eclipse = int(scstfile.split("/")[-1].split("-")[0][1:])
-            print("         Using {e} from filename.".format(e=eclipse))
-        # TODO: what's the exception here, and is this really the
-        #  desired behavior?
-        except:
-            print("         Unable to infer eclipse from filename.")
-            return 0.0, 0.0
-
-    try:
-        fdttdc = float(scsthead["FDTTDC"])
-    except KeyError:
-        print("WARNING: FUV temperature value missing from SCST.")
-        print("         This is probably not a valid FUV observation.")
-        if raise_invalid is True:
-            raise ValueError("This is probably not a valid FUV observation.")
-        return 0.0, 0.0
-
-    print(
-        "Offsetting FUV image for eclipse {e} at {t} degrees.".format(
-            e=eclipse, t=fdttdc
-        )
-    )
-
+    fuv_temp = get_fuv_temp(eclipse)
+    if np.isnan(fuv_temp):
+        raise ValueError("This is probably not a valid FUV observation.")
+    print(f"Offsetting FUV image for eclipse {eclipse} at {fuv_temp} degrees.")
     fodx_coef_0 = cals.offset("x")[eclipse - 1, 1]
     fody_coef_0 = cals.offset("y")[eclipse - 1, 1]
-
     fodx_coef_1 = 0.0
     fody_coef_1 = 0.3597
-
-    if (fdttdc <= 20.0) or (fdttdc >= 40.0):
-        print("ERROR: FDTTDC is out of range at {t}".format(t=fdttdc))
-        if raise_invalid is True:
-            raise ValueError("FUV temperature out of range.")
-        return 0.0, 0.0
-    else:
-        xoffset = fodx_coef_0 - (fodx_coef_1 * (fdttdc - 29.0))
-        yoffset = fody_coef_0 - (fody_coef_1 * (fdttdc - 29.0))
-        print(
-            "Setting FUV offsets to x={x}, y={y}".format(x=xoffset, y=yoffset)
-        )
-
+    if (fuv_temp <= 20.0) or (fuv_temp >= 40.0):
+        raise ValueError("FUV temperature out of range.")
+    xoffset = fodx_coef_0 - (fodx_coef_1 * (fuv_temp - 29.0))
+    yoffset = fody_coef_0 - (fody_coef_1 * (fuv_temp - 29.0))
+    print(f"Setting FUV offsets to x={xoffset}, y={yoffset}")
     return xoffset, yoffset
 
 
 # two components of the expensive center-and-scale step that can be
 # accelerated effectively with numba
-
 
 @njit(cache=True)
 def plus7_mod32_minus16(array):

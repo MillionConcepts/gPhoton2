@@ -6,7 +6,7 @@ import numpy as np
 
 from gPhoton import CAL_DIR
 from gPhoton.io.fits_utils import get_fits_data, get_fits_header, get_tbl_data
-from gPhoton.io.netutils import download_with_progress_bar
+from gPhoton.io.netutils import chunked_download
 
 
 # Remote repository for GALEX calibration files.
@@ -30,7 +30,7 @@ def read_data(fn, dim=0):
     # Download the file if it doesn't exist locally.
     if not os.path.exists(path):
         data_url = "{b}/{f}".format(b=CAL_URL, f=fn)
-        download_with_progress_bar(data_url, path)
+        chunked_download(data_url, path)
     if ".fits" in fn:
         data = get_fits_data(path, dim=dim)
         header = get_fits_header(path)

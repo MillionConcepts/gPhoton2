@@ -309,6 +309,7 @@ def write_fits_array(
         movie_path.unlink()
     else:
         print(f"writing {movie_name} to {movie_path}")
+    # TODO: write names / descriptions into the headers
     for key in ["cnt", "flag", "edge"]:
         print(f"writing {key} map")
         add_movie_to_fits_file(movie_path, movie_dict[key], header)

@@ -104,11 +104,11 @@ def gnomfwd_simple(ra, dec, ra0, dec0, crota, cdelt, cenpix):
 
     :param ra0: The right ascension of the boresight.
 
-    :type ra0: float
+    :type ra0: float numpy.ndarray
 
     :param dec0: The declination of the boresight.
 
-    :type dec0: float
+    :type dec0: float numpy.ndarray
 
     :param crota: Rotation of the FOV.
 

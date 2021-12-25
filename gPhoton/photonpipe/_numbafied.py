@@ -5,7 +5,7 @@ import gPhoton.constants as c
 
 
 def interpolate_aspect_solutions(
-    aspect_slice, asptime, eta_vec, ok_indices, t, xi_vec
+    aspect_slice, asptime, t, eta_vec, xi_vec, ok_indices
 ):
     dxi, deta = np.zeros(len(t)), np.zeros(len(t))
     aspect_ratio = t[ok_indices] - asptime[aspect_slice] / (
