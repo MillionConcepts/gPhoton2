@@ -1,7 +1,7 @@
 """top-level handler module for gPhoton.moviemaker"""
 
 from multiprocessing import Pool
-from typing import Optional, Union, Literal
+from typing import Optional, Union
 
 from dustgoggles.structures import NestingDict
 from more_itertools import windowed

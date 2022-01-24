@@ -4,7 +4,7 @@
    processes. generally should not be called on their own.
 """
 from pathlib import Path
-from typing import Mapping, Sequence, Optional
+from typing import Mapping, Sequence
 import warnings
 
 import pyarrow

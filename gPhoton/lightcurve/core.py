@@ -51,22 +51,22 @@ def make_lightcurves(
         return "skipped photometry because DAOStarFinder found nothing"
     for aperture_size in aperture_sizes:
         aperture_size_px = aperture_size / c.ARCSECPERPIXEL
-        source_table, apertures = count_full_depth_image(
+        photometry_table, apertures = count_full_depth_image(
             source_table,
             aperture_size_px,
             sky_arrays["image_dict"],
             sky_arrays["wcs"],
         )
         stopwatch.click()
-        source_table = extract_photometry(
-            sky_arrays["movie_dict"], source_table, apertures, threads
+        photometry_table = extract_photometry(
+            sky_arrays["movie_dict"], photometry_table, apertures, threads
         )
         photomfile = (
             f"{output_filenames['photomfile']}"
             f"{str(aperture_size).replace('.', '_')}.csv"
         )
         print(f"writing source table to {photomfile}")
-        source_table.to_csv(photomfile, index=False)
+        photometry_table.to_csv(photomfile, index=False)
         stopwatch.click()
     write_exptime_file(output_filenames["expfile"], sky_arrays["movie_dict"])
     return "successful"

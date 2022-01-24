@@ -76,6 +76,7 @@ def process_chunk_in_unshared_memory(
         output = keyfilter(lambda key: key in PIPELINE_VARIABLES, output)
     return output
 
+
 def apply_all_corrections(
     aspect,
     band,
@@ -128,9 +129,7 @@ def process_chunk_in_shared_memory(
     )
     chunk |= calibrate_photons_inline(band, cal_data, chunk, chunk_title)
     if write_intermediate_variables is not True:
-        print(PIPELINE_VARIABLES)
         chunk = keyfilter(lambda key: key in PIPELINE_VARIABLES, chunk)
-        print(chunk.keys())
     processed_block_info = send_to_shared_memory(chunk)
     for block in chunk_blocks.values():
         block.close()

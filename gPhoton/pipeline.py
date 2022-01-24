@@ -83,6 +83,8 @@ def get_photonlist(
     return photonpath
 
 
+# TODO, maybe: add a check somewhere for: do we have information regarding
+#  this eclipse at all?
 def execute_pipeline(
     eclipse: int,
     band: GalexBand,
