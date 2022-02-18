@@ -174,7 +174,7 @@ def sm_compute_movie_frame(
         expblock["exposure"].unlink()
         expblock["exposure"].close()
         # noinspection PyTypeChecker
-        cntmap, edgemap, flagmap = sm_make_maps(map_block_info, imsz, lil)
+        cntmap, flagmap, edgemap = sm_make_maps(map_block_info, imsz, lil)
         unlink_nested_block_dict(map_block_info)
         # TODO: slice this into shared memory to reduce serialization cost?
         #  not worth doing if they're sparse
