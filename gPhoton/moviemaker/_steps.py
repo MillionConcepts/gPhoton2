@@ -237,6 +237,7 @@ def sm_make_map(block_directory, map_name, imsz):
 def generate_wcs_components(event_table):
     wcs = make_bounding_wcs(parquet_to_ndarray(event_table, ["ra", "dec"]))
     # This is a bottleneck, so only do it once.
+    # TODO: do we actually want these 1-indexed?
     foc = wcs.sip_pix2foc(
         wcs.wcs_world2pix(parquet_to_ndarray(event_table, ["ra", "dec"]), 1), 1
     )

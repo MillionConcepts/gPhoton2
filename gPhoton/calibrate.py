@@ -550,7 +550,7 @@ def center_and_scale(band, data, eclipse):
 
 def compute_shutter(timeslice, flagslice, trange, shutgap=0.05):
     ix = np.where(flagslice == 0)
-    t = np.hstack([trange[0], np.unique(timeslice[ix]), +trange[1]])
+    t = np.hstack([trange[0], np.unique(timeslice[ix]), trange[1]])
     ix = np.where(t[1:] - t[:-1] >= shutgap)
     shutter = np.array(t[1:] - t[:-1])[ix].sum()
     return shutter

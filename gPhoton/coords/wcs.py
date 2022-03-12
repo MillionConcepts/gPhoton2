@@ -52,7 +52,8 @@ def make_bounding_wcs(radec: np.ndarray) -> astropy.wcs.WCS:
     # WCS center pixel in sky coordinates
     ra0, dec0 = (np.mean(ra_range), np.mean(dec_range))
     ra0 = ra0 if ra0 > 0 else ra0 + 360
-    # scale by approximate ra-direction distortion of gnomonic projection
+    # scale ra-axis pixel size using cos(declination) to approximate
+    # ra-direction distortion introduced by gnomonic projection
     ra_offset = (ra_range[1] - ra_range[0]) * math.cos(math.radians(dec0))
     imsz = (
         int(np.ceil((dec_range[1] - dec_range[0]) / c.DEGPERPIXEL)),
