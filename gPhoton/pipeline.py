@@ -88,7 +88,7 @@ def get_photonlist(
 def execute_pipeline(
     eclipse: int,
     band: GalexBand,
-    depth: int,
+    depth: Optional[int] = None,
     threads: Optional[int] = None,
     local_root: str = "test_data",
     remote_root: Optional[str] = None,
@@ -324,7 +324,7 @@ def check_fixed_start_time(
     band: GalexBand,
     coregister: bool,
 ) -> Optional[str]:
-    if coregister is not True:
+    if (coregister is not True) or (depth is None):
         return None
     other = "NUV" if band == "FUV" else "FUV"
     expfile = None

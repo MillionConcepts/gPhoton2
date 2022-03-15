@@ -1,15 +1,126 @@
-# 1. we're not concerned about the effects of slewing etc. on one-leg
-# observations, so long as we turn everything on the edge to 0.
-# note: single-leg observations with enormously huge WCS do not appear to have
-# big, non-circular full-depth images -- most of the grid is blank.
-# TODO: completely blank?
+import warnings
+from itertools import product
 
-# 2. how do we select a spatial grid/WCS for the resultant image? these are
-# all nominally in shared sky coordinates, whatever the deficiencies of
-# gnomonic projection, and at shared _scales_ -- but not on a shared grid.
-# so...we interpolate them to some shared space? create a bounding WCS and bin
-# them? something like that?
-# yes. let's just do that. make a bounding wcs and interpolate all coadd
-# contributors to that grid.
+import fast_histogram as fh
+import numpy as np
+from astropy.io import fits as pyfits
+from astropy.wcs import wcs
+from dustgoggles.scrape import head_file
+from isal import igzip
 
-def coadd_galex_images(image_files: Sequence[str, Path]):
+from gPhoton.coords.wcs import make_bounding_wcs
+from gPhoton.reference import eclipse_to_paths
+
+
+def get_image_fns(*eclipses, band="NUV", root="test_data"):
+    return [
+        eclipse_to_paths(eclipse, root)[band]["image"] for eclipse in eclipses
+    ]
+
+
+def pyfits_open_igzip(fn):
+    # TODO: does this leak the igzip stream handle?
+    stream = igzip.open(fn)
+    return pyfits.open(stream)
+
+
+def first_fits_header(path):
+    if str(path).endswith("gz"):
+        stream = igzip.open(path)
+    else:
+        stream = open(path, "rb")
+    head = head_file(stream, 2880)
+    stream.close()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")  # we know we truncated it, thank you
+        return pyfits.open(head)[0].header
+
+
+def read_wcs_from_fits(*fits_paths):
+    headers = [first_fits_header(path) for path in fits_paths]
+    systems = [wcs.WCS(header) for header in headers]
+    return headers, systems
+
+
+def corner_ra_dec(wcs_system):
+    imsz = wcs_imsz(wcs_system)
+    ymax, xmax = imsz[1], imsz[0]
+    return wcs_system.pixel_to_world_values(
+        (0, ymax, ymax, 0), (0, xmax, 0, xmax)
+    )
+
+
+def bounding_corners(corners):
+    extremes = []
+    for pred, coord in product((np.max, np.min), np.arange(len(corners[0]))):
+        local_extrema = map(pred, [corner[coord] for corner in corners])
+        extremes.append(pred(tuple(local_extrema)))
+    return extremes
+
+
+def make_shared_wcs(wcs_sequence):
+    corners = tuple(map(corner_ra_dec, wcs_sequence))
+    ra_min, dec_min, ra_max, dec_max = map(
+        np.float32, bounding_corners(corners)
+    )
+    return make_bounding_wcs(np.array([[ra_min, dec_min], [ra_max, dec_max]]))
+
+
+def project_to_shared_wcs(gphoton_fits, shared_wcs, nonzero=True):
+    cnt, flag, edge = [gphoton_fits[ix].data for ix in range(3)]
+    cnt[~np.isfinite(cnt)] = 0
+    cnt[np.nonzero(flag)] = 0
+    cnt[np.nonzero(edge)] = 0
+    if nonzero is True:
+        y_ix, x_ix = np.nonzero(cnt)
+    else:
+        indices = np.indices((cnt.shape[0], cnt.shape[1]), dtype=np.int16)
+        y_ix, x_ix = indices[0].ravel(), indices[1].ravel()
+    system = wcs.WCS(gphoton_fits[0].header)
+    ra_input, dec_input = system.pixel_to_world_values(x_ix, y_ix)
+    x_shared, y_shared = shared_wcs.wcs_world2pix(ra_input, dec_input, 1)
+    return {
+        "x": x_shared,
+        "y": y_shared,
+        "weight": cnt[y_ix, x_ix],
+        "exptime": np.float32(gphoton_fits[0].header["EXPTIME"]),
+    }
+
+
+def bin_projected_weights(x, y, weights, imsz):
+    binned = fh.histogram2d(
+        y - 0.5,
+        x - 0.5,
+        bins=imsz,
+        range=([[0, imsz[0]], [0, imsz[1]]]),
+        weights=weights,
+    )
+    return binned
+
+
+# note: this contains an assumption about the origin of the wcs
+def wcs_imsz(system: wcs.WCS):
+    return (
+        int((system.wcs.crpix[1] - 0.5) * 2),
+        int((system.wcs.crpix[0] - 0.5) * 2),
+    )
+
+
+def get_coadd_slice(gphoton_fits, shared_wcs):
+    projection = project_to_shared_wcs(gphoton_fits, shared_wcs)
+    return bin_projected_weights(
+        projection["x"],
+        projection["y"],
+        projection["weight"] / projection["exptime"],
+        wcs_imsz(shared_wcs),
+    )
+
+
+def coadd_image_files(image_files):
+    headers, systems = read_wcs_from_fits(*image_files)
+    shared_wcs = make_shared_wcs(systems)
+    coadd = np.zeros(wcs_imsz(shared_wcs), dtype=np.float64)
+    for image_file in image_files:
+        print(image_file)
+        coadd += get_coadd_slice(pyfits_open_igzip(image_file), shared_wcs)
+    return coadd

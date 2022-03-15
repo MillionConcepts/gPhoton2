@@ -14,6 +14,7 @@ import numpy as np
 from gPhoton import cals
 from gPhoton.aspect import aspect_tables
 import gPhoton.constants as c
+from gPhoton import vorpal
 
 
 

@@ -182,9 +182,6 @@ def write_moviemaker_results(
         )
     del results["image_dict"]
     stopwatch.click()
-    import pickle
-    with open(filenames["movie"].replace("fits.gz", "pkl"), "wb+") as pkl:
-        pickle.dump(results["movie_dict"], pkl)
     if write["movie"] and (results["movie_dict"] != {}):
         # we don't check size of the image, because if we can handle the image
         # in memory, we can write it, but we handle the movies frame by frame

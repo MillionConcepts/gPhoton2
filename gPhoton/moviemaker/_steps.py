@@ -353,8 +353,8 @@ def predict_movie_memory(imsz, n_frames, nbytes=8):
     """
     predict memory size in bytes of movie during write. nbytes is equal to the
     per-element size of _only_ the largest plane, which should be the cntmap
-    with the current execute_pipeline configuration. this will be something of an
-    undercount due to handling costs.
+    with the current execute_pipeline configuration. this will be something of
+    an undercount due to handling costs.
     """
     return imsz[0] * imsz[1] * n_frames * nbytes
 

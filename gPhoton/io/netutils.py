@@ -37,3 +37,4 @@ def chunked_download(
     with open(destination, "wb+") as file:
         for chunk in content_iterator:
             file.write(chunk)
+
