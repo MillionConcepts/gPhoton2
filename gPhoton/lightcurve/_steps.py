@@ -49,7 +49,7 @@ def find_sources(
     datapath: Union[str, Path],
     image_dict,
     wcs,
-    source_table: pd.DataFrame = Optional[None],
+    source_table: Optional[pd.DataFrame] = None
 ):
     # TODO, maybe: pop these into a handler function
     if not image_dict["cnt"].max():

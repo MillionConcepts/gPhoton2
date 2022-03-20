@@ -20,16 +20,19 @@ def get_image_fns(*eclipses, band="NUV", root="test_data"):
 
 def pyfits_open_igzip(fn):
     # TODO: does this leak the igzip stream handle?
-    stream = igzip.open(fn)
-    return pyfits.open(stream)
+    if fn.endswith("gz"):
+        stream = igzip.open(fn)
+        return pyfits.open(stream)
+    else:
+        return pyfits.open(fn)
 
 
-def first_fits_header(path):
+def first_fits_header(path, header_records=1):
     if str(path).endswith("gz"):
         stream = igzip.open(path)
     else:
         stream = open(path, "rb")
-    head = head_file(stream, 2880)
+    head = head_file(stream, 2880 * header_records)
     stream.close()
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")  # we know we truncated it, thank you
