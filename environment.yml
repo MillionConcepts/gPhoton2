@@ -18,6 +18,7 @@ dependencies:
   - numba
   - fast-histogram
   - jupyter
+  - python-isal
   # for regression testing
   - pytables
   # profiling
