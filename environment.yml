@@ -36,6 +36,7 @@ dependencies:
   - more-itertools
   - sh
   - pip
+  - rich
   - pip:
       - git+https://github.com/MillionConcepts/dustgoggles.git
 
