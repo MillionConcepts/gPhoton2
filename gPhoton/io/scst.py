@@ -8,14 +8,14 @@ import numpy as np
 #  it's never actually been used in our new bulk runs!
 def load_aspect_files(aspfiles: Sequence[str]):
     """
-    Loads a set of aspect files into a bunch of arrays.
+    Loads a set of aspect_data files into a bunch of arrays.
 
-    :param aspfiles: List of aspect files (+paths) to read.
+    :param aspfiles: List of aspect_data files (+paths) to read.
 
     :type aspfiles: list
 
     :returns: tuple -- Returns a six-element tuple containing the RA, DEC,
-        twist (roll), time, header, and aspect flags. Each of these EXCEPT for
+        twist (roll), time, header, and aspect_data flags. Each of these EXCEPT for
         header are returned as np.ndarrays. The header is returned as a dict
         containing the RA, DEC, and roll from the headers of the files.
     """

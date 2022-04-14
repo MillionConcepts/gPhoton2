@@ -59,10 +59,10 @@ def get_photonlist(
             eclipse, band, download, local_files, remote_files, temp_directory
         )
         if not raw6path.exists():
-            print("couldn't find raw6 file.")
+            print("couldn't search raw6 file.")
             if raise_errors is True:
-                raise OSError("couldn't find raw6 file.")
-            return "return code: couldn't find raw6 file."
+                raise OSError("couldn't search raw6 file.")
+            return "return code: couldn't search raw6 file."
         from gPhoton.photonpipe import execute_photonpipe
 
         try:
@@ -262,7 +262,7 @@ def _look_for_raw6(
             )
         raw6path = Path(shutil.copy(remote_files["raw6"], temp_directory))
     if not raw6path.exists() and (download is True):
-        from gPhoton.io.fetch import retrieve_raw6
+        from gPhoton.io.mast import retrieve_raw6
 
         raw6file = retrieve_raw6(eclipse, band, raw6path)
         if raw6file is not None:

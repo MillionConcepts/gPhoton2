@@ -76,7 +76,7 @@ def unpack_raw6(chunkbeg, chunkend, chunkid, raw6hdulist):
 
 
 def bitwise_decode_photonbytes(band, photonbytes):
-    print_inline("Band is {band}.".format(band=band))
+    print_inline(f"Band is {band}.")
     data = {"t": photonbytes["t"]}
     # Bitwise "decoding" of the raw6 telemetry.
     data["xb"] = photonbytes[1] >> 5

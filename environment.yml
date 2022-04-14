@@ -37,6 +37,8 @@ dependencies:
   - sh
   - pip
   - rich
+# optional, only required for object-search functions
+  - astroquery
   - pip:
       - git+https://github.com/MillionConcepts/dustgoggles.git
 

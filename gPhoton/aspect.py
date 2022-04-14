@@ -48,17 +48,17 @@ def load_aspect_solution(
     eclipse: int, verbose: int = 0
 ) -> dict[str, np.ndarray]:
     """
-    loads full-resolution aspect solution + per-leg boresight solution,
-    projects aspect solution to detector coordinates
-    :param eclipse: eclipse to load aspect solution for
+    loads full-resolution aspect_data solution + per-leg boresight solution,
+    projects aspect_data solution to detector coordinates
+    :param eclipse: eclipse to load aspect_data solution for
     :param verbose: higher values return more feedback about solution
-    :return: dictionary of aspect solution + relevant sky coordinates
+    :return: dictionary of aspect_data solution + relevant sky coordinates
     """
     if verbose > 0:
-        print_inline("Loading aspect data from disk...")
+        print_inline("Loading aspect_data data from disk...")
     aspect, boresight = [
         parquet_to_ndarrays(tab, tab.column_names)
-        for tab in aspect_tables(eclipse, ("aspect", "boresight"))
+        for tab in aspect_tables(eclipse, ("aspect_data", "boresight"))
     ]
     if verbose > 1:
         trange = [aspect["time"].min(), aspect["time"].max()]
@@ -68,9 +68,9 @@ def load_aspect_solution(
             f"RA AVG: {aspect['ra'].mean()}, DEC AVG: {aspect['dec'].mean()}, "
             f"ROLL AVG: {aspect['roll'].mean()}"
         )
-    # This projects the aspect solutions onto the MPS field centers.
+    # This projects the aspect_data solutions onto the MPS field centers.
     if verbose > 0:
-        print_inline("Computing aspect vectors...")
+        print_inline("Computing aspect_data vectors...")
     if len(boresight) > 1:
         # legs > 0; must distribute boresight positions correctly
         boresight = distribute_legs(aspect, boresight)

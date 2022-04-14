@@ -12,7 +12,7 @@ from pyarrow import parquet
 
 from gPhoton.aspect import load_aspect_solution
 from gPhoton.calibrate import find_fuv_offset
-from gPhoton.io.fetch import retrieve_raw6
+from gPhoton.io.mast import retrieve_raw6
 from gPhoton.io.raw6 import load_raw6, get_eclipse_from_header
 from gPhoton.photonpipe._steps import (
     create_ssd_from_decoded_data,
@@ -46,7 +46,7 @@ def execute_photonpipe(
 ):
     """
     Apply static and sky calibrations to -raw6 GALEX data, producing fully
-        aspect-corrected and time-tagged photon list files.
+        aspect_data-corrected and time-tagged photon list files.
 
     :param raw6file: Name of the raw6 file to use.
 

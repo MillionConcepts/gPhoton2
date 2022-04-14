@@ -1,14 +1,11 @@
-import warnings
 from itertools import product
 
+from astropy.wcs import wcs
 import fast_histogram as fh
 import numpy as np
-from astropy.io import fits as pyfits
-from astropy.wcs import wcs
-from dustgoggles.scrape import head_file
-from isal import igzip
 
 from gPhoton.coords.wcs import make_bounding_wcs
+from gPhoton.io.fits_utils import pyfits_open_igzip, read_wcs_from_fits
 from gPhoton.reference import eclipse_to_paths
 
 
@@ -16,33 +13,6 @@ def get_image_fns(*eclipses, band="NUV", root="test_data"):
     return [
         eclipse_to_paths(eclipse, root)[band]["image"] for eclipse in eclipses
     ]
-
-
-def pyfits_open_igzip(fn):
-    # TODO: does this leak the igzip stream handle?
-    if fn.endswith("gz"):
-        stream = igzip.open(fn)
-        return pyfits.open(stream)
-    else:
-        return pyfits.open(fn)
-
-
-def first_fits_header(path, header_records=1):
-    if str(path).endswith("gz"):
-        stream = igzip.open(path)
-    else:
-        stream = open(path, "rb")
-    head = head_file(stream, 2880 * header_records)
-    stream.close()
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")  # we know we truncated it, thank you
-        return pyfits.open(head)[0].header
-
-
-def read_wcs_from_fits(*fits_paths):
-    headers = [first_fits_header(path) for path in fits_paths]
-    systems = [wcs.WCS(header) for header in headers]
-    return headers, systems
 
 
 def corner_ra_dec(wcs_system):

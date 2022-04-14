@@ -1,9 +1,9 @@
 """
 .. module:: gnomonic
    :synopsis: This module contains gnomonic projection methods for translating
-       between detector and sky coordinates. They are compiled using the
-       numba just-in-time compiler to accelerate the complex trig operations
-       involved.
+    between detector and sky coordinates. They are compiled using the
+    numba just-in-time compiler to accelerate the very large number of
+    vectorized trig operations involved.
 """
 import numpy as np
 

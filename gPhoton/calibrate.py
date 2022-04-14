@@ -14,15 +14,11 @@ import numpy as np
 from gPhoton import cals
 from gPhoton.aspect import aspect_tables
 import gPhoton.constants as c
-from gPhoton import vorpal
-
+from gPhoton.types import GalexBand
 
 
 # ------------------------------------------------------------------------------
-
-
-
-def clk_cen_scl_slp(band: str, eclipse: int) -> tuple:
+def clk_cen_scl_slp(band: GalexBand, eclipse: int) -> tuple:
     """
     Return the detector clock, center, scale, and slope constants. These are
         empirically determined detector-space calibration parameters that help
@@ -38,7 +34,6 @@ def clk_cen_scl_slp(band: str, eclipse: int) -> tuple:
     """
 
     band = band.upper()
-
     if band == "FUV":
         xclk, yclk = 1997.0, 1993.0
         xcen, ycen = 7200.0, 6670.0
@@ -59,8 +54,6 @@ def clk_cen_scl_slp(band: str, eclipse: int) -> tuple:
 
 
 # -----------------------------------------------------------------------------
-
-
 def post_csp_caldata():
     """
     Loads the calibration data for after the CSP event.
@@ -406,6 +399,8 @@ def flat_scale_parameters(band):
     """
 
     if band == "NUV":
+        # flat_correct and flat_t0 never get used.
+        # They are only retained in this code for historical purposes.
         flat_correct = -0.0154
         flat_t0 = 840418779.02
         flat_correct_0 = 1.9946352
@@ -418,11 +413,8 @@ def flat_scale_parameters(band):
         flat_correct_1 = -2.8843099e-10
         flat_correct_2 = 0.000
     else:
-        print("Band not specified.")
-        exit(1)
+        raise ValueError("Band must be NUV or FUV.")
 
-    # It turns out that flat_correct and flat_t0 never get used.
-    # They are only retained above for historical purposes.
     return flat_correct_0, flat_correct_1, flat_correct_2
 
 
@@ -431,8 +423,8 @@ def compute_flat_scale(t, band, verbose=0):
     Return the flat scale factor for a given time.
         These are empirically determined linear scales to the flat field
         as a function of time due to diminished detector response. They
-        were determined by Tom Barlow and are in the original GALEX execute_pipeline
-        but there is no published source of which I am aware.
+        were determined by Tom Barlow and are in the original GALEX
+        execute_pipeline but there is no published source of which I am aware.
 
     :param t: Time stamp(s) to retrieve the scale factor for.
 

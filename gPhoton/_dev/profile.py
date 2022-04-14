@@ -1,3 +1,5 @@
+"""profiling utilities"""
+
 # import objgraph
 from time import time
 

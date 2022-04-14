@@ -212,6 +212,11 @@ def zero_frame(imsz, lil=False):
 
 
 def sm_make_maps(block_directory, imsz, lil=False):
+    """
+    retrieve count, flag, and map event arrays from shared memory and
+    transform them into "maps" (image / movie frame) by taking their 2-D
+    histograms; optionally return them sparsified
+    """
     maps = [
         sm_make_map(block_directory, map_name, imsz)
         for map_name in ("cnt", "flag", "edge")
@@ -222,6 +227,10 @@ def sm_make_maps(block_directory, imsz, lil=False):
 
 
 def sm_make_map(block_directory, map_name, imsz):
+    """
+    retrieve a count, flag, or map event array from shared memory and
+    transform it into a "map" by taking its 2-D hstogram
+    """
     if block_directory[map_name] is None:
         dtype = np.uint8 if map_name in ("edge", "flag") else np.float64
         return np.zeros(imsz, dtype)
@@ -247,6 +256,11 @@ def generate_wcs_components(event_table):
 def load_image_tables(
     photonfile: Pathlike,
 ) -> tuple[pyarrow.Table, np.ndarray]:
+    """
+    read a photonlist file produced by `photonpipe` from a raw6 telemetry file;
+    return event and exposure tables appropriate for making images / movies
+    and performing photometry
+    """
     event_table = parquet.read_table(
         photonfile,
         columns=[
@@ -267,6 +281,10 @@ def load_image_tables(
 
 
 def populate_fits_header(band, wcs, tranges, exptimes):
+    """
+    create an astropy.io.fits.Header object containing our canonical
+    metadata values
+    """
     header = pyfits.Header()
     header["CDELT1"], header["CDELT2"] = wcs.wcs.cdelt
     header["CTYPE1"], header["CTYPE2"] = wcs.wcs.ctype
@@ -295,6 +313,11 @@ def write_fits_array(
     compress=True,
     clean_up=False,
 ):
+    """
+    convert an intermediate movie or image dictionary, perhaps previously
+    used for photometry, into a FITS object; write it to disk; compress it
+    using the best available gzip-compatible compression binary
+    """
     # TODO, maybe: rewrite this to have to not assemble the primary hdu in
     #  order to make the header
     header = populate_fits_header(

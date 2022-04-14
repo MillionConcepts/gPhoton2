@@ -3,7 +3,8 @@
    :synopsis: Utilities for working with python shared memory structures.
 """
 
-# TODO, maybe: consider moving this up to dustgoggles?
+# TODO, maybe: consider moving this up to dustgoggles, or integrating
+#  the `notetaking` code with this?
 
 from multiprocessing.shared_memory import SharedMemory
 

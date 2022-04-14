@@ -16,32 +16,6 @@ from rich.progress import Progress, TextColumn, Task
 from rich.spinner import Spinner
 from rich.text import Text
 
-# class PHOTONLIGHTER(RegexHighlighter):
-#     base_style = "GPHOTON."
-#     highlights = [
-#         r"(?P<missing>(skipping))",
-#         r"(?P<prep>(loaded|generated|found|converted))",
-#         r"(?P<output>(wrote|completed))",
-#         r"(?<=[Z _])(?P<id>[R|L]\d[RGB]?)",
-#         r"(?P<id>(zcam|ZCAM)\d\d\d\d\d)",
-#         r"(?P<id>(sol|SOL)\d{2,4})",
-#         r"(?P<selection>\(\d{1,3}\))",
-#         r"(?P<marslab>(-roi.fits)|(-marslab.*csv))",
-#     ]
-#
-#
-# PHOTONTHEME = Theme(
-#     {
-#         "GPHOTON.output": "green1",
-#         "GPHOTON.prep": "aquamarine3",
-#         "GPHOTON.id": "dark_turquoise",
-#         "GPHOTON.selection": "bold",
-#         "GPHOTON.missing": "purple4",
-#         "GPHOTON.marslab": "italic orchid1",
-#         "FORBIDDEN": "hot_pink on black",
-#         "FORBIDDEN.warning": "slate_blue1 on black",
-#     }
-# )
 
 GPHOTON_CONSOLE = rich.console.Console()
 GPHOTON_PROGRESS = Progress(console=GPHOTON_CONSOLE)
@@ -178,3 +152,31 @@ def print_inline(text, blanks=60):
     stdout.write(str(str(text)+'\r'))
     stdout.flush()
     return
+
+
+# class PHOTONLIGHTER(RegexHighlighter):
+#     base_style = "GPHOTON."
+#     highlights = [
+#         r"(?P<missing>(skipping))",
+#         r"(?P<prep>(loaded|generated|found|converted))",
+#         r"(?P<output>(wrote|completed))",
+#         r"(?<=[Z _])(?P<id>[R|L]\d[RGB]?)",
+#         r"(?P<id>(zcam|ZCAM)\d\d\d\d\d)",
+#         r"(?P<id>(sol|SOL)\d{2,4})",
+#         r"(?P<selection>\(\d{1,3}\))",
+#         r"(?P<marslab>(-roi.fits)|(-marslab.*csv))",
+#     ]
+#
+#
+# PHOTONTHEME = Theme(
+#     {
+#         "GPHOTON.output": "green1",
+#         "GPHOTON.prep": "aquamarine3",
+#         "GPHOTON.id": "dark_turquoise",
+#         "GPHOTON.selection": "bold",
+#         "GPHOTON.missing": "purple4",
+#         "GPHOTON.marslab": "italic orchid1",
+#         "FORBIDDEN": "hot_pink on black",
+#         "FORBIDDEN.warning": "slate_blue1 on black",
+#     }
+# )

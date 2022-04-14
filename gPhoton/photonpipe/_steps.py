@@ -30,11 +30,11 @@ from gPhoton.photonpipe._numbafied import (
     sum_corners,
 )
 
-# TODO, IMPORTANT: flag 7 is intended to be for gaps >= 2s in aspect sol
-#  or actually-bad flags. in post-CSP aspect solutions, it's possible that
-#  all data has some flag that we should ignore; examine aspect solution for
+# TODO, IMPORTANT: flag 7 is intended to be for gaps >= 2s in aspect_data sol
+#  or actually-bad flags. in post-CSP aspect_data solutions, it's possible that
+#  all data has some flag that we should ignore; examine aspect_data solution for
 #  propagated flag.
-#  flag 12 is intended to be for gaps < 2s in aspect sol. we will (eventually)
+#  flag 12 is intended to be for gaps < 2s in aspect_data sol. we will (eventually)
 #  use 12 in photometry but not 7.
 from gPhoton.pretty import print_inline
 from gPhoton.sharing import (
@@ -169,13 +169,13 @@ def calibrate_photons_inline(band, cal_data, chunk, chunkid):
 
 
 def apply_aspect_solution(aspect, chunk, chunkid):
-    # This gives the index of the aspect time that comes _before_
+    # This gives the index of the aspect_data time that comes _before_
     # each photon time. Without the '-1' it will give the index
-    # of the aspect time _after_ the photon time.
-    print_inline(chunkid + "Mapping photon times to aspect times...")
+    # of the aspect_data time _after_ the photon time.
+    print_inline(chunkid + "Mapping photon times to aspect_data times...")
     aspix = np.digitize(chunk["t"], aspect["time"]) - 1
     print_inline(chunkid + "Applying dither correction...")
-    # Use only photons that are bracketed by valid aspect solutions
+    # Use only photons that are bracketed by valid aspect_data solutions
     # and have been not themselves been flagged as invalid.
     flags = chunk["flags"]
     cut = (
@@ -186,7 +186,7 @@ def apply_aspect_solution(aspect, chunk, chunkid):
     flags[~cut] = 7
     ok_indices = np.nonzero(cut)[0]
     aspect_slice = aspix[ok_indices]
-    print_inline(chunkid + "Interpolating aspect solutions...")
+    print_inline(chunkid + "Interpolating aspect_data solutions...")
     deta, dxi = interpolate_aspect_solutions(
         aspect_slice,
         aspect["time"],
