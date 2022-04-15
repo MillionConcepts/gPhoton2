@@ -14,20 +14,19 @@ from pathlib import Path
 import shutil
 from time import time
 from types import MappingProxyType
-from typing import Optional, Sequence, Mapping
+from typing import Optional, Sequence, Mapping, Literal
 import warnings
 
 from gPhoton.reference import eclipse_to_paths, Stopwatch
 from gPhoton.types import GalexBand, Pathlike
 
 # oh no! divide by zero! i am very distracting!
-
 warnings.filterwarnings(action="ignore", category=RuntimeWarning)
 
 
 def get_photonlist(
-    eclipse,
-    band,
+    eclipse: int,
+    band: GalexBand,
     local_root: str = "test_data",
     remote_root: Optional[str] = None,
     download: bool = True,
@@ -37,9 +36,31 @@ def get_photonlist(
     raise_errors: bool = True
 ):
     """
-    :param recreate: if photonlist file is already present,
-    should we recreate (and possibly overwrite) it?
-    """
+    Args:
+        eclipse: GALEX eclipse number to process
+        band: GALEX band to process: 'FUV' or 'NUV'?
+        local_root: Root of directory tree (on the local system, or at least
+            somewhere with write permissions), to write and/or look for files
+        remote_root: Root of another directory tree (perhaps a mounted S3
+            bucket or something) to check for input files.
+            Unlike local_root, there is no assumption that write access is
+            available to these paths.
+        download: If raw6 (L0 telemetry) files cannot be found in the expected
+            paths from local_root or remote_root, shall we try to download
+            them from MAST?
+        recreate: If a photonlist already exists at the expected path from
+            local_root or remote_root, shall we recreate it (overwriting it if
+            it's in local_root)?
+        verbose: How chatty shall photonpipe be, 0-2? Higher is chattier. Full
+            documentation forthcoming.
+        threads: how many threads shall the multithreaded portions of
+          photonpipe use? Passing None turns multithreading off entirely.
+        raise_errors: if we encounter errors during pipeline execution,
+            shall we raise an exception (True) or return structured text
+            describing that error and its context (False)? Typically this
+            should be True for ad-hoc local execution (and especially for
+            debugging), and False for managed remote execution.
+        """
     local_files, photonpath, remote_files, temp_directory = _set_up_paths(
         eclipse, band, local_root, remote_root
     )
@@ -59,10 +80,10 @@ def get_photonlist(
             eclipse, band, download, local_files, remote_files, temp_directory
         )
         if not raw6path.exists():
-            print("couldn't search raw6 file.")
+            print("couldn't find raw6 file.")
             if raise_errors is True:
-                raise OSError("couldn't search raw6 file.")
-            return "return code: couldn't search raw6 file."
+                raise OSError("couldn't find raw6 file.")
+            return "return code: couldn't find raw6 file."
         from gPhoton.photonpipe import execute_photonpipe
 
         try:
@@ -101,47 +122,62 @@ def execute_pipeline(
     aperture_sizes: Sequence[float] = tuple([12.8]),
     lil: bool = True,
     coregister_lightcurves: bool = False,
+    stop_after: Optional[Literal["photonpipe", "moviemaker"]] = None
 ) -> str:
     """
-    :param eclipse: GALEX eclipse number to run
-    :param band: "NUV" or "FUV" -- near or far ultraviolet
-    :param depth: how many seconds of events to use when integrating each
-    movie frame. in a sense: inverse FPS.
-    :param threads: how many threads to use for parallel processing. "None"
-    turns off parallel processing entirely. "1" will perform parallelism in a
-    single thread (not recommended except for test purposes). Increasing
-    thread count increases execution speed but also increases memory pressure,
-    particularly for movie creation.
-    :param local_root: path to write pipeline results to
-    :param remote_root: additional path to check for preexisting raw6 and
-    photonlist files (intended primarily for multiple servers referencing a
-    shared set of remote resources)
-    :param download: if raw6 files aren't available, should we download them
-    from MAST, or quit?
-    :param recreate: if photonlist file is already present,
-    should we recreate (and possibly overwrite) it?
-    :param verbose: how many messages do you want to see? 0 turns almost all
-    output off; levels up to 4 are meaningful.
-    TODO: make verbosity more consistent across the codebase
-    :param maxsize: maximum working memory size in bytes. if estimated memory
-    cost of generating image or movie frames exceeds this threshold, the
-    pipeline will stop. Note that estimates are not 100% reliable!
-    :param source_catalog_file: CSV file specifying source positions to use
-    for photometry; preempts default automatic source detection
-    :param write: should we save the images and/or movies we make, or discard
-    them after using them for photometry?
-    :param aperture_sizes: what aperture size(s) should we compute photometry
-    for? multiple sizes may be useful for background estimation, etc.
-    :param lil: should we use matrix sparsification techniques on movies?
-    introduces some CPU overhead but can significantly reduce memory usage,
-    especially for large numbers of frames, and especially during the frame
-    integration and photometry steps.
-    :param coregister_lightcurves: should we pin the start time of the first
-    movie frame / lightcurve bin to the start time of the other band's first
-    movie frame / lightcurve bin (if it exists)?
-    :returns: "return code: successful" for fully successful
-    execution; "return code: {other_thing}" for various known failure states
-    (many of which produce a subset of valid output products)
+    Args:
+        eclipse: GALEX eclipse number to process
+        band: GALEX band to process: 'FUV' or 'NUV'?
+        depth: how many seconds of events to use when integrating each
+            movie frame. in a sense: inverse FPS. None means "make a
+            full-depth image only".
+        threads: how many threads to use for parallel processing. Passing None
+            turns off parallel processing entirely. Passing 1 will process in a
+            single parallel thread (not recommended except for test
+            purposes). Increasing thread count increases execution speed but
+            also increases memory pressure, particularly for movie creation.
+            Multithreading currently works best on Linux and is not
+            guaranteed to be at all performant on other operating systems.
+        local_root: Root of directory tree (on the local system, or at least
+            somewhere with write permissions), to write and/or look for files
+        remote_root: Root of another directory tree (perhaps a mounted S3
+            bucket or something) to check for preexisting raw6 and
+            photonlist files. Unlike local_root, there is no assumption that
+            write access is available to these paths.
+        download: if raw6 files aren't available, should we download them
+            from MAST, or quit?
+        recreate: if photonlist file is already present, should we recreate
+            (and possibly overwrite) it?
+        verbose: how many messages do you want to see? 0 turns almost all
+            output off; levels up to 4 are meaningful.
+        maxsize: maximum working memory size in bytes. None deactivates
+            estimated size checking. if estimated memory cost of generating
+            image or movie frames exceeds this threshold, the pipeline will
+            stop. Note that estimates are not 100% reliable!
+        source_catalog_file: by default, the pipeline performs photometry on
+            automatically-detected sources. passing the path to a CSV file as
+            source_catalog_file specifies positions, preempting automated
+            source detection.
+        write: save images and/or movies to disk, or discard them after using
+            them for photometry?
+        aperture_sizes: what aperture size(s) (in arcseconds) should we
+            use to compute photometry. passing multiple sizes may be useful
+            for background estimation or related processes.
+        lil: should we use matrix sparsification techniques whe movies?
+            introduces some CPU overhead but can significantly reduce memory
+            usage, especially for large numbers of frames, and especially
+            during the frame integration and photometry steps.
+        coregister_lightcurves: should we pin the start time of the first
+            movie frame / lightcurve bin to the start time of the other
+            band's first movie frame / lightcurve bin (if it exists)?
+        stop_after: should we bail out after a particular phase? options are
+            "photonpipe" (make photonlist only), "moviemaker" (make and write
+            images and movies but don't perform photometry on them)
+
+    Returns:
+        str: `"return code: successful"` for fully successful execution;
+            `"return code: {other_thing}"` for various known failure states
+            (many of which produce a subset of valid output products)
     """
 
     # SETUP AND FILE RETRIEVAL
@@ -167,10 +203,19 @@ def execute_pipeline(
         return get_photonlist_result  # this is an error return code
     else:
         photonpath = get_photonlist_result  # strictly explanatory renaming
+
+    if stop_after == "photonpipe":
+        print(
+            f"stop_after='photonpipe' passed, halting; "
+            f"{round(time() - stopwatch.start_time, 2)} seconds for execution"
+        )
+        return "return code: successful (planned stop after photonpipe)"
+
     local_files, _, remote_files, _ = _set_up_paths(
         eclipse, band, local_root, remote_root, depth
     )
     stopwatch.click()
+
     from gPhoton.parquet_utils import get_parquet_stats
 
     file_stats = get_parquet_stats(str(photonpath), ["flags", "ra"])
@@ -180,8 +225,7 @@ def execute_pipeline(
 
     # MOVIE-RENDERING SECTION
     from gPhoton.moviemaker import (
-        create_images_and_movies,
-        write_moviemaker_results,
+        create_images_and_movies, write_moviemaker_results,
     )
 
     # check to see if we're pinning our frame / lightcurve time series to
@@ -193,14 +237,26 @@ def execute_pipeline(
     results = create_images_and_movies(
         str(photonpath), depth, band, lil, threads, maxsize, fixed_start_time
     )
-    stopwatch.click()
-    # TODO: if depth is 0, perform photometry on full-depth images
-    if results["movie_dict"] == {}:
-        print("No movies available, halting before photometry.")
+
+    if (stop_after == "moviemaker") or (results["movie_dict"] == {}):
+
         write_moviemaker_results(
             results, local_files, depth, band, write, maxsize, stopwatch
         )
-        return "return code: " + results["status"]
+        if stop_after == "moviemaker":
+            print(
+                f"stop_after='moviemaker' passed, halting; "
+                f"{round(time() - stopwatch.start_time, 2)} seconds for "
+                f"execution"
+            )
+            return "return code: successful (planned stop after moviemaker)"
+        # TODO: if depth is 0, still perform photometry on full-depth images
+        elif results["movie_dict"] == {}:
+            print("No movies available, halting before photometry.")
+            return "return code: " + results["status"]
+
+    stopwatch.click()
+
 
     # PHOTOMETRY SECTION
     from gPhoton.lightcurve import make_lightcurves
