@@ -58,7 +58,7 @@ def load_aspect_solution(
         print_inline("Loading aspect_data data from disk...")
     aspect, boresight = [
         parquet_to_ndarrays(tab, tab.column_names)
-        for tab in aspect_tables(eclipse, ("aspect_data", "boresight"))
+        for tab in aspect_tables(eclipse, ("aspect", "boresight"))
     ]
     if verbose > 1:
         trange = [aspect["time"].min(), aspect["time"].max()]

@@ -170,6 +170,8 @@ def write_moviemaker_results(
     write,
     maxsize,
     stopwatch,
+    compression,
+    fitsio_write_kwargs
 ):
     if write["image"] and (results["image_dict"] != {}):
         write_fits_array(
@@ -179,6 +181,8 @@ def write_moviemaker_results(
             results["image_dict"],
             clean_up=True,
             wcs=results["wcs"],
+            compression=compression,
+            fitsio_write_kwargs=fitsio_write_kwargs
         )
     del results["image_dict"]
     stopwatch.click()
@@ -204,6 +208,8 @@ def write_moviemaker_results(
             results["movie_dict"],
             clean_up=True,
             wcs=results["wcs"],
+            compression=compression,
+            fitsio_write_kwargs=fitsio_write_kwargs
         )
         stopwatch.click()
     return "successful"

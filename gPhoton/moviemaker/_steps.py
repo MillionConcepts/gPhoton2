@@ -4,11 +4,14 @@
    processes. generally should not be called on their own.
 """
 from pathlib import Path
-from typing import Mapping, Sequence
+from typing import Mapping, Sequence, Literal
 import warnings
 
+import astropy.io.fits
+import fitsio
 import pyarrow
 from astropy.io import fits as pyfits
+from astropy.io.fits.hdu.hdulist import fitsopen
 from dustgoggles.structures import NestingDict
 import fast_histogram as fh
 import numpy as np
@@ -310,14 +313,17 @@ def write_fits_array(
     moviefile,
     movie_dict,
     wcs,
-    compress=True,
+    compression: Literal["gzip", "rice", "none"] = "gzip",
     clean_up=False,
+    fitsio_write_kwargs = None
 ):
     """
     convert an intermediate movie or image dictionary, perhaps previously
     used for photometry, into a FITS object; write it to disk; compress it
     using the best available gzip-compatible compression binary
     """
+    if fitsio_write_kwargs is None:
+        fitsio_write_kwargs = {}
     # TODO, maybe: rewrite this to have to not assemble the primary hdu in
     #  order to make the header
     header = populate_fits_header(
@@ -336,12 +342,18 @@ def write_fits_array(
     # TODO: write names / descriptions into the headers
     for key in ["cnt", "flag", "edge"]:
         print(f"writing {key} map")
-        add_movie_to_fits_file(movie_path, movie_dict[key], header)
+        add_movie_to_fits_file(
+            movie_path,
+            movie_dict[key],
+            header,
+            compression,
+            **fitsio_write_kwargs
+        )
         if clean_up:
             del movie_dict[key]
     if clean_up:
         del movie_dict
-    if compress is not True:
+    if compression != "gzip":
         return
     gzip_path = Path(f"{movie_path}.gz")
     if gzip_path.exists():
@@ -361,15 +373,50 @@ def write_fits_array(
             continue
 
 
-def add_movie_to_fits_file(writer, movie, header):
+def add_movie_to_fits_file(
+    path_or_stream,
+    movie,
+    header,
+    compression_type: Literal["none", "gzip", "rice"] = "none",
+    **fitsio_write_kwargs
+):
     if isinstance(movie[0], scipy.sparse.spmatrix):
-        pyfits.append(
-            writer,
-            np.stack([frame.toarray() for frame in movie]),
-            header=header,
+        data = np.stack([frame.toarray() for frame in movie])
+    else:
+        data = np.stack(movie)
+    fits_stream = fitsio.FITS(path_or_stream, "rw")
+
+    # this pipeline supports monolithic gzipping after file construction,
+    # not gzipping of individual HDUs.
+    if compression_type in ("none", "gzip"):
+        fits_stream.write(data, header=dict(header), **fitsio_write_kwargs)
+    elif compression_type == "rice":
+        if 'tile_size' in fitsio_write_kwargs:
+            tile_size = fitsio_write_kwargs.pop('tile_size')
+        else:
+            tile_size = (1, 100, 100) if len(data.shape) == 3 else (100, 100)
+        if len(tile_size) > len(data.shape):
+            tile_size = tile_size[:len(data.shape)]
+        if len(tile_size) < len(data.shape):
+            tile_size = list(tile_size) + [
+                1 for _ in range(len(data.shape) - len(tile_size))
+            ]
+        if 'qlevel' in fitsio_write_kwargs:
+            qlevel = fitsio_write_kwargs.pop('qlevel')
+        else:
+            qlevel = 16
+        fits_stream.write(
+            data,
+            header=dict(header),
+            compress='RICE',
+            tile_dims=tile_size,
+            qlevel=qlevel,
+            **fitsio_write_kwargs
         )
     else:
-        pyfits.append(writer, np.stack(movie), header=header)
+        fits_stream.close()
+        raise ValueError(f"unsupported compression type {compression_type}")
+    fits_stream.close()
 
 
 def predict_movie_memory(imsz, n_frames, nbytes=8):

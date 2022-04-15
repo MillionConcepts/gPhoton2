@@ -122,7 +122,9 @@ def execute_pipeline(
     aperture_sizes: Sequence[float] = tuple([12.8]),
     lil: bool = True,
     coregister_lightcurves: bool = False,
-    stop_after: Optional[Literal["photonpipe", "moviemaker"]] = None
+    stop_after: Optional[Literal["photonpipe", "moviemaker"]] = None,
+    compression: Literal["none", "gzip", "rice"] = "gzip",
+    hdu_constructor_kwargs: Optional[Mapping] = None
 ) -> str:
     """
     Args:
@@ -173,6 +175,12 @@ def execute_pipeline(
         stop_after: should we bail out after a particular phase? options are
             "photonpipe" (make photonlist only), "moviemaker" (make and write
             images and movies but don't perform photometry on them)
+        compression: what sort of compression should we apply to movies and
+            images? "gzip" is monolithic gzip; "rice" is RICE_1 (for the
+            cntmap, lossy) tile compression; "none" is no compression at all.
+        hdu_constructor_kwargs: optional mapping of kwargs to pass to the
+            astropy.io.fits HDU constructor (for instance, tile compression
+            parameters)
 
     Returns:
         str: `"return code: successful"` for fully successful execution;
@@ -237,11 +245,19 @@ def execute_pipeline(
     results = create_images_and_movies(
         str(photonpath), depth, band, lil, threads, maxsize, fixed_start_time
     )
+    stopwatch.click()
 
     if (stop_after == "moviemaker") or (results["movie_dict"] == {}):
-
         write_moviemaker_results(
-            results, local_files, depth, band, write, maxsize, stopwatch
+            results,
+            local_files,
+            depth,
+            band,
+            write,
+            maxsize,
+            stopwatch,
+            compression,
+            hdu_constructor_kwargs
         )
         if stop_after == "moviemaker":
             print(
@@ -254,9 +270,6 @@ def execute_pipeline(
         elif results["movie_dict"] == {}:
             print("No movies available, halting before photometry.")
             return "return code: " + results["status"]
-
-    stopwatch.click()
-
 
     # PHOTOMETRY SECTION
     from gPhoton.lightcurve import make_lightcurves
@@ -276,7 +289,15 @@ def execute_pipeline(
 
     # CLEANUP & CLOSEOUT SECTION
     write_result = write_moviemaker_results(
-        results, local_files, depth, band, write, maxsize, stopwatch
+        results,
+        local_files,
+        depth,
+        band,
+        write,
+        maxsize,
+        stopwatch,
+        compression,
+        hdu_constructor_kwargs
     )
     print(f"{round(time() - stopwatch.start_time, 2)} seconds for execution")
     failures = [
