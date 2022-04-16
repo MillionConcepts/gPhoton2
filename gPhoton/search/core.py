@@ -89,7 +89,7 @@ def filter_galex_eclipses(eclipse_type=None, filters=None, as_pandas = True):
         name.lower(): obj
         for (name, obj) in
         getmembers(sys.modules[__name__], lambda obj: isinstance(obj, tuple))
-        if name.lower.endswith("FILTER")
+        if name.lower().endswith("filter")
      }
     if (filters is not None) and (eclipse_type is not None):
         warnings.warn(
@@ -107,7 +107,7 @@ def filter_galex_eclipses(eclipse_type=None, filters=None, as_pandas = True):
         TABLE_PATHS["metadata"], filters=eclipse_filters
     )
     if as_pandas is True:
-        return result.as_pandas()
+        return result.to_pandas()
     return result
 
 # this is the set of actually-available eclipses. it should be adjusted to
