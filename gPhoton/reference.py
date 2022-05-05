@@ -6,7 +6,7 @@ library modules should be used, at least as module-level imports.
 """
 
 from time import time
-from typing import Optional
+from typing import Optional, Literal
 
 from gPhoton.types import Pathlike
 
@@ -14,7 +14,8 @@ from gPhoton.types import Pathlike
 def eclipse_to_paths(
     eclipse: int,
     data_directory: Pathlike = "data",
-    depth: Optional[int] = None
+    depth: Optional[int] = None,
+    compression: Literal["none", "gzip", "rice"] = "gzip"
 ) -> dict[str, dict[str, str]]:
     """
     generate canonical paths for files associated with a given eclipse,
@@ -26,16 +27,19 @@ def eclipse_to_paths(
     bands = "NUV", "FUV"
     band_initials = "n", "f"
     file_dict = {}
+    comp_suffix = {
+        "gzip": ".fits.gz", "none": ".fits", "rice": "-rice.fits"
+    }[compression]
     for band, initial in zip(bands, band_initials):
         prefix = f"{eclipse_base}-{initial}d"
         band_dict = {
             "raw6": f"{prefix}-raw6.fits.gz",
             "photonfile": f"{prefix}.parquet",
-            "image": f"{prefix}-full.fits.gz",
+            "image": f"{prefix}-full{comp_suffix}",
         }
         if depth is not None:
             band_dict |= {
-                "movie": f"{prefix}-{depth}s.fits.gz",
+                "movie": f"{prefix}-{depth}s{comp_suffix}",
                 # stem -- multiple aperture sizes possible
                 "photomfile": f"{prefix}-{depth}s-photom-",
                 "expfile": f"{prefix}-{depth}s-exptime.csv",

@@ -220,7 +220,7 @@ def execute_pipeline(
         return "return code: successful (planned stop after photonpipe)"
 
     local_files, _, remote_files, _ = _set_up_paths(
-        eclipse, band, local_root, remote_root, depth
+        eclipse, band, local_root, remote_root, depth, compression
     )
     stopwatch.click()
 
@@ -353,6 +353,7 @@ def _set_up_paths(
     data_root: str,
     remote_root: Optional[str],
     depth: Optional[int] = None,
+    compression: Literal["none", "rice", "gzip"] = "gzip"
 ) -> tuple[dict, Path, Optional[dict], Path]:
     """
     initial path setup & file retrieval step for execute_pipeline.
@@ -364,12 +365,16 @@ def _set_up_paths(
     :param remote_root: additional path to check for preexisting raw6 and
     photonlist files (intended primarily for multiple servers referencing a
     shared set of remote resources)
+    :param compression: planned type of compression for movie/image files
 
     :return: tuple of: primary filename dict, path to photon list we'll be
     using, remote filename dict, name of temp/scratch directory
     """
-    local_files = eclipse_to_paths(eclipse, data_root, depth)[band]
+    local_files = eclipse_to_paths(
+        eclipse, data_root, depth, compression
+    )[band]
     if remote_root is not None:
+        # we're only ever looking for raw6 & photonlist, don't need depth etc.
         remote_files = eclipse_to_paths(eclipse, remote_root)[band]
     else:
         remote_files = None

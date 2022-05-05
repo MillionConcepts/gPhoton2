@@ -374,7 +374,7 @@ def write_fits_array(
 
 
 def add_movie_to_fits_file(
-    path_or_stream,
+    fits_path,
     movie,
     header,
     compression_type: Literal["none", "gzip", "rice"] = "none",
@@ -384,12 +384,13 @@ def add_movie_to_fits_file(
         data = np.stack([frame.toarray() for frame in movie])
     else:
         data = np.stack(movie)
-    fits_stream = fitsio.FITS(path_or_stream, "rw")
+    fits_stream = fitsio.FITS(fits_path, "rw")
 
     # this pipeline supports monolithic gzipping after file construction,
     # not gzipping of individual HDUs.
     if compression_type in ("none", "gzip"):
         fits_stream.write(data, header=dict(header), **fitsio_write_kwargs)
+        # hdu = astropy.io.fits.hdu.image.ImageHDU(data, header)
     elif compression_type == "rice":
         if 'tile_size' in fitsio_write_kwargs:
             tile_size = fitsio_write_kwargs.pop('tile_size')
@@ -398,24 +399,36 @@ def add_movie_to_fits_file(
         if len(tile_size) > len(data.shape):
             tile_size = tile_size[:len(data.shape)]
         if len(tile_size) < len(data.shape):
-            tile_size = list(tile_size) + [
+            tile_size = [
                 1 for _ in range(len(data.shape) - len(tile_size))
-            ]
+            ] + list(tile_size)
         if 'qlevel' in fitsio_write_kwargs:
             qlevel = fitsio_write_kwargs.pop('qlevel')
         else:
-            qlevel = 16
+            qlevel = 10
+
+        # hdu = astropy.io.fits.hdu.compressed.CompImageHDU(
+        #     data,
+        #     header,
+        #     compression_type="RICE_1",
+        #     quantize_level=qlevel,
+        #     quantize_method=2,
+        #     tile_size=tile_size
+        # )
         fits_stream.write(
             data,
             header=dict(header),
             compress='RICE',
             tile_dims=tile_size,
             qlevel=qlevel,
-            **fitsio_write_kwargs
+            qmethod=2
+            # **fitsio_write_kwargs
         )
     else:
         fits_stream.close()
         raise ValueError(f"unsupported compression type {compression_type}")
+    # with fitsopen(fits_path, "append", output_verify="ignore") as fits_stream:
+        # fits_stream.append(hdu)
     fits_stream.close()
 
 
