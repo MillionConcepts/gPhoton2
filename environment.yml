@@ -4,42 +4,34 @@ channels:
   - conda-forge
 dependencies:
   - python=3.9
-  - pyarrow
-  - fitsio
-  - sqlalchemy
   - astropy
-  - numpy
-  - scikit-learn
-  - pandas
-  - requests
-  - scipy
-  - ffmpeg
-  - photutils
-  - numba
   - fast-histogram
-  - jupyter
+  - fitsio
+  - more-itertools
+  - numba
+  - numpy
+  - pandas
+  - photutils
+  - pip
+  - pyarrow
   - python-isal
-  # for regression testing
-  - pytables
-  # profiling
-  - pympler
-  - line_profiler
-  - memory_profiler
-  # deployment (better ARM support than clize)
-  - fire
+  - requests
+  - rich
+  - scikit-learn
+  - scipy
+  - sh
   # non-mandatory, some performance improvements to numba --
   # cannot be used on non-x64 platforms
   - icc_rt
-  # testing
-  - boto3
-  - python-snappy
-  - more-itertools
-  - sh
-  - pip
-  - rich
-# optional, only required for object-search functions
+  # optional, only required for object-search functions
   - astroquery
   - pip:
       - git+https://github.com/MillionConcepts/dustgoggles.git
+  # for regression testing
+  #  - pytables
+  # profiling
+  #  - pympler
+  #  - line_profiler
+  #  - memory_profiler
 
 prefix: /home/michael/miniconda3/envs/glcat
