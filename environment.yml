@@ -5,6 +5,7 @@ channels:
 dependencies:
   - python=3.9
   - astropy
+  - dustgoggles
   - fast-histogram
   - fitsio
   - more-itertools
@@ -25,8 +26,6 @@ dependencies:
   - icc_rt
   # optional, only required for object-search functions
   - astroquery
-  - pip:
-      - git+https://github.com/MillionConcepts/dustgoggles.git
   # for regression testing
   #  - pytables
   # profiling
