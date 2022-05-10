@@ -373,6 +373,9 @@ def _set_up_paths(
     local_files = eclipse_to_paths(
         eclipse, data_root, depth, compression
     )[band]
+    eclipse_dir = Path(list(local_files.values())[0]).parent
+    if not eclipse_dir.exists():
+        eclipse_dir.mkdir(parents=True)
     if remote_root is not None:
         # we're only ever looking for raw6 & photonlist, don't need depth etc.
         remote_files = eclipse_to_paths(eclipse, remote_root)[band]
