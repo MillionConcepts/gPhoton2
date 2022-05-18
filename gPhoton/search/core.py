@@ -65,7 +65,7 @@ def eclipses_near_object(
     ra_d, dec_d = result['RA_d'][0], result['DEC_d'][0]
     if verbose:
         print(f"{object_name} position: RA {ra_d}, DEC {dec_d}")
-    matches = galex_sky_box(ra_d, dec_d, 2)
+    matches = galex_sky_box(ra_d, dec_d, arcseconds)
     if len(matches) == 0:
         raise ValueError(
             f"No eclipses found within {arcseconds} asec of {object_name}."
