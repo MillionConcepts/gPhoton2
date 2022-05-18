@@ -29,10 +29,10 @@ def galex_sky_box(ra: float, dec: float, arcseconds: float):
     return eclipse numbers of all GALEX visits whose nominal viewports overlap
     a box with side length `arcseconds` centered on (ra, dec)
     """
-    ra0, ra1, dec0, dec1 = corners_of_a_square(ra, dec, arcseconds)
+    ra0, ra1, dec0, dec1 = corners_of_a_square(ra, dec, arcseconds / 3600)
     return parquet.read_table(
         TABLE_PATHS["metadata"],
-        filters = [
+        filters=[
             ("ra_min", ">=", ra0),
             ("ra_max", "<=", ra1),
             ("dec_min", ">=", dec0),
