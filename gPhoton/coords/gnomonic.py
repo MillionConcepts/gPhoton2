@@ -16,7 +16,9 @@ R2D = 180./3.141592658979
 
 # ------------------------------------------------------------------------------
 @njit(cache=True)
-def gnomrev_simple(xi, eta, ra0, dec0, crota, cdelt, cenpix):
+def gnomrev_simple(
+    xi, eta, ra0, dec0, crota, cdelt, cenpix0, cenpix1
+):
     """
     A reverse gnomonic projection.
 
@@ -44,16 +46,20 @@ def gnomrev_simple(xi, eta, ra0, dec0, crota, cdelt, cenpix):
 
     :type cdelt: float
 
-    :param cenpix: The coordinates of the center pixel.
+    :param cenpix0: The first coordinate of the center pixel.
 
-    :type cenpix: float
+    :type cenpix0: float
+
+    :param cenpix1: The second coordinate of the center pixel.
+
+    :type cenpix1: float
 
     :returns: tuple -- A two-element tuple containing the right ascension and
         declination, in degrees.
     """
 
-    x = (xi - cenpix)*cdelt/R2D
-    y = (eta - cenpix)*cdelt/R2D
+    x = (xi - cenpix0)*cdelt/R2D
+    y = (eta - cenpix1)*cdelt/R2D
     crotar = crota/R2D
     coscrotar = np.cos(crotar)
     sincrotar = np.sin(crotar)
