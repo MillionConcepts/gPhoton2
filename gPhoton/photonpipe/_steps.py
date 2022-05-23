@@ -205,6 +205,7 @@ def apply_aspect_solution(aspect, chunk, chunkid):
         -aspect["roll"][aspect_slice],
         1 / 36000.0,
         0.0,
+        0.0
     )
     null_ix, flags = find_null_indices(
         aspect["flags"], aspect_slice, aspect["time"], flags, ok_indices
