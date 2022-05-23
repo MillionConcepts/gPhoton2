@@ -6,19 +6,19 @@ source_catalog_file = (
 
 if __name__ == "__main__":
     execute_pipeline(
-        23456,
+        16578,
         "NUV",
-        depth=30,
+        depth=None,
         threads=4,
         local_root="test_data",
         recreate=False,
         maxsize=22*1024**3,
         source_catalog_file=None,
         aperture_sizes=[12.8, 25.6, 51.2],
-        write={"movie": True, "image": True},
+        write={"movie": False, "image": True},
         coregister_lightcurves=True,
         stop_after="moviemaker",
-        compression="rice",
+        compression="gzip",
         lil=True
         # hdu_constructor_kwargs={'quantize_level': 16}
     )

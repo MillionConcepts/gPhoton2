@@ -2,7 +2,8 @@
 .. module:: wcs
    :synopsis: Functions for generating World Coordinate System (WCS) objects.
 """
-
+from _operator import add, sub
+from itertools import product
 
 from typing import Sequence
 
@@ -68,3 +69,56 @@ def make_bounding_wcs(
         int(np.ceil(ra_offset / pixsz)),
     )
     return make_wcs((ra0, dec0), imsz=imsz, pixsz=pixsz, proj=proj)
+
+
+def translate_pc_keyword(keyword: str):
+    """
+    convert old-style fits wcs transformation keywords. this is not strictly
+    necessary for any GALEX products, but is useful for some data fusion
+    applications.
+    """
+    # i suppose this will fail for headers with hundreds
+    # of dimensions -- they may not exist, and deserve special-purpose
+    # code if they do
+    if not keyword.startswith("PC0"):
+        return keyword
+    return keyword.replace("PC00", "PC").replace("00", "_")
+
+
+def extract_wcs_keywords(header):
+    """
+    header formatting and WCS keyword handling can make astropy.wcs upset,
+    it handles validation and fixes gracefully, but not quickly. faster
+    to trim irrelevant keywords and fix old-style ones before feeding them to
+    astropy.wcs.
+    """
+    wcs_words = ('CTYPE', 'CRVAL', 'CRPIX', 'CDELT', 'NAXIS', 'PC')
+    return {
+        translate_pc_keyword(k): header[k] for k in header.keys()
+        if any([k.startswith(w) for w in wcs_words])
+    }
+
+
+def corners_of_a_square(ra, dec, side_length):
+    """
+    corners of a square centered at ra, dec with side length side_length
+    in the order: upper right, lower right, upper left, lower left
+    """
+    return [
+        (op1(ra, side_length / 2), op2(dec, side_length / 2))
+        for op1, op2 in product((add, sub), (add, sub))
+    ]
+
+
+def sky_box_to_image_box(corners, system):
+    """
+    get image coordinates that correspond to a sky-coordinate square
+    with specified corners (in whatever units wcs axes 1 and 2
+    are in, most likely degrees)
+    """
+    cuts = system.world_to_pixel_values(
+        np.array(corners)[:, 0], np.array(corners)[:, 1]
+    )
+    return tuple(
+        map(int, (cuts[0].min(), cuts[0].max(), cuts[1].min(), cuts[1].max()))
+    )

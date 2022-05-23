@@ -19,17 +19,17 @@ MISLIKE_FILTER = (
 COMPLEX_FILTER = (("legs", ">", 0),)
 
 
-def corners_of_a_square(x: float, y: float, size: float):
-    """corners of a square centered at (x, y) with side length `size`"""
+def boundaries_of_a_square(x: float, y: float, size: float):
+    """boundaries of a square centered at (x, y) with side length `size`"""
     return x - size / 2, x + size / 2, y - size / 2, y + size / 2
 
 
 def galex_sky_box(ra: float, dec: float, arcseconds: float):
     """
-    return eclipse numbers of all GALEX visits whose nominal viewports overlap
-    a box with side length `arcseconds` centered on (ra, dec)
+    return eclipse numbers of all GALEX visits whose nominal boresight centers
+    fall within a box with side length `arcseconds` centered on (ra, dec)
     """
-    ra0, ra1, dec0, dec1 = corners_of_a_square(ra, dec, arcseconds / 3600)
+    ra0, ra1, dec0, dec1 = boundaries_of_a_square(ra, dec, arcseconds / 3600)
     return parquet.read_table(
         TABLE_PATHS["metadata"],
         filters=[
