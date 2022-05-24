@@ -10,6 +10,7 @@ from cytoolz import first
 from gPhoton.coords.wcs import make_bounding_wcs, extract_wcs_keywords, \
     corners_of_a_square, sky_box_to_image_box
 from gPhoton.io.fits_utils import pyfits_open_igzip, read_wcs_from_fits
+from gPhoton.pretty import mb
 from gPhoton.reference import eclipse_to_paths, Stopwatch, Netstat
 
 
@@ -198,10 +199,10 @@ def coadd_galex_rice_slices(
             for ix in (1, 2, 3)
         ]
         cnt = zero_flag_and_edge(cnt, flag, edge)
-        stat.update()
+        watch.click(), stat.update()
         print(
-            f"{round(first(stat.interval.values()) / 1024 ** 2)} "
-            f"MB transferred"
+            f"{watch.peek()} s; "
+            f"{mb(round(first(stat.interval.values())))} MB"
         )
         watch.click()
         if len(image_paths) > 0:

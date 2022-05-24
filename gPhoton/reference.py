@@ -5,7 +5,7 @@ this module is supposed to be essentially free to import: only standard
 library modules should be used, at least as module-level imports.
 """
 import subprocess
-from time import time
+import time
 from typing import Optional, Literal
 
 from gPhoton.types import Pathlike
@@ -67,12 +67,14 @@ class Stopwatch(FakeStopwatch):
         self.silent = silent
 
     def peek(self):
-        return round(time() - self.last_time, self.digits)
+        if self.last_time is None:
+            return 0
+        return round(time.time() - self.last_time, self.digits)
 
     def start(self):
         if self.silent is False:
             print("starting timer")
-        now = time()
+        now = time.time()
         self.start_time = now
         self.last_time = now
 
@@ -81,7 +83,7 @@ class Stopwatch(FakeStopwatch):
             return self.start()
         if self.silent is False:
             print(f"{self.peek()} elapsed seconds, restarting timer")
-        self.last_time = time()
+        self.last_time = time.time()
 
 
 PROC_NET_DEV_FIELDS = (

@@ -109,18 +109,3 @@ def filter_galex_eclipses(eclipse_type=None, filters=None, as_pandas = True):
     if as_pandas is True:
         return result.to_pandas()
     return result
-
-# this is the set of actually-available eclipses. it should be adjusted to
-# contain actually-available eclipses in your bucket of choice, or whatever
-# restricted subset you would like.
-# with open("extant_eclipses.txt") as file:
-#     extant_eclipses = set(map(int, file.readlines()))
-
-# eclipses_of_interest = extant_eclipses.intersection(sliced_eclipses)
-
-
-# sliced_eclipses = set(eclipse_slice["eclipse"].to_pylist())
-# actual_count = min(count, len(eclipses_of_interest))
-# if actual_count < count:
-#     warnings.warn("only {len(eclipses_of_interest)} available")
-# return random.sample(tuple(eclipses_of_interest), k=actual_count)
