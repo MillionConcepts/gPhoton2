@@ -158,7 +158,7 @@ def coadd_galex_rice_slices(
     TODO: not fully integrated yet.
     """
     if watch is None:
-        watch = Stopwatch()
+        watch = Stopwatch(silent=True)
     if stat is None:
         stat = Netstat()
     print(f"... planning cuts on {len(image_paths)} galex image(s) ...")
@@ -184,11 +184,12 @@ def coadd_galex_rice_slices(
         )
     else:
         shared_wcs = None
-    watch.click(), stat.update()
+    stat.update()
     print(
         f"{watch.peek()} s; "
         f"{mb(round(first(stat.interval.values())))} MB"
     )
+    watch.click()
     binned_images = []
     for header, hdul, coords, system in zip(
         headers, hduls, cutout_coords, systems
@@ -199,7 +200,7 @@ def coadd_galex_rice_slices(
             for ix in (1, 2, 3)
         ]
         cnt = zero_flag_and_edge(cnt, flag, edge)
-        watch.click(), stat.update()
+        stat.update()
         print(
             f"{watch.peek()} s; "
             f"{mb(round(first(stat.interval.values())))} MB"
