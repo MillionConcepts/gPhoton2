@@ -184,10 +184,10 @@ def coadd_galex_rice_slices(
         )
     else:
         shared_wcs = None
-    watch.click()
-    stat.update()
+    watch.click(), stat.update()
     print(
-        f"{round(first(stat.interval.values()) / 1024 ** 2)} MB transferred"
+        f"{watch.peek()} s; "
+        f"{mb(round(first(stat.interval.values())))} MB"
     )
     binned_images = []
     for header, hdul, coords, system in zip(
