@@ -149,6 +149,15 @@ def project_slice_to_shared_wcs(
     }
 
 
+def print_stats(watch, stat):
+    stat.update()
+    print(
+        f"{watch.peek()} s; "
+        f"{mb(round(first(stat.interval.values())))} MB"
+    )
+    watch.click()
+
+
 def coadd_galex_rice_slices(
     image_paths, ra, dec, side_length, stat=None, watch=None
 ):
@@ -184,12 +193,7 @@ def coadd_galex_rice_slices(
         )
     else:
         shared_wcs = None
-    stat.update()
-    print(
-        f"{watch.peek()} s; "
-        f"{mb(round(first(stat.interval.values())))} MB"
-    )
-    watch.click()
+    print_stats(watch, stat)
     binned_images = []
     for header, hdul, coords, system in zip(
         headers, hduls, cutout_coords, systems
@@ -200,12 +204,7 @@ def coadd_galex_rice_slices(
             for ix in (1, 2, 3)
         ]
         cnt = zero_flag_and_edge(cnt, flag, edge)
-        stat.update()
-        print(
-            f"{watch.peek()} s; "
-            f"{mb(round(first(stat.interval.values())))} MB"
-        )
-        watch.click()
+        print_stats(watch, stat)
         if len(image_paths) > 0:
             projection = project_slice_to_shared_wcs(
                 cnt, system, shared_wcs, coords[0], coords[2]
