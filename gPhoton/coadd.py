@@ -1,5 +1,6 @@
 from itertools import product
 from pathlib import Path
+from typing import Mapping, Sequence
 
 import astropy.wcs
 import fast_histogram as fh
@@ -158,65 +159,80 @@ def print_stats(watch, stat):
     watch.click()
 
 
-def coadd_galex_rice_slices(
-    image_paths, ra, dec, side_length, stat=None, watch=None
+def get_galex_rice_slices(
+    eclipse, targets, side_length, data_root="test_data", watch=None, stat=None
 ):
     """
-    top-level handler function for coadding slices from rice-compressed GALEX
-    images.
     TODO: not fully integrated yet.
     """
+    slices = {}
     if watch is None:
         watch = Stopwatch(silent=True)
     if stat is None:
         stat = Netstat()
-    print(f"... planning cuts on {len(image_paths)} galex image(s) ...")
-    hduls = [fitsio.FITS(file) for file in image_paths]
-    headers = [hdul[1].read_header() for hdul in hduls]
-    systems = [
-        astropy.wcs.WCS(extract_wcs_keywords(header))
-        for header in headers
-    ]
-    corners = corners_of_a_square(ra, dec, side_length)
-    cutout_coords = [
-        sky_box_to_image_box(corners, system)
-        for system in systems
-    ]
-    if len(image_paths) > 0:
-        shared_wcs = make_bounding_wcs(
-            np.array(
-                [
-                    [corners[2][0], corners[1][1]],
-                    [corners[0][0], corners[0][1]]
-                ]
-            )
-        )
-    else:
-        shared_wcs = None
+    # TODO: note that these test files happen not to have 'rice' in the name
+    path = eclipse_to_paths(eclipse, data_root, None, "none")["NUV"]["image"]
+    print(f"... initializing {Path(path).name} ... ", end="")
+    watch.click(), stat.update()
+    hdul = fitsio.FITS(path)
+    header = hdul[1].read_header()
+    system = astropy.wcs.WCS(extract_wcs_keywords(header))
     print_stats(watch, stat)
-    binned_images = []
-    for header, hdul, coords, system in zip(
-        headers, hduls, cutout_coords, systems
-    ):
-        print(f"slicing data from {Path(hdul._filename).name}")
+    for target in targets:
+        print(
+            f"... slicing objID={target['obj_id']}; "
+            f"ra={round(target['ra'], 3)}; "
+            f"dec={round(target['dec'], 3)} ... ",
+            end=""
+        )
+        corners = corners_of_a_square(target['ra'], target['dec'], side_length)
+        cutout = sky_box_to_image_box(corners, system)
         cnt, flag, edge = [
-            hdul[ix][coords[2]:coords[3] + 1, coords[0]:coords[1] + 1]
+            hdul[ix][cutout[2]:cutout[3] + 1, cutout[0]:cutout[1] + 1]
             for ix in (1, 2, 3)
         ]
-        cnt = zero_flag_and_edge(cnt, flag, edge)
+        slices[target['obj_id']] = {
+            'array': zero_flag_and_edge(cnt, flag, edge) / header['EXPTIME'],
+            'coords': cutout,
+            'eclipse': eclipse,
+            'corners': corners,
+        }
         print_stats(watch, stat)
-        if len(image_paths) > 0:
-            projection = project_slice_to_shared_wcs(
-                cnt, system, shared_wcs, coords[0], coords[2]
+    return slices, system
+
+
+def coadd_image_slices(
+    image_slices: Sequence[Mapping], systems: Mapping[int, astropy.wcs.WCS]
+):
+    """
+    operates on records output by get_galex_rice_slices() or routines w/
+    similar signatures.
+
+    TODO: not fully integrated yet.
+    """
+    if len(image_slices) == 1:
+        return image_slices[0]['array']
+    corners = image_slices[0]['corners']
+    shared_wcs = make_bounding_wcs(
+        np.array(
+            [[corners[2][0], corners[1][1]], [corners[0][0], corners[0][1]]]
+        )
+    )
+    binned_images = []
+    for image in image_slices:
+        projection = project_slice_to_shared_wcs(
+            image['array'],
+            systems[image['eclipse']],
+            shared_wcs,
+            image['coords'][0],
+            image['coords'][2]
+        )
+        binned_images.append(
+            bin_projected_weights(
+                projection['x'],
+                projection['y'],
+                projection['weight'],
+                wcs_imsz(shared_wcs)
             )
-            binned_images.append(
-                bin_projected_weights(
-                    projection['x'],
-                    projection['y'],
-                    projection['weight'] / header['EXPTIME'],
-                    wcs_imsz(shared_wcs)
-                )
-            )
-        else:
-            return cnt / header['EXPTIME'], system
-    return np.sum(binned_images, axis=0), shared_wcs
+        )
+    return np.sum(binned_images, axis=0)
