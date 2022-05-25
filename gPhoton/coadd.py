@@ -6,13 +6,15 @@ import astropy.wcs
 import fast_histogram as fh
 import fitsio
 import numpy as np
-from cytoolz import first
 
 from gPhoton.coords.wcs import make_bounding_wcs, extract_wcs_keywords, \
     corners_of_a_square, sky_box_to_image_box
-from gPhoton.io.fits_utils import pyfits_open_igzip, read_wcs_from_fits
-from gPhoton.pretty import mb
-from gPhoton.reference import eclipse_to_paths, Stopwatch, Netstat
+from gPhoton.io.fits_utils import pyfits_open_igzip, read_wcs_from_fits, \
+    logged_fits_initializer
+from gPhoton.pretty import notary, print_stats
+from gPhoton.reference import (
+    eclipse_to_paths, Stopwatch, Netstat, crudely_find_library
+)
 
 
 def get_image_fns(*eclipses, band="NUV", root="test_data"):
@@ -150,82 +152,58 @@ def project_slice_to_shared_wcs(
     }
 
 
-def print_stats(watch, stat):
-    stat.update()
-    print(
-        f"{watch.peek()} s; "
-        f"{mb(round(first(stat.interval.values())))} MB"
-    )
-    watch.click()
+def cut_skybox(array_handles, target, side_length, wcs_object):
+    corners = corners_of_a_square(target['ra'], target['dec'], side_length)
+    coords = sky_box_to_image_box(corners, wcs_object)
+    return [
+        handle[coords[2]:coords[3] + 1, coords[0]:coords[1] + 1]
+        for handle in array_handles
+    ], corners, coords
 
 
-def get_galex_rice_slices(
-    eclipse,
-    targets,
-    side_length,
-    data_root="test_data",
-    watch=None,
-    stat=None,
-    verbose=2
+def skybox_cuts_from_file(
+    path, loader, targets, side_length, hdu_indices, wcs_object=None, verbose=0
 ):
-    """
-    TODO: not fully integrated yet.
-    """
-    slices = {}
-    if watch is None:
-        watch = Stopwatch(silent=True)
-    if stat is None:
-        stat = Netstat()
-    # TODO: note that these test files happen not to have 'rice' in the name
-    path = eclipse_to_paths(eclipse, data_root, None, "none")["NUV"]["image"]
-    if verbose > 0:
-        print(f"... initializing {Path(path).name} ... ", end="")
-    watch.click(), stat.update()
-    hdul = fitsio.FITS(path)
-    header = hdul[1].read_header()
-    system = astropy.wcs.WCS(extract_wcs_keywords(header))
-    if verbose > 0:
-        print_stats(watch, stat)
-    if verbose == 1:
-        print(f"... making {len(targets)} slices ...", end="")
+    import astropy.wcs
+    from gPhoton.coords.wcs import extract_wcs_keywords
+    array_handles, header, log, stat = logged_fits_initializer(
+        hdu_indices, loader, path, verbose
+    )
+    note = notary(log)
+    # permit sharing wcs between pre-coregistered images
+    if wcs_object is None:
+        wcs_object = astropy.wcs.WCS(extract_wcs_keywords(header))
+    cuts = []
     for target in targets:
-        if verbose > 1:
-            print(
-                f"... slicing objID={target['obj_id']}; "
-                f"ra={round(target['ra'], 3)}; "
-                f"dec={round(target['dec'], 3)} ... ",
-                end=""
-            )
-        corners = corners_of_a_square(target['ra'], target['dec'], side_length)
-        cutout = sky_box_to_image_box(corners, system)
         try:
-            cnt, flag, edge = [
-                hdul[ix][cutout[2]:cutout[3] + 1, cutout[0]:cutout[1] + 1]
-                for ix in (1, 2, 3)
-            ]
+            target_cuts, corners, coords = cut_skybox(
+                array_handles, target, side_length, wcs_object
+            )
         except ValueError as error:
             if "negative dimensions are not allowed" in str(error):
                 print(f"coordinates out of bounds of image, skipping")
                 continue
             raise
-        slices[target['obj_id']] = {
-            'array': zero_flag_and_edge(cnt, flag, edge) / header['EXPTIME'],
-            'coords': cutout,
-            'eclipse': eclipse,
-            'corners': corners,
-        }
-        if verbose > 1:
-            print_stats(watch, stat)
-    if verbose == 1:
-        print_stats(watch, stat)
-    return slices, system
+        cut_record = {
+            "arrays": target_cuts, "coords": coords, "corners": corners
+        } | target
+        cuts.append(cut_record)
+        note(
+            f"got cuts at ra={round(target['ra'], 3)} "
+            f"dec={round(target['dec'], 3)},c{path},{stat()}",
+            loud=verbose > 1
+        )
+    note(
+        f"got {len(targets)} cuts,{path},{stat(total=True)}", loud=verbose > 0
+    )
+    return cuts, wcs_object, header, log
 
 
 def coadd_image_slices(
     image_slices: Sequence[Mapping], systems: Mapping[int, astropy.wcs.WCS]
 ):
     """
-    operates on records output by get_galex_rice_slices() or routines w/
+    operates on records output by skybox_cuts_from_file() or routines w/
     similar signatures.
 
     TODO: not fully integrated yet.

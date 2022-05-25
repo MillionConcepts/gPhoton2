@@ -4,9 +4,11 @@ canonical file paths, timer objects, etc.
 this module is supposed to be essentially free to import: only standard
 library modules should be used, at least as module-level imports.
 """
+import functools
 import subprocess
 import time
-from typing import Optional, Literal
+from inspect import getmodule
+from typing import Optional, Literal, Any, Callable
 
 from gPhoton.types import Pathlike
 
@@ -144,3 +146,12 @@ class Netstat:
 
     def __repr__(self):
         return str(self.absolute)
+
+
+def crudely_find_library(obj: Any) -> str:
+    if isinstance(obj, functools.partial):
+        if len(obj.args) > 0:
+            if isinstance(obj.args[0], Callable):
+                return crudely_find_library(obj.args[0])
+        return crudely_find_library(obj.func)
+    return getmodule(obj).__name__.split(".")[0]

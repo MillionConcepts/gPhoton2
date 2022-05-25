@@ -10,6 +10,9 @@ from astropy.wcs import wcs
 from dustgoggles.scrape import head_file
 from isal import igzip
 
+from gPhoton.pretty import notary, print_stats, record_and_yell
+from gPhoton.reference import Stopwatch, Netstat, crudely_find_library
+
 
 def get_fits_data(filename, dim=0, verbose=0):
     """
@@ -117,3 +120,30 @@ def read_wcs_from_fits(*fits_paths):
     headers = [first_fits_header(path) for path in fits_paths]
     systems = [wcs.WCS(header) for header in headers]
     return headers, systems
+
+
+def get_header(hdul, hdu_ix, library):
+    """
+    fetch header from either an astropy or fitsio HDU list object
+    """
+    if library == "fitsio":
+        return hdul[hdu_ix].read_header()
+    elif library == "astropy":
+        return hdul[hdu_ix].header
+    raise ValueError(f"don't know {library}")
+
+
+def logged_fits_initializer(hdu_indices, loader, path, verbose):
+    # initialize fits HDU list object and read selected HDU's header
+    watch, netstat, log = Stopwatch(silent=True), Netstat(), {}
+    stat, note = print_stats(watch, netstat), notary(log)
+    hdul = loader(path)
+    note(f"init fits object,{path},{stat()}", loud=verbose > 0)
+    library = crudely_find_library(loader)
+    header = get_header(hdul, hdu_indices[0], library)
+    note(f"got header,{path},{stat()}", loud=verbose > 1)
+    # initialize selected HDU object and get its data 'handles'
+    hdus = [hdul[hdu_ix] for hdu_ix in hdu_indices]
+    array_handles = [hdu if library == "fitsio" else hdu.data for hdu in hdus]
+    note(f"got data handles,{path},{stat()}", loud=verbose > 1)
+    return array_handles, header, log, stat

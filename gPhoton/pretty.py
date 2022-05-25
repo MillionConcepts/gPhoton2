@@ -10,8 +10,10 @@ from functools import reduce
 from math import floor
 from operator import add
 from sys import stdout
+from typing import MutableMapping
 
 import rich
+from cytoolz import first
 from rich.progress import Progress, TextColumn, Task
 from rich.spinner import Spinner
 from rich.text import Text
@@ -153,6 +155,40 @@ def print_inline(text, blanks=60):
     stdout.flush()
     return
 
+
+def record_and_yell(message: str, cache: MutableMapping, loud: bool = False):
+    """
+    place message into a cache object with a timestamp; optionally print it
+    """
+    if loud is True:
+        print(message)
+    cache[dt.datetime.now().isoformat()] = message
+
+
+def notary(cache):
+
+    def note(message, loud: bool = False):
+        return record_and_yell(message, cache, loud)
+    return note
+
+
+def print_stats(watch, netstat):
+    watch.start(), netstat.update()
+
+    def printer(total=False):
+        netstat.update()
+        if total is True:
+            print(
+                f"{watch.total()} total s,"
+                f"{mb(round(first(netstat.total.values())))} total MB"
+            )
+        else:
+            print(
+                f"{watch.peek()} s,"
+                f"{mb(round(first(netstat.interval.values())))} MB"
+            )
+            watch.click()
+    return printer
 
 # class PHOTONLIGHTER(RegexHighlighter):
 #     base_style = "GPHOTON."
