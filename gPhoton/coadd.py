@@ -187,10 +187,16 @@ def get_galex_rice_slices(
         )
         corners = corners_of_a_square(target['ra'], target['dec'], side_length)
         cutout = sky_box_to_image_box(corners, system)
-        cnt, flag, edge = [
-            hdul[ix][cutout[2]:cutout[3] + 1, cutout[0]:cutout[1] + 1]
-            for ix in (1, 2, 3)
-        ]
+        try:
+            cnt, flag, edge = [
+                hdul[ix][cutout[2]:cutout[3] + 1, cutout[0]:cutout[1] + 1]
+                for ix in (1, 2, 3)
+            ]
+        except ValueError as error:
+            if "negative dimensions are not allowed" in str(error):
+                print(f"coordinates out of bounds of image, skipping")
+                continue
+            raise
         slices[target['obj_id']] = {
             'array': zero_flag_and_edge(cnt, flag, edge) / header['EXPTIME'],
             'coords': cutout,
