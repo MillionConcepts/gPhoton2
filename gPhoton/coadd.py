@@ -160,7 +160,13 @@ def print_stats(watch, stat):
 
 
 def get_galex_rice_slices(
-    eclipse, targets, side_length, data_root="test_data", watch=None, stat=None
+    eclipse,
+    targets,
+    side_length,
+    data_root="test_data",
+    watch=None,
+    stat=None,
+    verbose=2
 ):
     """
     TODO: not fully integrated yet.
@@ -172,19 +178,24 @@ def get_galex_rice_slices(
         stat = Netstat()
     # TODO: note that these test files happen not to have 'rice' in the name
     path = eclipse_to_paths(eclipse, data_root, None, "none")["NUV"]["image"]
-    print(f"... initializing {Path(path).name} ... ", end="")
+    if verbose > 0:
+        print(f"... initializing {Path(path).name} ... ", end="")
     watch.click(), stat.update()
     hdul = fitsio.FITS(path)
     header = hdul[1].read_header()
     system = astropy.wcs.WCS(extract_wcs_keywords(header))
-    print_stats(watch, stat)
+    if verbose > 0:
+        print_stats(watch, stat)
+    if verbose == 1:
+        print(f"... making {len(targets)} slices ...", end="")
     for target in targets:
-        print(
-            f"... slicing objID={target['obj_id']}; "
-            f"ra={round(target['ra'], 3)}; "
-            f"dec={round(target['dec'], 3)} ... ",
-            end=""
-        )
+        if verbose > 1:
+            print(
+                f"... slicing objID={target['obj_id']}; "
+                f"ra={round(target['ra'], 3)}; "
+                f"dec={round(target['dec'], 3)} ... ",
+                end=""
+            )
         corners = corners_of_a_square(target['ra'], target['dec'], side_length)
         cutout = sky_box_to_image_box(corners, system)
         try:
@@ -203,6 +214,9 @@ def get_galex_rice_slices(
             'eclipse': eclipse,
             'corners': corners,
         }
+        if verbose > 1:
+            print_stats(watch, stat)
+    if verbose == 1:
         print_stats(watch, stat)
     return slices, system
 
