@@ -178,16 +178,17 @@ def print_stats(watch, netstat):
     def printer(total=False):
         netstat.update()
         if total is True:
-            print(
+            text = (
                 f"{watch.total()} total s,"
                 f"{mb(round(first(netstat.total.values())))} total MB"
             )
         else:
-            print(
+            text = (
                 f"{watch.peek()} s,"
                 f"{mb(round(first(netstat.interval.values())))} MB"
             )
             watch.click()
+        return text
     return printer
 
 # class PHOTONLIGHTER(RegexHighlighter):
