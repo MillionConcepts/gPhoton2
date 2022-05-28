@@ -10,14 +10,16 @@ from functools import reduce
 from math import floor
 from operator import add
 from sys import stdout
-from typing import MutableMapping
+from typing import MutableMapping, Callable
 
 import rich
 from cytoolz import first
+from dustgoggles.func import zero
 from rich.progress import Progress, TextColumn, Task
 from rich.spinner import Spinner
 from rich.text import Text
 
+from gPhoton.reference import Netstat, Stopwatch
 
 GPHOTON_CONSOLE = rich.console.Console()
 GPHOTON_PROGRESS = Progress(console=GPHOTON_CONSOLE)
@@ -194,6 +196,18 @@ def print_stats(watch, netstat):
             watch.click()
         return text
     return printer
+
+
+def make_monitors(
+    fake: bool = False, silent: bool = True
+) -> tuple[Callable, Callable]:
+    if fake is True:
+        stat, note = zero, zero
+    else:
+        log, watch, netstat = {}, Stopwatch(silent=silent), Netstat()
+        stat, note = print_stats(watch, netstat), notary(log)
+    return stat, note
+
 
 # class PHOTONLIGHTER(RegexHighlighter):
 #     base_style = "GPHOTON."

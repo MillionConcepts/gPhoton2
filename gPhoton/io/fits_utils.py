@@ -10,7 +10,7 @@ from astropy.wcs import wcs
 from dustgoggles.scrape import head_file
 from isal import igzip
 
-from gPhoton.pretty import notary, print_stats, record_and_yell
+from gPhoton.pretty import notary, print_stats, record_and_yell, make_monitors
 from gPhoton.reference import Stopwatch, Netstat, crudely_find_library
 
 
@@ -133,17 +133,41 @@ def get_header(hdul, hdu_ix, library):
     raise ValueError(f"don't know {library}")
 
 
-def logged_fits_initializer(hdu_indices, loader, path, verbose):
+def logged_fits_initializer(
+    path,
+    loader,
+    hdu_indices,
+    get_wcs=False,
+    get_handles=False,
+    verbose=0,
+    logged=True
+):
     # initialize fits HDU list object and read selected HDU's header
-    watch, netstat, log = Stopwatch(silent=True), Netstat(), {}
-    stat, note = print_stats(watch, netstat), notary(log)
+    stat, note = make_monitors(fake=not logged)
     hdul = loader(path)
-    note(f"init fits object,{path},{stat()}", loud=verbose > 0)
+    note(f"init fits object,{path},{stat()}", verbose > 0)
     library = crudely_find_library(loader)
     header = get_header(hdul, hdu_indices[0], library)
-    note(f"got header,{path},{stat()}", loud=verbose > 1)
-    # initialize selected HDU object and get its data 'handles'
-    hdus = [hdul[hdu_ix] for hdu_ix in hdu_indices]
-    array_handles = [hdu if library == "fitsio" else hdu.data for hdu in hdus]
-    note(f"got data handles,{path},{stat()}", loud=verbose > 1)
-    return array_handles, header, log, stat
+    note(f"got header,{path},{stat()}", verbose > 1)
+    if library == "astropy":
+        output_header = {}
+        for k, v in header.items():
+            if isinstance(v, (str, float, int)):
+                output_header[k] = v
+            else:
+                output_header[k] = str(v)
+        header = output_header
+    output = {'header': header}
+    file_attr = next(filter(lambda attr: "filename" in attr, dir(hdul)))
+    output['path'] = getattr(hdul, file_attr)
+    if isinstance(output['path'], Callable):
+        output['path'] = output['path']()
+    if get_handles is True:
+        # initialize selected HDU object and get its data 'handles'
+        output["handles"] = [hdul[hdu_ix] for hdu_ix in hdu_indices]
+        note(f"got data handles,{path},{stat()}", loud=verbose > 1)
+    if get_wcs is True:
+        output['wcs'] = astropy.wcs.WCS(extract_wcs_keywords(header))
+        note(f"initialized wcs,{path},{stat()}", loud=verbose > 1)
+    output['log'] = note(eject=True)
+    return output

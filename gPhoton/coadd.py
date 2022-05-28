@@ -1,19 +1,16 @@
 from itertools import product
-from pathlib import Path
+from multiprocessing import Pool
 from typing import Mapping, Sequence
 
 import astropy.wcs
 import fast_histogram as fh
-import fitsio
 import numpy as np
 
-from gPhoton.coords.wcs import make_bounding_wcs, extract_wcs_keywords, \
-    corners_of_a_square, sky_box_to_image_box
-from gPhoton.io.fits_utils import pyfits_open_igzip, read_wcs_from_fits, \
-    logged_fits_initializer
-from gPhoton.pretty import notary, print_stats
+from gPhoton.coords.wcs import make_bounding_wcs, corners_of_a_square, \
+    sky_box_to_image_box
+from gPhoton.io.fits_utils import pyfits_open_igzip, read_wcs_from_fits
 from gPhoton.reference import (
-    eclipse_to_paths, Stopwatch, Netstat, crudely_find_library
+    eclipse_to_paths, crudely_find_library
 )
 
 
@@ -152,51 +149,47 @@ def project_slice_to_shared_wcs(
     }
 
 
-def cut_skybox(array_handles, target, side_length, wcs_object):
+def cut_skybox(loader, target, hdu_indices, side_length):
+    hdul = loader(target['path'])
+    library = crudely_find_library(loader)
+    array_handles = [
+        hdul[hdu_ix]
+        if library == "fitsio"
+        else hdul[hdu_ix].data
+        for hdu_ix in hdu_indices
+    ]
     corners = corners_of_a_square(target['ra'], target['dec'], side_length)
-    coords = sky_box_to_image_box(corners, wcs_object)
-    return [
-        handle[coords[2]:coords[3] + 1, coords[0]:coords[1] + 1]
-        for handle in array_handles
-    ], corners, coords
+    coords = sky_box_to_image_box(corners, target['wcs'])
+    return {
+        "arrays": [
+            handle[coords[2]:coords[3] + 1, coords[0]:coords[1] + 1]
+            for handle in array_handles
+        ],
+        "corners": corners,
+        "coords": coords
+    } | target
 
 
-def skybox_cuts_from_file(
-    path, loader, targets, side_length, hdu_indices, wcs_object=None, verbose=0
-):
-    import astropy.wcs
-    from gPhoton.coords.wcs import extract_wcs_keywords
-    array_handles, header, log, stat = logged_fits_initializer(
-        hdu_indices, loader, path, verbose
-    )
-    note = notary(log)
-    # permit sharing wcs between pre-coregistered images
-    if wcs_object is None:
-        wcs_object = astropy.wcs.WCS(extract_wcs_keywords(header))
-    cuts = []
-    for target in targets:
-        try:
-            target_cuts, corners, coords = cut_skybox(
-                array_handles, target, side_length, wcs_object
+# TODO, maybe: granular logging here -- maybe because Netstat is basically
+#  useless on this level if cuts are parallelized, and diagnostics would
+#  probably be better done on fake data using other workflows
+def cut_skyboxes(plans, threads, cut_kwargs):
+    pool = Pool(threads) if threads is not None else None
+    cuts = {}
+    for cut_plan in plans:
+        if pool is None:
+            cuts[(cut_plan['obj_id'], cut_plan['band'])] = cut_skybox(
+                target=cut_plan, **cut_kwargs
             )
-        except ValueError as error:
-            if "negative dimensions are not allowed" in str(error):
-                print(f"coordinates out of bounds of image, skipping")
-                continue
-            raise
-        cut_record = {
-            "arrays": target_cuts, "coords": coords, "corners": corners
-        } | target
-        cuts.append(cut_record)
-        note(
-            f"got cuts at ra={round(target['ra'], 3)} "
-            f"dec={round(target['dec'], 3)},c{path},{stat()}",
-            loud=verbose > 1
-        )
-    note(
-        f"got {len(targets)} cuts,{path},{stat(total=True)}", loud=verbose > 0
-    )
-    return cuts, wcs_object, header, log
+        else:
+            cuts[(cut_plan['obj_id'], cut_plan['band'])] = pool.apply_async(
+                cut_skybox, kwds={"target": cut_plan} | cut_kwargs
+            )
+    if pool is not None:
+        pool.close()
+        pool.join()
+        cuts = {k: v.get() for k, v in cuts.items()}
+    return cuts
 
 
 def coadd_image_slices(
