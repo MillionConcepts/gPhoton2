@@ -1,17 +1,16 @@
 """generic wrappers for astropy.io.fits (pyfits) methods."""
 import warnings
+from typing import Callable
 
-from astropy.io import fits as pyfits
+import astropy.wcs
 import numpy as np
-
-# ------------------------------------------------------------------------------
-
-from astropy.wcs import wcs
+from astropy.io import fits as pyfits
 from dustgoggles.scrape import head_file
 from isal import igzip
 
-from gPhoton.pretty import notary, print_stats, record_and_yell, make_monitors
-from gPhoton.reference import Stopwatch, Netstat, crudely_find_library
+from gPhoton.coords.wcs import extract_wcs_keywords
+from gPhoton.pretty import make_monitors
+from gPhoton.reference import crudely_find_library
 
 
 def get_fits_data(filename, dim=0, verbose=0):
@@ -94,6 +93,8 @@ def get_tbl_data(filename, comment='|'):
                 tbl.append(strarr)
 
     return np.array(tbl, dtype='float64')
+
+
 # ------------------------------------------------------------------------------
 def pyfits_open_igzip(fn):
     # TODO: does this leak the igzip stream handle?
@@ -118,7 +119,7 @@ def first_fits_header(path, header_records=1):
 
 def read_wcs_from_fits(*fits_paths):
     headers = [first_fits_header(path) for path in fits_paths]
-    systems = [wcs.WCS(header) for header in headers]
+    systems = [astropy.wcs.WCS(header) for header in headers]
     return headers, systems
 
 
