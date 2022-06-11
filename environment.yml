@@ -1,4 +1,4 @@
-name: glcat
+name: gphoton
 channels:
   - numba
   - conda-forge
@@ -15,22 +15,17 @@ dependencies:
   - photutils
   - pip
   - pyarrow
-  - python-isal
   - requests
   - rich
   - scikit-learn
   - scipy
   - sh
+  # optional, used in pipeline CLI
+  - fire
+  # optional, used for some gzip-handling features
+  - igzip
   # non-mandatory, some performance improvements to numba --
   # cannot be used on non-x64 platforms
   - icc_rt
   # optional, only required for object-search functions
   - astroquery
-  # for regression testing
-  #  - pytables
-  # profiling
-  #  - pympler
-  #  - line_profiler
-  #  - memory_profiler
-
-prefix: /home/michael/miniconda3/envs/glcat

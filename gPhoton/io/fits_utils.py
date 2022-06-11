@@ -6,7 +6,6 @@ import astropy.wcs
 import numpy as np
 from astropy.io import fits as pyfits
 from dustgoggles.scrape import head_file
-from isal import igzip
 
 from gPhoton.coords.wcs import extract_wcs_keywords
 from gPhoton.pretty import make_monitors
@@ -97,6 +96,8 @@ def get_tbl_data(filename, comment='|'):
 
 # ------------------------------------------------------------------------------
 def pyfits_open_igzip(fn):
+    from isal import igzip
+
     # TODO: does this leak the igzip stream handle?
     if fn.endswith("gz"):
         stream = igzip.open(fn)
@@ -106,6 +107,8 @@ def pyfits_open_igzip(fn):
 
 
 def first_fits_header(path, header_records=1):
+    from isal import igzip
+
     if str(path).endswith("gz"):
         stream = igzip.open(path)
     else:

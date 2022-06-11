@@ -1,3 +1,0 @@
-astroquery
-icc_rt
-python-isal
