@@ -2,9 +2,9 @@
 .. module:: wcs
    :synopsis: Functions for generating World Coordinate System (WCS) objects.
 """
-from _operator import add, sub
 from itertools import product
-
+import math
+from operator import add, sub
 from typing import Sequence
 
 import astropy.wcs
@@ -28,18 +28,18 @@ def make_wcs(
     values from the internal mission intensity map products, and a gnomonic
     projection.
     """
-    wcs = astropy.wcs.WCS(naxis=2)
-    wcs.wcs.cdelt = np.array([-pixsz, pixsz])
-    wcs.wcs.ctype = list(proj)
-    wcs.wcs.crpix = [(imsz[1] / 2.0) + 0.5, (imsz[0] / 2.0) + 0.5]
-    wcs.wcs.crval = skypos
-    return wcs
+    system = astropy.wcs.WCS(naxis=2)
+    system.wcs.cdelt = np.array([-pixsz, pixsz])
+    system.wcs.ctype = list(proj)
+    system.wcs.crpix = [(imsz[1] / 2.0) + 0.5, (imsz[0] / 2.0) + 0.5]
+    system.wcs.crval = skypos
+    return system
 
 
 def make_bounding_wcs(
     radec: np.ndarray,
     pixsz: float = c.DEGPERPIXEL,
-    proj = ("RA---TAN", "DEC--TAN")
+    proj: Sequence[str] = ("RA---TAN", "DEC--TAN")
 ) -> astropy.wcs.WCS:
     """
     makes a WCS solution for a given range of ra/dec values
@@ -49,7 +49,6 @@ def make_bounding_wcs(
     pixsz: size of returned WCS's pixels in square degrees;
     defaults to degree-per-pixel scale set in gPhoton.constants.DEGPERPIXEL
     """
-    import math
     real_ra = radec[:, 0][np.isfinite(radec[:, 0])]
     real_dec = radec[:, 1][np.isfinite(radec[:, 1])]
     ra_range = real_ra.min(), real_ra.max()
@@ -77,8 +76,8 @@ def translate_pc_keyword(keyword: str):
     necessary for any GALEX products, but is useful for some data fusion
     applications.
     """
-    # i suppose this will fail for headers with hundreds
-    # of dimensions -- they may not exist, and deserve special-purpose
+    # note: i suppose this will fail for headers with hundreds
+    # of dimensions -- they may not exist, though, and deserve special-purpose
     # code if they do
     if not keyword.startswith("PC0"):
         return keyword
@@ -112,9 +111,9 @@ def corners_of_a_square(ra, dec, side_length):
 
 def sky_box_to_image_box(corners, system):
     """
-    get image coordinates that correspond to a sky-coordinate square
-    with specified corners (in whatever units wcs axes 1 and 2
-    are in, most likely degrees)
+    get image coordinates that correspond to a sky-coordinate square with
+    specified corners (in whatever units wcs axes 1 and 2 are in, most likely
+    degrees)
     """
     cuts = system.world_to_pixel_values(
         np.array(corners)[:, 0], np.array(corners)[:, 1]

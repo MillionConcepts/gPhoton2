@@ -19,14 +19,6 @@ from gPhoton.io.netutils import chunked_download
 from gPhoton.pretty import print_inline
 from gPhoton.types import GalexBand
 
-
-# The photon event timestamps are stored in MAST's database at the level of
-# level of SQL's BIGINT in order to save space. This is accomplished by
-# multiplying the raw timestamps by 1000. This truncates (not rounds) some
-# timestamps at the level of 1ms. Most timestamps have a resolution of only
-# 5ms except for rare high resolution visits, and even in that case the
-# extra precision does not matter for science. For consistency with the
-# database, we truncate times at 1ms for queries.
 TSCALE = 1000
 
 BASE_DB = "GPFCore.dbo"
@@ -35,7 +27,16 @@ MCAT_DB = "GR6Plus7.dbo"
 FORMAT_URL = f" -- {TIME_ID}&format=extjs"
 
 
-def truncate(n):
+def truncate(n: float):
+    """
+    The photon event timestamps are stored in MAST's database at the level of
+    SQL's BIGINT in order to save space. This is accomplished by
+    multiplying the raw timestamps by 1000. This truncates (not rounds) some
+    timestamps at the level of 1ms. Most timestamps have a resolution of only
+    5ms except for rare high resolution visits, and even in that case the
+    extra precision does not matter for science. For consistency with the
+    database, we truncate times at 1ms for queries.
+    """
     return str(n * TSCALE).split(".")[0]
 
 
