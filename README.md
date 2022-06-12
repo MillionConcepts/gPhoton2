@@ -26,8 +26,10 @@ mamba env create -f environment.yml
 ```
 
 gPhoton 2 also relies on several large aspect metadata files that are not 
-distributed along with this repository. Please contact the repository
-maintainers if you need and do not have access to these files.
+distributed along with this repository. 
+[They are currently available here.](https://drive.google.com/drive/u/1/folders/1aPfLKsZM8x5Pxji0Lh3dUblpo9dyt1IW)
+Place these files in the gPhoton/aspect/ directory after downloading
+them./
 
 ## basic usage
 
