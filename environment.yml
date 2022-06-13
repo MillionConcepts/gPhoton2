@@ -17,7 +17,6 @@ dependencies:
   - pyarrow
   - requests
   - rich
-  - scikit-learn
   - scipy
   - sh
   # optional, used in pipeline CLI
