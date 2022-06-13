@@ -1,22 +1,32 @@
 """
-methods for generating lightcurves from FITS images/movies. intended to be
-used on files produced by gPhoton.moviemaker methods.
+methods for generating lightcurves from FITS images/movies, especially those
+produced by the gPhoton.moviemaker pipeline. They are principally intended
+for use as components of the primary gPhoton.lightcurve pipeline, called as
+part of the course of running gPhoton.lightcurve.core.make_lightcurves(), and
+may not suitable for independent use.
 """
 
 from multiprocessing import Pool
 from pathlib import Path
-from typing import Union, Optional
+from typing import Union, Optional, Mapping
 import warnings
 
+import astropy.wcs
 import numpy as np
 import pandas as pd
 from photutils import DAOStarFinder, CircularAperture, aperture_photometry
 import scipy.sparse
 
 from gPhoton.pretty import print_inline
+from gPhoton.types import Pathlike
 
 
-def count_full_depth_image(source_table, aperture_size, image_dict, wcs):
+def count_full_depth_image(
+    source_table: pd.DataFrame,
+    aperture_size: float,
+    image_dict: Mapping[str, np.ndarray],
+    system: astropy.wcs.WCS
+):
     positions = source_table[["xcentroid", "ycentroid"]].values
     apertures = CircularAperture(positions, r=aperture_size)
     print("Performing aperture photometry on primary image.")
@@ -35,7 +45,7 @@ def count_full_depth_image(source_table, aperture_size, image_dict, wcs):
     #  should we do a sanity check?
     if "ra" not in source_table.columns:
         world = [
-            wcs.wcs_pix2world([pos], 1, ra_dec_order=True)[0].tolist()
+            system.wcs_pix2world([pos], 1, ra_dec_order=True)[0].tolist()
             for pos in apertures.positions
         ]
         source_table["ra"] = [coord[0] for coord in world]
@@ -137,7 +147,7 @@ def extract_photometry(movie_dict, source_table, apertures, threads):
     return pd.concat([source_table, *photometry_tables], axis=1)
 
 
-def write_exptime_file(expfile, movie_dict):
+def write_exptime_file(expfile: Pathlike, movie_dict) -> None:
     exptime_table = pd.DataFrame(
         {
             "expt": movie_dict["exptimes"],

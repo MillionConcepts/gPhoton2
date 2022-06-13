@@ -150,9 +150,7 @@ def read_wcs_from_fits(*fits_paths: Pathlike) -> tuple[
     return headers, systems
 
 
-def get_header(
-    hdul: Sequence, hdu_ix: int, library: Literal["astropy", "fitsio"]
-):
+def get_header(hdul: Sequence, hdu_ix: int, library: str):
     """
     fetch header from either an astropy or fitsio HDU list object
     """

@@ -1,4 +1,7 @@
-"""profiling utilities"""
+"""
+profiling utilities, not guaranteed to be stable or functional. We do not
+recommend their use for any purpose whatsoever.
+"""
 
 # import objgraph
 from time import time

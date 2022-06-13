@@ -1,6 +1,6 @@
 """
-mostly-deprecated MAST query functions. May be desired by some external
-legacy code.
+holding module for mostly-deprecated MAST query functions, still desired by
+some external legacy code. We do not recommend using them for anything at all.
 """
 import numpy as np
 
