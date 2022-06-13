@@ -17,6 +17,10 @@ def load_raw6(raw6file: Pathlike, verbose: int):
     """
     open and decode a GALEX raw telemetry (.raw6) file and return it as a
     DataFrame. This function replicates mission-standard L0 data processing.
+    The dict returned by this function is gPhoton's canonical 'raw photon
+    data' structure, used as an input to primary pipeline components
+    (particularly photonpipe).
+
     :param raw6file: path/filename of raw6 file to load
     :param verbose: verbosity level -- higher is more messages
     :return:
@@ -56,6 +60,7 @@ def get_eclipse_from_header(
 def decode_telemetry(
     band: GalexBand, eclipse: int, raw6hdulist: fitsio.FITS
 ):
+    """"""
     data = bitwise_decode_photonbytes(band, unpack_raw6(raw6hdulist))
     data = center_and_scale(band, data, eclipse)
     data["t"] = data["t"].byteswap().newbyteorder()
