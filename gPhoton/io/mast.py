@@ -2,7 +2,9 @@
 .. module:: mast
    :synopsis: Methods for retrieving GALEX files from MAST. Aspect solution
        retrieval is largely deprecated by consolidated aspect tables, but raw6
-       (L0 telemetry) retrieval is not.
+       (L0 telemetry) retrieval is not. Most methods of this module operate
+       via live queries to MAST resources and therefore require internet
+       access.
 """
 # NOTE: contains some functions previously -- and perhaps one day again! --
 # housed in FileUtils & GQuery. Some related but conditionally-deprecated
@@ -20,26 +22,38 @@ from gPhoton.pretty import print_inline
 from gPhoton.types import GalexBand
 
 
-# The photon event timestamps are stored in MAST's database at the level of
-# level of SQL's BIGINT in order to save space. This is accomplished by
-# multiplying the raw timestamps by 1000. This truncates (not rounds) some
-# timestamps at the level of 1ms. Most timestamps have a resolution of only
-# 5ms except for rare high resolution visits, and even in that case the
-# extra precision does not matter for science. For consistency with the
-# database, we truncate times at 1ms for queries.
-TSCALE = 1000
+# The following global variables are used to construct properly-formatted
+# queries to the MAST database. Don't change them unless you know what you're
+# doing!
 
+BASE_URL = (
+    "https://mastcomp.stsci.edu/portal/Mashup/MashupQuery.asmx/Galex"
+    "PhotonListQueryTest?query="
+)
+TSCALE = 1000
 BASE_DB = "GPFCore.dbo"
 MCAT_DB = "GR6Plus7.dbo"
-# TIME_ID is a per-execution identifier to aid serverside troubleshooting.
 FORMAT_URL = f" -- {TIME_ID}&format=extjs"
 
 
-def truncate(n):
+def truncate(n: float):
+    """
+    The photon event timestamps are stored in MAST's database at the level of
+    SQL's BIGINT in order to save space. This is accomplished by
+    multiplying the raw timestamps by 1000. This truncates (not rounds) some
+    timestamps at the level of 1ms. Most timestamps have a resolution of only
+    5ms except for rare high resolution visits, and even in that case the
+    extra precision does not matter for science. For consistency with the
+    database, we truncate times at 1ms for queries.
+    """
     return str(n * TSCALE).split(".")[0]
 
 
-def get_raw_paths(eclipse, verbose=0):
+def get_raw_paths(eclipse: int, verbose: int = 0) -> dict[str, Optional[str]]:
+    """
+    query MAST for URLs to the NUV and FUV raw6 (L0 telemetry) and scst
+    (aspect solution) files associated with a particular eclipse.
+    """
     url = raw_data_paths(eclipse)
     if verbose > 1:
         print(url)
@@ -54,12 +68,16 @@ def get_raw_paths(eclipse, verbose=0):
 
 
 def download_data(
-    eclipse,
+    eclipse: int,
     ftype: Literal["raw6", "scst"],
     band: Optional[GalexBand] = None,
-    datadir="./",
-    verbose=0,
-):
+    datadir: str = "./",
+    verbose: int = 0,
+) -> Optional[str]:
+    """
+    download a raw6 (L0 telemetry) or scst (aspect solution) file for a given
+    eclipse from MAST to datadir.
+    """
     urls = get_raw_paths(eclipse, verbose=verbose)
     if ftype not in ["raw6", "scst"]:
         raise ValueError("ftype must be either raw6 or scst")
@@ -94,20 +112,20 @@ def download_data(
 # -----------------------------------------------------------------------------
 def raw_data_paths(eclipse):
     """
-    Construct a query that returns a data structure containing MAST
-    download paths
+    Construct a URL that will retrieve a data structure containing MAST
+    download paths for raw6 and scst files.
 
     :param eclipse: GALEX eclipse number.
 
     :type eclipse: int
 
-    :returns: str -- The query to submit to the database.
+    :returns: str -- URL to submit this query to the database.
     """
     return mast_url(f"spGetRawUrls {eclipse}")
 
 
-def retrieve_raw6(eclipse, band, outbase):
-    """retrieve raw6 (L0 telemetry) file from MAST."""
+def retrieve_raw6(eclipse: int, band: GalexBand, outbase: str) -> str:
+    """retrieve raw6 (L0 telemetry) file from MAST and save it to outbase."""
     raw6file = download_data(
         eclipse, "raw6", band, datadir=os.path.dirname(outbase)
     )
@@ -116,22 +134,21 @@ def retrieve_raw6(eclipse, band, outbase):
     return raw6file
 
 
-# The following global variables are used to construct properly-formatted
-# queries to the MAST database. Don't change them unless you know what you're
-# doing!
-BASE_URL = (
-    "https://mastcomp.stsci.edu/portal/Mashup/MashupQuery.asmx/Galex"
-    "PhotonListQueryTest?query="
-)
-
-
 def mast_url(sql_string: str) -> str:
-    return BASE_URL + sql_string + FORMAT_URL
+    """
+    given a string containing a SQL query, construct a URL that will feed
+    that query to MAST's GALEX database.
+    """
+    return f"{BASE_URL}{sql_string}{FORMAT_URL}"
 
 
 def manage_networked_sql_request(
-    query, maxcnt=100, wait=1, timeout=60, verbose=0
-):
+    query: str,
+    maxcnt: int = 100,
+    wait: int = 1,
+    timeout: int = 60,
+    verbose: int = 0
+) -> Optional[requests.Response]:
     """
     Manage calls via `requests` to SQL servers behind HTTP endpoints,
     providing better feedback and making them more robust against network

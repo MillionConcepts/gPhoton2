@@ -6,8 +6,9 @@ import astropy.wcs
 import fast_histogram as fh
 import numpy as np
 
-from gPhoton.coords.wcs import make_bounding_wcs, corners_of_a_square, \
-    sky_box_to_image_box
+from gPhoton.coords.wcs import (
+    make_bounding_wcs, corners_of_a_square, sky_box_to_image_box
+)
 from gPhoton.io.fits_utils import pyfits_open_igzip, read_wcs_from_fits
 from gPhoton.reference import (
     eclipse_to_paths, crudely_find_library
@@ -15,6 +16,16 @@ from gPhoton.reference import (
 
 
 def get_image_fns(*eclipses, band="NUV", root="test_data"):
+    """
+    Construct list of filenames for a series of eclipse images.
+    Args:
+        *eclipses: eclipses for which to construct filenames
+        band: GALEX band of images
+        root: root directory that contains per-eclipse subdirectories
+
+    Returns:
+
+    """
     return [
         eclipse_to_paths(eclipse, root)[band]["image"] for eclipse in eclipses
     ]

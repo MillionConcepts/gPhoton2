@@ -1,11 +1,16 @@
+"""
+methods for reading GALEX .scst (raw aspect data) files. These are no longer
+core inputs to gPhoton's pipelines; their use has been replaced by the
+consolidated tables in gPhoton/aspect. However, they remain useful for
+regression tests on and modifications to those tables.
+"""
+
 from typing import Sequence
 
 from astropy.io import fits as pyfits
 import numpy as np
 
 
-# TODO: check if this is actually working as it should in current pipeline --
-#  it's never actually been used in our new bulk runs!
 def load_aspect_files(aspfiles: Sequence[str]):
     """
     Loads a set of aspect_data files into a bunch of arrays.

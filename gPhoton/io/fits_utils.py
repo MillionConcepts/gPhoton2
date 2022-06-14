@@ -1,21 +1,27 @@
-"""generic wrappers for astropy.io.fits (pyfits) methods."""
-import warnings
-from typing import Callable
+"""
+generic wrappers for manipulating FITS files and associated objects.
 
+TODO: these are somewhat repetitive/redundant, tossed around inconsistently,
+ and should be consolidated.
+"""
+
+import warnings
+from typing import Callable, Sequence, Literal
+
+import astropy.io.fits
 import astropy.wcs
 import numpy as np
-from astropy.io import fits as pyfits
 from dustgoggles.scrape import head_file
-from isal import igzip
 
 from gPhoton.coords.wcs import extract_wcs_keywords
 from gPhoton.pretty import make_monitors
 from gPhoton.reference import crudely_find_library
+from gPhoton.types import Pathlike
 
 
 def get_fits_data(filename, dim=0, verbose=0):
     """
-    Reads FITS data. A wrapper for common pyfits commands.
+    Reads FITS data. A wrapper for common astropy.io.fits commands.
 
     :param filename: The name of the FITS file to retrieve the data from.
 
@@ -36,7 +42,7 @@ def get_fits_data(filename, dim=0, verbose=0):
     if verbose:
         print("         ", filename)
 
-    hdulist = pyfits.open(filename, memmap=1)
+    hdulist = astropy.io.fits.open(filename, memmap=1)
 
     data = hdulist[dim].data
 
@@ -57,7 +63,7 @@ def get_fits_header(filename):
     :returns: Header instance -- The header from the primary HDU.
     """
 
-    hdulist = pyfits.open(filename, memmap=1)
+    hdulist = astropy.io.fits.open(filename, memmap=1)
 
     htab = hdulist[0].header
 
@@ -96,16 +102,29 @@ def get_tbl_data(filename, comment='|'):
 
 
 # ------------------------------------------------------------------------------
-def pyfits_open_igzip(fn):
+def pyfits_open_igzip(fn: str) -> astropy.io.fits.hdu.HDUList:
+    """
+    open a gzipped FITS file using astropy.io.fits and the ISA-L igzip
+    algorithm rather than the slower libdeflate gzip implementation found
+    in the python standard library
+    """
+    from isal import igzip
+
     # TODO: does this leak the igzip stream handle?
     if fn.endswith("gz"):
         stream = igzip.open(fn)
-        return pyfits.open(stream)
+        return astropy.io.fits.open(stream)
     else:
-        return pyfits.open(fn)
+        return astropy.io.fits.open(fn)
 
 
-def first_fits_header(path, header_records=1):
+def first_fits_header(path: Pathlike, header_records: int = 1):
+    """
+    return the first header_records header cards from a FITS file. used for
+    skimming metadata from large groups of FITS files
+    """
+    from isal import igzip
+
     if str(path).endswith("gz"):
         stream = igzip.open(path)
     else:
@@ -114,16 +133,24 @@ def first_fits_header(path, header_records=1):
     stream.close()
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")  # we know we truncated it, thank you
-        return pyfits.open(head)[0].header
+        return astropy.io.fits.open(head)[0].header
 
 
-def read_wcs_from_fits(*fits_paths):
+def read_wcs_from_fits(*fits_paths: Pathlike) -> tuple[
+    Sequence[astropy.io.fits.header.Header], Sequence[astropy.wcs.WCS]
+]:
+    """
+    Construct a WCS object for each FITS file in fits_paths.
+
+    TODO: This function is obsolete and must be rewritten to handle RICE
+     compression.
+    """
     headers = [first_fits_header(path) for path in fits_paths]
     systems = [astropy.wcs.WCS(header) for header in headers]
     return headers, systems
 
 
-def get_header(hdul, hdu_ix, library):
+def get_header(hdul: Sequence, hdu_ix: int, library: str):
     """
     fetch header from either an astropy or fitsio HDU list object
     """
@@ -135,14 +162,21 @@ def get_header(hdul, hdu_ix, library):
 
 
 def logged_fits_initializer(
-    path,
-    loader,
-    hdu_indices,
-    get_wcs=False,
-    get_handles=False,
-    verbose=0,
-    logged=True
+    path: Pathlike,
+    loader: Callable,
+    hdu_indices: Sequence[int],
+    get_wcs: bool = False,
+    get_handles: bool = False,
+    verbose: int = 0,
+    logged: bool = True
 ):
+    """
+    initialize a FITS object using a passed 'loader' -- probably
+    astropy.io.fits.open, a constructor for fitsio.FITS, or a wrapped
+    version of one of those. optionally also meticulously record time and
+    network transfer involved at all stages of its initialization. At
+    present, this function is primarily used for benchmarking.
+    """
     # initialize fits HDU list object and read selected HDU's header
     stat, note = make_monitors(fake=not logged)
     hdul = loader(path)

@@ -470,11 +470,12 @@ def compute_flat_scale(t, band, verbose=0):
     return flat_scale
 
 
-def get_fuv_temp(eclipse: int):
+def get_fuv_temp(eclipse: int) -> float:
+    """return FUV detector temperature for a given eclipse."""
     return aspect_tables(eclipse, ["metadata"])[0]['fuv_temp'][0].as_py()
 
 
-def find_fuv_offset(eclipse: int):
+def find_fuv_offset(eclipse: int) -> tuple[float, float]:
     """
     Computes NUV->FUV center offset based on lookup tables. Raises a
     ValueError if no FUV temperature was recorded in the scst (spacecraft
@@ -505,11 +506,15 @@ def find_fuv_offset(eclipse: int):
 
 @njit(cache=True)
 def plus7_mod32_minus16(array):
+    """add 7, take result modulo 32, subtract 16"""
     return ((array + 7) % 32) - 16
 
 
 @njit(cache=True)
 def center_scale_step_1(xa, yb, xb, xclk, yclk, xamc, yamc):
+    """
+    perform an expensive component of the center-and-scale pipeline
+    """
     xraw0 = xb * xclk + xamc
     yraw0 = yb * yclk + yamc
     ya = (((yraw0 / (2 * yclk) - xraw0 / (2 * xclk)) + 10) * 32) + xa
@@ -517,6 +522,10 @@ def center_scale_step_1(xa, yb, xb, xclk, yclk, xamc, yamc):
 
 
 def center_and_scale(band, data, eclipse):
+    """
+    center and scale photon events from a raw6 file based on mission
+    calibration constants
+    """
     (xclk, yclk, xcen, ycen, xscl, yscl, xslp, yslp) = clk_cen_scl_slp(
         band, eclipse
     )

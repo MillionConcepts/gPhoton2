@@ -1,8 +1,14 @@
+"""
+methods for retrieving aspect solution (meta)data from gPhoton 2's combined
+aspect solution tables
+"""
+
 from pathlib import Path
-from typing import Mapping
+from typing import Mapping, Collection, Literal
 
 import numpy as np
 import pandas as pd
+import pyarrow as pa
 from pyarrow import parquet
 
 from gPhoton import ASPECT_DIR
@@ -10,6 +16,7 @@ from gPhoton.coords.gnomonic import gnomfwd_simple
 from gPhoton.parquet_utils import parquet_to_ndarrays
 from gPhoton.pretty import print_inline
 
+# fully-qualified paths to aspect table files
 TABLE_PATHS = {
     "aspect": Path(ASPECT_DIR, "aspect.parquet"),
     "boresight": Path(ASPECT_DIR, "boresight.parquet"),
@@ -17,7 +24,16 @@ TABLE_PATHS = {
 }
 
 
-def aspect_tables(eclipse, tables=None):
+def aspect_tables(
+    eclipse: int,
+    tables: Collection[
+        Literal["aspect", "boresight", "metadata"]
+    ] = ("aspect", "boresight", "metadata")
+) -> list[pa.Table]:
+    """
+    fetch full-resolution aspect, per-leg boresight, and/or general metadata
+    for a particular eclipse.
+    """
     if tables is None:
         paths = TABLE_PATHS.values()
     else:
@@ -29,6 +45,14 @@ def aspect_tables(eclipse, tables=None):
 def distribute_legs(
     aspect: Mapping[str, np.ndarray], boresight: Mapping[str, np.ndarray]
 ) -> dict[str, np.ndarray]:
+    """
+    assign per-leg boresight positions to full-resolution aspect data.
+    boresight positions are given in the original GALEX corpus separately
+    from full-resolution aspect data. One nominal boresight position exists
+    for each "leg" of a visit. For observations with more than one "leg",
+    it is important to accurately assign a boresight position to each
+    full-resolution aspect data point.
+    """
     distributed = pd.DataFrame()
     distributed["time"] = aspect["time"]
     distributed["ra0"] = np.nan
@@ -48,14 +72,18 @@ def load_aspect_solution(
     eclipse: int, verbose: int = 0
 ) -> dict[str, np.ndarray]:
     """
-    loads full-resolution aspect_data solution + per-leg boresight solution,
-    projects aspect_data solution to detector coordinates
-    :param eclipse: eclipse to load aspect_data solution for
+    loads full-resolution aspect solution + per-leg boresight solution for
+    a given eclipse and projects aspect solution to detector coordinates.
+    The dict returned by this function is gPhoton's canonical "prepared
+    aspect data" structure, used as input to primary pipeline components
+    like photonpipe.
+
+    :param eclipse: eclipse for which to load aspect solution
     :param verbose: higher values return more feedback about solution
-    :return: dictionary of aspect_data solution + relevant sky coordinates
+    :return: dictionary of aspect solution + relevant sky coordinates
     """
     if verbose > 0:
-        print_inline("Loading aspect_data data from disk...")
+        print_inline("Loading aspect solution from disk...")
     aspect, boresight = [
         parquet_to_ndarrays(tab, tab.column_names)
         for tab in aspect_tables(eclipse, ("aspect", "boresight"))

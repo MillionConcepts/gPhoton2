@@ -1,6 +1,8 @@
 from pathlib import Path
 from typing import Mapping, Collection
 
+import numpy as np
+
 import gPhoton.constants as c
 from gPhoton.lightcurve._steps import (
     find_sources,
@@ -23,10 +25,14 @@ def make_lightcurves(
     output_filenames=None,
     stopwatch: FakeStopwatch = FakeStopwatch(),
 ):
+    """
+    make lightcurves from preprocessed structures generated from FITS images
+    and movies, especially ones produced by the gPhoton.moviemaker pipeline.
+    """
     if output_filenames is None:
         output_filenames = eclipse_to_paths(
             eclipse, Path(photonlist_path).parent, None
-        )
+        )[band]
     if source_catalog_file is not None:
         import pandas as pd
 
