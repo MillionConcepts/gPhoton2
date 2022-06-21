@@ -204,5 +204,5 @@ def logged_fits_initializer(
     if get_wcs is True:
         output['wcs'] = astropy.wcs.WCS(extract_wcs_keywords(header))
         note(f"initialized wcs,{path},{stat()}", loud=verbose > 1)
-    output['log'] = note(eject=True)
+    output['log'] = note(None, eject=True)
     return output
