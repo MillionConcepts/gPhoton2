@@ -170,15 +170,20 @@ def cut_skybox(loader, target, hdu_indices, side_length):
         for hdu_ix in hdu_indices
     ]
     corners = corners_of_a_square(target['ra'], target['dec'], side_length)
-    coords = sky_box_to_image_box(corners, target['wcs'])
-    return {
-        "arrays": [
-            handle[coords[2]:coords[3] + 1, coords[0]:coords[1] + 1]
-            for handle in array_handles
-        ],
-        "corners": corners,
-        "coords": coords
-    } | target
+    try:
+        coords = sky_box_to_image_box(corners, target['wcs'])
+        return {
+            "arrays": [
+                handle[coords[2]:coords[3] + 1, coords[0]:coords[1] + 1]
+                for handle in array_handles
+            ],
+            "corners": corners,
+            "coords": coords
+        } | target
+    except ValueError as ve:
+        if ("NaN" in str(ve)) or ("negative dimensions" in str(ve)):
+            return 
+        raise
 
 
 # TODO, maybe: granular logging here -- maybe because Netstat is basically
@@ -186,34 +191,36 @@ def cut_skybox(loader, target, hdu_indices, side_length):
 #  probably be better done on fake data using other workflows
 def cut_skyboxes(plans, threads, cut_kwargs):
     pool = Pool(threads) if threads is not None else None
-    cuts = {}
+    cuts = []
     for cut_plan in plans:
         if pool is None:
-            cuts[(cut_plan['obj_id'], cut_plan['band'])] = cut_skybox(
-                target=cut_plan, **cut_kwargs
-            )
+            cuts.append(cut_skybox(target=cut_plan, **cut_kwargs))
         else:
-            cuts[(cut_plan['obj_id'], cut_plan['band'])] = pool.apply_async(
-                cut_skybox, kwds={"target": cut_plan} | cut_kwargs
+            cuts.append(
+                pool.apply_async(
+                    cut_skybox, kwds={"target": cut_plan} | cut_kwargs
+                )
             )
     if pool is not None:
         pool.close()
         pool.join()
-        cuts = {k: v.get() for k, v in cuts.items()}
-    return cuts
+        cuts = [cut_result.get() for cut_result in cuts]
+    # None results are cuts that edged out of the WCS or image bounds
+    return list(filter(None, cuts))
 
 
-def coadd_image_slices(
-    image_slices: Sequence[Mapping], systems: Mapping[int, astropy.wcs.WCS]
-):
+def coadd_image_slices(image_slices: Sequence[Mapping]):
     """
-    operates on records output by skybox_cuts_from_file() or routines w/
+    operates on records output by get_galex_cutouts() or routines w/
     similar signatures.
 
     TODO: not fully integrated yet.
     """
     if len(image_slices) == 1:
-        return image_slices[0]['array']
+        return (
+            zero_flag_and_edge(*image_slices[0]['arrays']), 
+            image_slices[0]['wcs']
+        )
     corners = image_slices[0]['corners']
     shared_wcs = make_bounding_wcs(
         np.array(
@@ -223,8 +230,8 @@ def coadd_image_slices(
     binned_images = []
     for image in image_slices:
         projection = project_slice_to_shared_wcs(
-            image['array'],
-            systems[image['eclipse']],
+            zero_flag_and_edge(*image['arrays']),
+            image['wcs'],
             shared_wcs,
             image['coords'][0],
             image['coords'][2]
@@ -237,4 +244,4 @@ def coadd_image_slices(
                 wcs_imsz(shared_wcs)
             )
         )
-    return np.sum(binned_images, axis=0)
+    return np.sum(binned_images, axis=0), shared_wcs
