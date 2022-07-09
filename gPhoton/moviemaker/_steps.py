@@ -390,7 +390,6 @@ def add_movie_to_fits_file(
     # not gzipping of individual HDUs.
     if compression_type in ("none", "gzip"):
         fits_stream.write(data, header=dict(header), **fitsio_write_kwargs)
-        # hdu = astropy.io.fits.hdu.image.ImageHDU(data, header)
     elif compression_type == "rice":
         if 'tile_size' in fitsio_write_kwargs:
             tile_size = fitsio_write_kwargs.pop('tile_size')
@@ -407,14 +406,6 @@ def add_movie_to_fits_file(
         else:
             qlevel = 10
 
-        # hdu = astropy.io.fits.hdu.compressed.CompImageHDU(
-        #     data,
-        #     header,
-        #     compression_type="RICE_1",
-        #     quantize_level=qlevel,
-        #     quantize_method=2,
-        #     tile_size=tile_size
-        # )
         fits_stream.write(
             data,
             header=dict(header),
@@ -427,8 +418,6 @@ def add_movie_to_fits_file(
     else:
         fits_stream.close()
         raise ValueError(f"unsupported compression type {compression_type}")
-    # with fitsopen(fits_path, "append", output_verify="ignore") as fits_stream:
-        # fits_stream.append(hdu)
     fits_stream.close()
 
 
