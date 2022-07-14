@@ -262,7 +262,7 @@ def load_image_tables(
     return event and exposure tables appropriate for making images / movies
     and performing photometry
     """
-    relevant_columns = ["ra", "dec", "response", "flags", "mask", "detrad"]
+    relevant_columns = ["ra", "dec", "response", "flags", "mask", "t", "detrad"]
     event_table = parquet.read_table(photonfile, columns=relevant_columns)
     # retain time and flag for every event for exposure time computations
     exposure_array = parquet_to_ndarray(event_table, ["t", "flags"])
