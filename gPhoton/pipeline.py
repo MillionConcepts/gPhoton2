@@ -337,7 +337,7 @@ def _look_for_raw6(
                 f"making temp local copy of raw6 file from remote: "
                 f"{remote_files['raw6']}"
             )
-        raw6path = Path(shutil.copy(remote_files["raw6"], temp_directory))
+            raw6path = Path(shutil.copy(remote_files["raw6"], temp_directory))
     if not raw6path.exists() and (download is True):
         from gPhoton.io.mast import retrieve_raw6
 
