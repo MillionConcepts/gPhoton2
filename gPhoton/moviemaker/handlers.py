@@ -233,7 +233,7 @@ def create_images_and_movies(
     )
     imsz = (
         int((wcs.wcs.crpix[1] - 0.5) * 2),
-        int((wcs.wcs.crpix[0] - 0.5) * 2),
+        int((wcs.wcs.crpix[0] - 0.5) * 2)
     )
     print(f"image size: {imsz}")
     render_kwargs = {

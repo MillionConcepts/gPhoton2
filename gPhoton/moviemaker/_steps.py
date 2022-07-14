@@ -7,11 +7,9 @@ from pathlib import Path
 from typing import Mapping, Sequence, Literal
 import warnings
 
-import astropy.io.fits
 import fitsio
 import pyarrow
 from astropy.io import fits as pyfits
-from astropy.io.fits.hdu.hdulist import fitsopen
 from dustgoggles.structures import NestingDict
 import fast_histogram as fh
 import numpy as np
@@ -54,7 +52,6 @@ def make_frame(
     booleanize: bool = False,
 ) -> np.ndarray:
     """
-
     :param foc: 2-column array containing positions in detector space
     :param weights: 1-D array containing counts at each position
     :param imsz: x/y dimensions of output image
@@ -250,6 +247,7 @@ def generate_wcs_components(event_table):
     wcs = make_bounding_wcs(parquet_to_ndarray(event_table, ["ra", "dec"]))
     # This is a bottleneck, so only do it once.
     # TODO: do we actually want these 1-indexed?
+    # TODO: are we supposed to have SIP correction? we don't appear to.
     foc = wcs.sip_pix2foc(
         wcs.wcs_world2pix(parquet_to_ndarray(event_table, ["ra", "dec"]), 1), 1
     )
@@ -264,18 +262,8 @@ def load_image_tables(
     return event and exposure tables appropriate for making images / movies
     and performing photometry
     """
-    event_table = parquet.read_table(
-        photonfile,
-        columns=[
-            "ra",
-            "dec",
-            "t",
-            "response",
-            "flags",
-            "mask",
-            "detrad"
-        ],
-    )
+    relevant_columns = ["ra", "dec", "response", "flags", "mask", "detrad"]
+    event_table = parquet.read_table(photonfile, columns=relevant_columns)
     # retain time and flag for every event for exposure time computations
     exposure_array = parquet_to_ndarray(event_table, ["t", "flags"])
     # but otherwise only deal with data actually on the 800x800 detector grid

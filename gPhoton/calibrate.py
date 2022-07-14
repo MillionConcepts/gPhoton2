@@ -486,7 +486,7 @@ def find_fuv_offset(eclipse: int) -> tuple[float, float]:
     """
     fodx_coef_0, fody_coef_0, fodx_coef_1, _ = (0.0, 0.0, 0.0, 0.0)
     fuv_temp = get_fuv_temp(eclipse)
-    if np.isnan(fuv_temp):
+    if (fuv_temp is None) or np.isnan(fuv_temp):
         raise ValueError("This is probably not a valid FUV observation.")
     print(f"Offsetting FUV image for eclipse {eclipse} at {fuv_temp} degrees.")
     fodx_coef_0 = cals.offset("x")[eclipse - 1, 1]
