@@ -118,6 +118,7 @@ def sky_box_to_image_box(corners, system):
     cuts = system.world_to_pixel_values(
         np.array(corners)[:, 0], np.array(corners)[:, 1]
     )
-    return tuple(
-        map(int, (cuts[0].min(), cuts[0].max(), cuts[1].min(), cuts[1].max()))
+    rounded_index_map = map(
+        round, (cuts[0].min(), cuts[0].max(), cuts[1].min(), cuts[1].max())
     )
+    return tuple(rounded_index_map)
