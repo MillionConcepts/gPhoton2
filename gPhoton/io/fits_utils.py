@@ -184,6 +184,9 @@ def logged_fits_initializer(
     library = crudely_find_library(loader)
     header = get_header(hdul, hdu_indices[0], library)
     note(f"got header,{path},{stat()}", verbose > 1)
+    # TODO: this is a slightly weird hack to revert astropy's automatic
+    #  translation of some FITS header values to astropy types. There might
+    #  be a cleaner way to do this.
     if library == "astropy":
         output_header = {}
         for k, v in header.items():

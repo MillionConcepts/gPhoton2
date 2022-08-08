@@ -1,2 +1,2 @@
 from setuptools import setup, find_packages
-setup(name="gPhoton", packages=find_packages())
+setup(name="gPhoton", version="0.1.0", packages=find_packages())
