@@ -195,7 +195,7 @@ def logged_fits_initializer(
             else:
                 output_header[k] = str(v)
         header = output_header
-    output = {'header': header}
+    output = {'header': header, 'stat': stat}
     file_attr = next(filter(lambda attr: "filename" in attr, dir(hdul)))
     output['path'] = getattr(hdul, file_attr)
     if isinstance(output['path'], Callable):
