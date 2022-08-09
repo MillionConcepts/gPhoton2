@@ -203,6 +203,9 @@ def logged_fits_initializer(
     if get_handles is True:
         # initialize selected HDU object and get its data 'handles'
         output["handles"] = [hdul[hdu_ix] for hdu_ix in hdu_indices]
+        if library == "astropy":
+            output["handles"] = [h.data for h in output["handles"]]
+        # TODO: section case
         note(f"got data handles,{path},{stat()}", loud=verbose > 1)
     if get_wcs is True:
         output['wcs'] = astropy.wcs.WCS(extract_wcs_keywords(header))
