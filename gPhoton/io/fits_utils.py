@@ -168,7 +168,8 @@ def logged_fits_initializer(
     get_wcs: bool = False,
     get_handles: bool = False,
     verbose: int = 0,
-    logged: bool = True
+    logged: bool = True,
+    astropy_handle_attribute: str = "data"
 ):
     """
     initialize a FITS object using a passed 'loader' -- probably
@@ -203,8 +204,16 @@ def logged_fits_initializer(
     if get_handles is True:
         # initialize selected HDU object and get its data 'handles'
         output["handles"] = [hdul[hdu_ix] for hdu_ix in hdu_indices]
+        # fitsio exposes slices on HDU data by assigning a __getitem__ method
+        # directly to its HDU objects. astropy instead assigns __getitem__
+        # methods to attributes of HDU objects, so here we return an attribute
+        # rather than the HDU itself as the "handle". by default this is
+        # "data", but there are other attributes, notably "section", that also
+        # offer data access
         if library == "astropy":
-            output["handles"] = [h.data for h in output["handles"]]
+            output["handles"] = [
+                getattr(h, astropy_handle_attribute) for h in output["handles"]
+            ]
         # TODO: section case
         note(f"got data handles,{path},{stat()}", loud=verbose > 1)
     if get_wcs is True:
