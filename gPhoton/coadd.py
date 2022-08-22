@@ -1,6 +1,7 @@
 from itertools import product
 from multiprocessing import Pool
-from typing import Mapping, Sequence
+from pathlib import Path
+from typing import Mapping, Sequence, Union, Optional, Literal
 
 import astropy.wcs
 import fast_histogram as fh
@@ -85,23 +86,43 @@ def zero_flag_and_edge(cnt, flag, edge):
     return cnt
 
 
-def project_to_shared_wcs(gphoton_fits, shared_wcs, nonzero=True):
-    # TODO: rewrite to use fitsio.FITS / handle rice (range(-3, 0), etc.)
-    cnt, flag, edge = [gphoton_fits[ix].data for ix in range(3)]
+# TODO: this version is compatible with RICE compression, but is relatively
+#  inefficient. needs to be juiced up.
+def project_to_shared_wcs(
+    fits_path: Union[str, Path],
+    shared_wcs: astropy.wcs.WCS,
+    hdu_offset: Literal[0, 1] = 0,
+    nonzero: bool = True,
+    system: Optional[astropy.wcs.WCS] = None
+):
+    """
+    fits_path: path to fits file
+    shared_wcs: WCS object
+    hdu_offset: number of HDUs to skip at the beginning of the file. this will
+        be 1 for RICE-compressed GALEX images and 0 otherwise.
+    nonzero: sparsify returned weights?
+    system: precomputed WCS object for this image (only for optimization)
+    """
+    import fitsio
+
+    hdul = fitsio.FITS(fits_path)
+    cnt, flag, edge = [hdul[ix + hdu_offset].read() for ix in range(3)]
     cnt = zero_flag_and_edge(cnt, flag, edge)
     if nonzero is True:
         y_ix, x_ix = np.nonzero(cnt)
     else:
         indices = np.indices((cnt.shape[0], cnt.shape[1]), dtype=np.int16)
         y_ix, x_ix = indices[0].ravel(), indices[1].ravel()
-    system = astropy.wcs.WCS(gphoton_fits[0].header)
+    header = hdul[1].read_header()
+    if system is None:
+        system = astropy.wcs.WCS(header)
     ra_input, dec_input = system.pixel_to_world_values(x_ix, y_ix)
     x_shared, y_shared = shared_wcs.wcs_world2pix(ra_input, dec_input, 1)
     return {
         "x": x_shared,
         "y": y_shared,
         "weight": cnt[y_ix, x_ix],
-        "exptime": np.float32(gphoton_fits[0].header["EXPTIME"]),
+        "exptime": header["EXPTIME"]
     }
 
 
