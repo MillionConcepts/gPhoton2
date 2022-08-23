@@ -8,12 +8,12 @@ import fast_histogram as fh
 import numpy as np
 
 from gPhoton.coords.wcs import (
-    make_bounding_wcs, corners_of_a_square, sky_box_to_image_box
+    make_bounding_wcs,
+    corners_of_a_square,
+    sky_box_to_image_box,
 )
 from gPhoton.io.fits_utils import pyfits_open_igzip, read_wcs_from_fits
-from gPhoton.reference import (
-    eclipse_to_paths, crudely_find_library
-)
+from gPhoton.reference import eclipse_to_paths, crudely_find_library
 
 
 def get_image_fns(*eclipses, band="NUV", root="test_data"):
@@ -93,7 +93,7 @@ def project_to_shared_wcs(
     shared_wcs: astropy.wcs.WCS,
     hdu_offset: Literal[0, 1] = 0,
     nonzero: bool = True,
-    system: Optional[astropy.wcs.WCS] = None
+    system: Optional[astropy.wcs.WCS] = None,
 ):
     """
     fits_path: path to fits file
@@ -122,7 +122,7 @@ def project_to_shared_wcs(
         "x": x_shared,
         "y": y_shared,
         "weight": cnt[y_ix, x_ix],
-        "exptime": header["EXPTIME"]
+        "exptime": header["EXPTIME"],
     }
 
 
@@ -182,28 +182,26 @@ def project_slice_to_shared_wcs(
 
 
 def cut_skybox(loader, target, hdu_indices, side_length):
-    hdul = loader(target['path'])
+    hdul = loader(target["path"])
     library = crudely_find_library(loader)
     array_handles = [
-        hdul[hdu_ix]
-        if library == "fitsio"
-        else hdul[hdu_ix].data
+        hdul[hdu_ix] if library == "fitsio" else hdul[hdu_ix].data
         for hdu_ix in hdu_indices
     ]
-    corners = corners_of_a_square(target['ra'], target['dec'], side_length)
+    corners = corners_of_a_square(target["ra"], target["dec"], side_length)
     try:
-        coords = sky_box_to_image_box(corners, target['wcs'])
+        coords = sky_box_to_image_box(corners, target["wcs"])
         return {
             "arrays": [
-                handle[coords[2]:coords[3] + 1, coords[0]:coords[1] + 1]
+                handle[coords[2] : coords[3] + 1, coords[0] : coords[1] + 1]
                 for handle in array_handles
             ],
             "corners": corners,
-            "coords": coords
+            "coords": coords,
         } | target
     except ValueError as ve:
         if ("NaN" in str(ve)) or ("negative dimensions" in str(ve)):
-            return 
+            return
         raise
 
 
@@ -239,10 +237,10 @@ def coadd_image_slices(image_slices: Sequence[Mapping]):
     """
     if len(image_slices) == 1:
         return (
-            zero_flag_and_edge(*image_slices[0]['arrays']), 
-            image_slices[0]['wcs']
+            zero_flag_and_edge(*image_slices[0]["arrays"]),
+            image_slices[0]["wcs"],
         )
-    corners = image_slices[0]['corners']
+    corners = image_slices[0]["corners"]
     shared_wcs = make_bounding_wcs(
         np.array(
             [[corners[2][0], corners[1][1]], [corners[0][0], corners[0][1]]]
@@ -251,18 +249,19 @@ def coadd_image_slices(image_slices: Sequence[Mapping]):
     binned_images = []
     for image in image_slices:
         projection = project_slice_to_shared_wcs(
-            zero_flag_and_edge(*image['arrays']),
-            image['wcs'],
+            zero_flag_and_edge(*image["arrays"]),
+            image["wcs"],
             shared_wcs,
-            image['coords'][0],
-            image['coords'][2]
+            image["coords"][0],
+            image["coords"][2],
         )
         binned_images.append(
             bin_projected_weights(
-                projection['x'],
-                projection['y'],
-                projection['weight'],
-                wcs_imsz(shared_wcs)
+                projection["x"],
+                projection["y"],
+                projection["weight"],
+                wcs_imsz(shared_wcs),
             )
+            / image["exptime"]
         )
     return np.sum(binned_images, axis=0), shared_wcs
