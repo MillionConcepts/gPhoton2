@@ -33,8 +33,8 @@ def galex_sky_box(ra: float, dec: float, arcseconds: float):
     metadata = parquet.read_table(TABLE_PATHS["metadata"]).to_pandas()
     ra_dmin = metadata['ra_min'] - ra
     ra_dmax = metadata['ra_max'] - ra
-    ra_dmin.loc[abs(ra_dmin) >= 180] = ra_dmin.loc[abs(ra_dmin) >= 180] % 180
-    ra_dmax.loc[abs(ra_dmax) >= 180] = ra_dmax.loc[abs(ra_dmax) >= 180] % 180
+    ra_dmin.loc[ra_dmin.abs() > 180] = (360 - ra_dmin.loc[ra_dmin.abs() > 180])
+    ra_dmax.loc[ra_dmax.abs() > 180] = (360 - ra_dmax.loc[ra_dmax.abs() > 180])
     dec_dmin = metadata['dec_min'] - dec
     dec_dmax = metadata['dec_max'] - dec
     return metadata.loc[
