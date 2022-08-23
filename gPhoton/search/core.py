@@ -26,24 +26,24 @@ def boundaries_of_a_square(x: float, y: float, size: float):
 
 def galex_sky_box(ra: float, dec: float, arcseconds: float):
     """
-    return eclipse numbers of all GALEX visits whose nominal boresight centers
-    fall within a box with side length `arcseconds` centered on (ra, dec)
+    return eclipse numbers of all GALEX visits such that ra, dec is within
+    `arcseconds` of a box bounding their recorded boresight positions
     """
-    ra0, ra1, dec0, dec1 = boundaries_of_a_square(ra, dec, arcseconds / 3600)
-    return parquet.read_table(
-        TABLE_PATHS["metadata"],
-        filters=[
-            ("ra_min", ">=", ra0),
-            ("ra_max", "<=", ra1),
-            ("dec_min", ">=", dec0),
-            ("dec_max", "<=", dec1)
-        ]
-    )
+    deg = arcseconds / 3600
+    metadata = parquet.read_table(TABLE_PATHS["metadata"]).to_pandas()
+    ra_dmin = metadata['ra_min'] - ra
+    ra_dmax = metadata['ra_max'] - ra
+    ra_dmin.loc[abs(ra_dmin) >= 180] = ra_dmin.loc[abs(ra_dmin) >= 180] % 180
+    ra_dmax.loc[abs(ra_dmax) >= 180] = ra_dmax.loc[abs(ra_dmax) >= 180] % 180
+    dec_dmin = metadata['dec_min'] - dec
+    dec_dmax = metadata['dec_max'] - dec
+    return metadata.loc[
+        ((abs(ra_dmin) < deg) | (abs(ra_dmax) < deg))
+        & ((abs(dec_dmin) < deg) | (abs(dec_dmax) < deg))
+    ]
 
 
-def eclipses_near_object(
-    object_name: str, arcseconds: float, verbose=True, as_pandas=True
-):
+def eclipses_near_object(object_name: str, arcseconds: float, verbose=True):
     """
     query SIMBAD for the position of `object`. return eclipse numbers of
     all GALEX visits whose nominal viewports overlap a box with side length
@@ -75,12 +75,10 @@ def eclipses_near_object(
             f"{len(matches)} eclipses found within {arcseconds} asec of "
             f"{object_name}."
         )
-    if as_pandas:
-        return matches.to_pandas()
     return matches
 
 
-def filter_galex_eclipses(eclipse_type=None, filters=None, as_pandas = True):
+def filter_galex_eclipses(eclipse_type=None, filters=None, as_pandas=True):
     """
     randomly select a set of GALEX eclipses matching predefined criteria.
     if no arguments are passed, returns all eclipses.
