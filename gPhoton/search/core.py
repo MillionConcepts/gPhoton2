@@ -46,8 +46,8 @@ def galex_sky_box(ra: float, dec: float, arcseconds: float):
 def eclipses_near_object(object_name: str, arcseconds: float, verbose=True):
     """
     query SIMBAD for the position of `object`. return eclipse numbers of
-    all GALEX visits whose nominal viewports overlap a box with side length
-    `arcseconds` centered on that object.
+    all GALEX visits whose nominal boresight bounds are within `arcseconds`
+    of that object.
 
     this function requires astroquery.
     """
