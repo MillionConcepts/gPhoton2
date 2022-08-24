@@ -146,8 +146,8 @@ def bin_projected_weights(x, y, weights, imsz):
     return binned
 
 
-def get_full_frame_coadd_layer(gphoton_fits, shared_wcs):
-    projection = project_to_shared_wcs(gphoton_fits, shared_wcs)
+def get_full_frame_coadd_layer(gphoton_fits, shared_wcs, hdu_offset=0):
+    projection = project_to_shared_wcs(gphoton_fits, shared_wcs, hdu_offset)
     return bin_projected_weights(
         projection["x"],
         projection["y"],
