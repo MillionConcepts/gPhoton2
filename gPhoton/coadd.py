@@ -240,6 +240,7 @@ def cut_skybox_from_file(
     dec_x: float = None,
     loader: Optional[Callable] = None,
     hdu_indices: tuple[int] = (0,),
+    **_
 ):
     """
     assumes all hdus are spatially coregistered. if not, call the function
