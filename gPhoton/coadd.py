@@ -1,19 +1,28 @@
+import warnings
+from functools import reduce
 from itertools import product
 from multiprocessing import Pool
+from operator import or_
 from pathlib import Path
-from typing import Mapping, Sequence, Union, Optional, Literal
+from typing import Mapping, Sequence, Union, Optional, Literal, Callable
 
 import astropy.wcs
 import fast_histogram as fh
 import numpy as np
+from dustgoggles.structures import listify
 
 from gPhoton.coords.wcs import (
     make_bounding_wcs,
-    corners_of_a_square,
+    corners_of_a_rectangle,
     sky_box_to_image_box,
 )
-from gPhoton.io.fits_utils import pyfits_open_igzip, read_wcs_from_fits
-from gPhoton.reference import eclipse_to_paths, crudely_find_library
+from gPhoton.io.fits_utils import (
+    pyfits_open_igzip,
+    read_wcs_from_fits,
+    AgnosticHDUL,
+)
+from gPhoton.reference import eclipse_to_paths
+from gPhoton.types import Pathlike
 
 
 def get_image_fns(*eclipses, band="NUV", root="test_data"):
@@ -181,24 +190,70 @@ def project_slice_to_shared_wcs(
     }
 
 
-def cut_skybox(loader, target, hdu_indices, side_length):
-    hdul = loader(target["path"])
-    library = crudely_find_library(loader)
-    array_handles = [
-        hdul[hdu_ix] if library == "fitsio" else hdul[hdu_ix].data
-        for hdu_ix in hdu_indices
-    ]
-    corners = corners_of_a_square(target["ra"], target["dec"], side_length)
+def _check_oob(bounds, shape):
+    if not reduce(
+        or_,
+        (
+            bounds[2] < 0,
+            bounds[3] > shape[0],
+            bounds[0] < 0,
+            bounds[1] > shape[1],
+        ),
+    ):
+        return
+    warnings.warn(
+        f"{bounds} larger than array ({shape}) output will be clipped"
+    )
+
+
+def cut_skybox(hdus, ra, dec, ra_x=None, dec_x=None, system=None):
+    """
+    assumes all hdus are spatially coregistered. if not, call the function
+    multiple times.
+    """
+    hdus = listify(hdus)
+    if system is None:
+        system = astropy.wcs.WCS(hdus[0].header)
+    corners = corners_of_a_rectangle(ra, dec, ra_x, dec_x)
+    coords = sky_box_to_image_box(corners, system)
+    arrays = []
+    for hdu in hdus:
+        _check_oob(coords, hdu.shape)
+        arrays.append(
+            hdu.data[coords[2] : coords[3] + 1, coords[0] : coords[1] + 1]
+        )
+    return {
+        "arrays": arrays,
+        "corners": corners,
+        "coords": coords,
+        "ra": ra,
+        "dec": dec,
+    }
+
+
+def cut_skybox_from_file(
+    path: Pathlike,
+    ra: float,
+    dec: float,
+    system: Optional[astropy.wcs.WCS] = None,
+    ra_x: float = None,
+    dec_x: float = None,
+    loader: Optional[Callable] = None,
+    hdu_indices: tuple[int] = (0,),
+):
+    """
+    assumes all hdus are spatially coregistered. if not, call the function
+    multiple times.
+    """
+    if loader is None:
+        import fitsio
+
+        loader = fitsio.FITS
+    hdul = AgnosticHDUL(loader(path))
     try:
-        coords = sky_box_to_image_box(corners, target["wcs"])
-        return {
-            "arrays": [
-                handle[coords[2] : coords[3] + 1, coords[0] : coords[1] + 1]
-                for handle in array_handles
-            ],
-            "corners": corners,
-            "coords": coords,
-        } | target
+        return cut_skybox(
+            [hdul[ix] for ix in hdu_indices], ra, dec, system, ra_x, dec_x
+        )
     except ValueError as ve:
         if ("NaN" in str(ve)) or ("negative dimensions" in str(ve)):
             return
@@ -213,11 +268,11 @@ def cut_skyboxes(plans, threads, cut_kwargs):
     cuts = []
     for cut_plan in plans:
         if pool is None:
-            cuts.append(cut_skybox(target=cut_plan, **cut_kwargs))
+            cuts.append(cut_skybox_from_file(**(cut_plan | cut_kwargs)))
         else:
             cuts.append(
                 pool.apply_async(
-                    cut_skybox, kwds={"target": cut_plan} | cut_kwargs
+                    cut_skybox_from_file, kwds=(cut_plan | cut_kwargs)
                 )
             )
     if pool is not None:

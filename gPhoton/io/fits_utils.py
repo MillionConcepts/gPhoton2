@@ -6,17 +6,81 @@ TODO: these are somewhat repetitive/redundant, tossed around inconsistently,
 """
 
 import warnings
-from typing import Callable, Sequence, Literal
+from typing import Sequence
 
 import astropy.io.fits
 import astropy.wcs
 import numpy as np
 from dustgoggles.scrape import head_file
 
-from gPhoton.coords.wcs import extract_wcs_keywords
-from gPhoton.pretty import make_monitors
 from gPhoton.reference import crudely_find_library
 from gPhoton.types import Pathlike
+
+
+class AgnosticHDU:
+    """
+    wrapper class to enforce consistency of (some) signatures between
+    astropy.io.fits.hdu.hdulist.HDUList and fitsio.fitslib.FITS
+    """
+
+    def __init__(self, hdu, library=None):
+        self._hdu = hdu
+        if library is None:
+            library = crudely_find_library(hdu)
+        self.library = library
+
+    @property
+    def header(self):
+        if self.library == "fitsio":
+            return self._hdu.read_header()
+        return self._hdu.header
+
+    @property
+    def data(self):
+        if self.library == "fitsio":
+            return self._hdu
+        return self._hdu.data
+
+    def __getitem__(self, item):
+        return self.data[item]
+
+    def __getattribute__(self, attr):
+        try:
+            return super().__getattribute__(attr)
+        except AttributeError:
+            pass
+        return self._hdu.__getattribute__(attr)
+
+    def __str__(self):
+        return self._hdu.__str__()
+
+    def __repr__(self):
+        return self._hdu.__repr__()
+
+
+class AgnosticHDUL:
+    """
+    wrapper class to enforce consistency of (some) signatures between
+    astropy.io.fits.hdu.hdulist.HDUList and fitsio.fitslib.FITS
+    """
+
+    def __init__(self, hdul, library=None):
+        self._hdul = hdul
+        if library is None:
+            library = crudely_find_library(hdul)
+        self.library = library
+
+    def __getitem__(self, item):
+        return AgnosticHDU(self._hdul[item], self.library)
+
+    def __str__(self):
+        return self._hdul.__str__()
+
+    def __repr__(self):
+        return self._hdul.__repr__()
+
+    def __len__(self):
+        return self._hdul.__len__()
 
 
 def get_fits_data(filename, dim=0, verbose=0):
@@ -150,16 +214,4 @@ def read_wcs_from_fits(*fits_paths: Pathlike) -> tuple[
     headers = [first_fits_header(path) for path in fits_paths]
     systems = [astropy.wcs.WCS(header) for header in headers]
     return headers, systems
-
-
-def get_header(hdul: Sequence, hdu_ix: int, library: str):
-    """
-    fetch header from either an astropy or fitsio HDU list object
-    """
-    if library == "fitsio":
-        return hdul[hdu_ix].read_header()
-    elif library == "astropy":
-        return hdul[hdu_ix].header
-    raise ValueError(f"don't know {library}")
-
 

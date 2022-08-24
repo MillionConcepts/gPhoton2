@@ -98,13 +98,19 @@ def extract_wcs_keywords(header):
     }
 
 
-def corners_of_a_square(ra, dec, side_length):
+def corners_of_a_rectangle(ra, dec, ra_x=None, dec_x=None):
     """
-    corners of a square centered at ra, dec with side length side_length
-    in the order: upper right, lower right, upper left, lower left
+    corners of a rectangle centered at ra, dec with side lengths ra_x, dec_x.
+    if only one of ra_x or dec_x is passed, will cut a square.
+    returns coordinates in the order:
+    upper right, lower right, upper left, lower left
     """
+    if (ra_x is None) and (dec_x is None):
+        raise ValueError("at least one extent must be specified.")
+    ra_x = ra_x if ra_x is not None else dec_x
+    dec_x = dec_x if dec_x is not None else ra_x
     return [
-        (op1(ra, side_length / 2), op2(dec, side_length / 2))
+        (op1(ra, ra_x / 2), op2(dec, dec_x / 2))
         for op1, op2 in product((add, sub), (add, sub))
     ]
 
