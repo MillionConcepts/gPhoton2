@@ -41,6 +41,13 @@ class AgnosticHDU:
             return self._hdu
         return self._hdu.data
 
+    def wcs_(self):
+        import astropy.wcs
+
+        from gPhoton.coords.wcs import extract_wcs_keywords
+
+        return astropy.wcs.WCS(extract_wcs_keywords(self.header))
+
     def __getitem__(self, item):
         return self.data[item]
 
