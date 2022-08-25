@@ -239,9 +239,9 @@ def cut_skybox_from_file(
     path: Pathlike,
     ra: float,
     dec: float,
-    system: Optional[astropy.wcs.WCS] = None,
     ra_x: float = None,
     dec_x: float = None,
+    system: Optional[astropy.wcs.WCS] = None,
     loader: Optional[Callable] = None,
     hdu_indices: tuple[int] = (0,),
     **_,
@@ -257,7 +257,7 @@ def cut_skybox_from_file(
     hdul = AgnosticHDUL(loader(path))
     try:
         return cut_skybox(
-            [hdul[ix] for ix in hdu_indices], ra, dec, system, ra_x, dec_x
+            [hdul[ix] for ix in hdu_indices], ra, dec, ra_x, dec_x, system
         )
     except ValueError as ve:
         if ("NaN" in str(ve)) or ("negative dimensions" in str(ve)):
