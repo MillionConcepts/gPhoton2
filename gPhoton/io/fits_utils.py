@@ -41,6 +41,12 @@ class AgnosticHDU:
             return self._hdu
         return self._hdu.data
 
+    @property
+    def shape(self):
+        if self.library == "fitsio":
+            return self._hdu.get_dims()
+        return self._hdu.shape
+
     def wcs_(self):
         import astropy.wcs
 
