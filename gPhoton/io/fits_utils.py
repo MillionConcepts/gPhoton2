@@ -47,6 +47,7 @@ class AgnosticHDU:
             return self._hdu.get_dims()
         return self._hdu.shape
 
+    @property
     def wcs_(self):
         import astropy.wcs
 
