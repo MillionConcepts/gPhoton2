@@ -19,7 +19,8 @@ from gPhoton.coords.wcs import (
 from gPhoton.io.fits_utils import (
     pyfits_open_igzip,
     read_wcs_from_fits,
-    AgnosticHDUL, AgnosticHDU,
+    AgnosticHDUL,
+    AgnosticHDU,
 )
 from gPhoton.reference import eclipse_to_paths
 from gPhoton.types import Pathlike
@@ -243,7 +244,7 @@ def cut_skybox_from_file(
     dec_x: float = None,
     loader: Optional[Callable] = None,
     hdu_indices: tuple[int] = (0,),
-    **_
+    **_,
 ):
     """
     assumes all hdus are spatially coregistered. if not, call the function
@@ -267,24 +268,27 @@ def cut_skybox_from_file(
 # TODO, maybe: granular logging here -- maybe because Netstat is basically
 #  useless on this level if cuts are parallelized, and diagnostics would
 #  probably be better done on fake data using other workflows
-def cut_skyboxes(plans, threads, cut_kwargs):
-    pool = Pool(threads) if threads is not None else None
-    cuts = []
-    for cut_plan in plans:
-        if pool is None:
-            cuts.append(cut_skybox_from_file(**(cut_plan | cut_kwargs)))
-        else:
-            cuts.append(
-                pool.apply_async(
-                    cut_skybox_from_file, kwds=(cut_plan | cut_kwargs)
-                )
-            )
-    if pool is not None:
-        pool.close()
-        pool.join()
-        cuts = [cut_result.get() for cut_result in cuts]
+def cut_skyboxes(plans, **kwargs):
+    if kwargs.get("threads") is not None:
+        cuts = _cut_skyboxes_threaded([p | kwargs for p in plans])
+    else:
+        cuts = _cut_skyboxes_unthreaded([p | kwargs for p in plans])
     # None results are cuts that edged out of the WCS or image bounds
     return list(filter(None, cuts))
+
+
+def _cut_skyboxes_unthreaded(cut_plans):
+    return [cut_skybox_from_file(**plan) for plan in cut_plans]
+
+
+def _cut_skyboxes_threaded(cut_plans):
+    pool = Pool(cut_plans[0]["threads"])
+    cuts = []
+    for plan in cut_plans:
+        cuts.append(pool.apply_async(cut_skybox_from_file, kwds=plan))
+    pool.close()
+    pool.join()
+    return [cut_result.get() for cut_result in cuts]
 
 
 def coadd_image_slices(image_slices: Sequence[Mapping]):
