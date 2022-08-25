@@ -91,11 +91,18 @@ def extract_wcs_keywords(header):
     to trim irrelevant keywords and fix old-style ones before feeding them to
     astropy.wcs.
     """
-    wcs_words = ('CTYPE', 'CRVAL', 'CRPIX', 'CDELT', 'NAXIS', 'PC')
-    return {
+    wcs_words = ('CTYPE', 'CRVAL', 'CRPIX', 'CDELT', 'ZNAXIS', 'NAXIS', 'PC')
+    keywords = {
         translate_pc_keyword(k): header[k] for k in header.keys()
         if any([k.startswith(w) for w in wcs_words])
     }
+    # we don't care about the dimensions of compressed HDUs; we always want
+    # the dimensions of the underlying image, and astropy.wcs does not
+    # automatically filter for this (astropy.io.fits does, usually, but not
+    # always, and fitsio doesn't)
+    not_z = {k: v for k, v in keywords.items() if not k.startswith('ZNAXIS')}
+    un_zd = {k[1:]: v for k, v in keywords.items() if k.startswith('ZNAXIS')}
+    return not_z | un_zd
 
 
 def corners_of_a_rectangle(ra, dec, ra_x=None, dec_x=None):
