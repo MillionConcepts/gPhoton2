@@ -301,7 +301,7 @@ def coadd_image_slices(image_slices: Sequence[Mapping]):
     if len(image_slices) == 1:
         return (
             zero_flag_and_edge(*image_slices[0]["arrays"]),
-            image_slices[0]["wcs"],
+            image_slices[0]["system"],
         )
     corners = image_slices[0]["corners"]
     shared_wcs = make_bounding_wcs(
