@@ -313,7 +313,7 @@ def coadd_image_slices(image_slices: Sequence[Mapping]):
     for image in image_slices:
         projection = project_slice_to_shared_wcs(
             zero_flag_and_edge(*image["arrays"]),
-            image["wcs"],
+            image["system"],
             shared_wcs,
             image["coords"][0],
             image["coords"][2],
