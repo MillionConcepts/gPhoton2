@@ -19,7 +19,7 @@ from gPhoton.coords.wcs import (
 from gPhoton.io.fits_utils import (
     pyfits_open_igzip,
     read_wcs_from_fits,
-    AgnosticHDUL,
+    AgnosticHDUL, AgnosticHDU,
 )
 from gPhoton.reference import eclipse_to_paths
 from gPhoton.types import Pathlike
@@ -209,11 +209,14 @@ def _check_oob(bounds, shape):
 def cut_skybox(hdus, ra, dec, ra_x=None, dec_x=None, system=None):
     """
     assumes all hdus are spatially coregistered. if not, call the function
-    multiple times.
+    once for each cluster of spatially-coregistered hdus.
     """
     hdus = listify(hdus)
     if system is None:
-        system = astropy.wcs.WCS(hdus[0].header)
+        if not isinstance(hdus[0], AgnosticHDU):
+            system = AgnosticHDU(hdus[0]).wcs_
+        else:
+            system = hdus[0].wcs_
     corners = corners_of_a_rectangle(ra, dec, ra_x, dec_x)
     coords = sky_box_to_image_box(corners, system)
     arrays = []
