@@ -132,7 +132,7 @@ def project_to_shared_wcs(
         "x": x_shared,
         "y": y_shared,
         "weight": cnt[y_ix, x_ix],
-        "exptime": header["EXPTIME"],
+        "exptime": header["EXPT_0"],
     }
 
 
