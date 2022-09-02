@@ -291,7 +291,10 @@ def _cut_skyboxes_threaded(cut_plans):
     return [cut_result.get() for cut_result in cuts]
 
 
-def coadd_image_slices(image_slices: Sequence[Mapping]):
+def coadd_image_slices(
+    image_slices: Sequence[Mapping],
+    scale='unweighted'
+):
     """
     operates on records output by get_galex_cutouts() or routines w/
     similar signatures.
@@ -299,10 +302,14 @@ def coadd_image_slices(image_slices: Sequence[Mapping]):
     TODO: not fully integrated yet.
     """
     if len(image_slices) == 1:
+        solo = image_slices[0]
+        scaler = 1 / solo['exptime'] if scale is not None else 1
         return (
-            zero_flag_and_edge(*image_slices[0]["arrays"]),
-            image_slices[0]["system"],
+            zero_flag_and_edge(*solo["arrays"]) * scaler,
+            solo['system'],
+            solo['exptime']
         )
+    # corners are in sky coordinates and should all be shared
     corners = image_slices[0]["corners"]
     shared_wcs = make_bounding_wcs(
         np.array(
@@ -325,6 +332,24 @@ def coadd_image_slices(image_slices: Sequence[Mapping]):
                 projection["weight"],
                 wcs_imsz(shared_wcs),
             )
-            / image["exptime"]
         )
-    return np.sum(binned_images, axis=0), shared_wcs
+    coadd_exptime = sum([im['exptime'] for im in image_slices])
+    if scale == 'unweighted':
+        coadd = np.mean(
+            [
+                bim / im['exptime']
+                for bim, im in zip(binned_images, image_slices)
+            ],
+            axis=0
+        )
+    elif scale == 'weighted':
+        coadd = np.sum(
+            [
+                bim / coadd_exptime
+                for bim in binned_images
+            ],
+            axis=0
+        )
+    else:
+        coadd = np.sum(binned_images, axis=0)
+    return coadd, shared_wcs, coadd_exptime
