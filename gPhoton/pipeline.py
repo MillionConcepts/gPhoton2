@@ -124,7 +124,8 @@ def execute_pipeline(
     coregister_lightcurves: bool = False,
     stop_after: Optional[Literal["photonpipe", "moviemaker"]] = None,
     compression: Literal["none", "gzip", "rice"] = "gzip",
-    hdu_constructor_kwargs: Optional[Mapping] = None
+    hdu_constructor_kwargs: Optional[Mapping] = None,
+    min_exptime: Optional[float] = None
 ) -> str:
     """
     Args:
@@ -181,6 +182,8 @@ def execute_pipeline(
         hdu_constructor_kwargs: optional mapping of kwargs to pass to the
             astropy.io.fits HDU constructor (for instance, tile compression
             parameters)
+        min_exptime: minimum effective exposure time to run image/movie
+            and lightcurve generation. None means no lower bound.
 
     Returns:
         str: `"return code: successful"` for fully successful execution;
@@ -243,11 +246,22 @@ def execute_pipeline(
     )
     # TODO: whatever led me to cast the photonlist path to str here is bad
     results = create_images_and_movies(
-        str(photonpath), depth, band, lil, threads, maxsize, fixed_start_time
+        str(photonpath),
+        depth,
+        band,
+        lil,
+        threads,
+        maxsize,
+        fixed_start_time,
+        min_exptime=min_exptime
     )
     stopwatch.click()
-
-    if (stop_after == "moviemaker") or (results["movie_dict"] == {}):
+    if not (results['status'].startswith('successful')):
+        print(
+            f"Moviemaker pipeline unsuccessful {(results['status'])}; halting."
+        )
+        return "return code: " + results["status"]
+    if stop_after == "moviemaker":
         write_moviemaker_results(
             results,
             local_files,
@@ -259,17 +273,13 @@ def execute_pipeline(
             compression,
             hdu_constructor_kwargs
         )
-        if stop_after == "moviemaker":
-            print(
-                f"stop_after='moviemaker' passed, halting; "
-                f"{round(time() - stopwatch.start_time, 2)} seconds for "
-                f"execution"
-            )
-            return "return code: successful (planned stop after moviemaker)"
-        # TODO: if depth is 0, still perform photometry on full-depth images
-        elif results["movie_dict"] == {}:
-            print("No movies available, halting before photometry.")
-            return "return code: " + results["status"]
+        print(
+            f"stop_after='moviemaker' passed, halting; "
+            f"{round(time() - stopwatch.start_time, 2)} seconds for "
+            f"execution"
+        )
+        return "return code: successful (planned stop after moviemaker)"
+    # TODO: if depth is 0, still perform photometry on full-depth images
 
     # PHOTOMETRY SECTION
     from gPhoton.lightcurve import make_lightcurves

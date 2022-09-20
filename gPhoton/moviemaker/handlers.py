@@ -224,6 +224,7 @@ def create_images_and_movies(
     maxsize=None,
     fixed_start_time: Optional[int] = None,
     edge_threshold: int = 350,
+    min_exptime: Optional[float] = None
 ) -> Union[dict, str]:
     print(f"making images from {photonfile}")
     print("indexing data and making WCS solution")
@@ -248,6 +249,16 @@ def create_images_and_movies(
     print(f"making full-depth image")
     # don't be careful about memory wrt sparsification, just go for it
     status, image_dict = make_full_depth_image(**render_kwargs)
+    if (min_exptime is not None) and (image_dict["exptimes"][0] < min_exptime):
+        return {
+            "wcs": wcs,
+            "movie_dict": {},
+            "image_dict": image_dict,
+            "status": (
+                f"exptime {round(image_dict['exptimes'][0])} "
+                f"< min_exptime {min_exptime}"
+            )
+        }
     if (depth is not None) and status.startswith("success"):
         print(f"making {depth}-second depth movies")
         status, movie_dict = make_movies(
