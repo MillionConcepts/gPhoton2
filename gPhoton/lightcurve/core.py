@@ -8,7 +8,7 @@ from gPhoton.lightcurve._steps import (
     find_sources,
     count_full_depth_image,
     extract_photometry,
-    write_exptime_file,
+    write_exptime_file, load_source_catalog,
 )
 from gPhoton.reference import FakeStopwatch, eclipse_to_paths
 from gPhoton.types import GalexBand
@@ -34,11 +34,7 @@ def make_lightcurves(
             eclipse, Path(photonlist_path).parent, None
         )[band]
     if source_catalog_file is not None:
-        import pandas as pd
-
-        sources = pd.read_csv(source_catalog_file)
-        sources = sources.loc[sources["eclipse"] == eclipse]
-        sources = sources[~sources.duplicated()].reset_index(drop=True)
+        sources = load_source_catalog(source_catalog_file, eclipse)
     else:
         sources = None
     source_table = find_sources(

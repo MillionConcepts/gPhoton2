@@ -154,3 +154,52 @@ def write_exptime_file(expfile: Pathlike, movie_dict) -> None:
     print(f"writing exposure time table to {expfile}")
     # noinspection PyTypeChecker
     exptime_table.to_csv(expfile, index=False)
+
+
+
+def _load_csv_catalog(
+    source_catalog_file: Pathlike, eclipse: int
+) -> pd.DataFrame:
+    sources = pd.read_csv(source_catalog_file)
+    return sources.loc[sources["eclipse"] == eclipse]
+
+
+def _load_parquet_catalog(
+    source_catalog_file: Pathlike, eclipse: int
+) -> pd.DataFrame:
+    from pyarrow import parquet
+
+    return parquet.read_table(
+        source_catalog_file,
+        filters=[('eclipse', '=', eclipse)],
+        columns=['ra', 'dec']
+    ).to_pandas()
+
+
+def load_source_catalog(
+    source_catalog_file: Pathlike, eclipse: int
+) -> pd.DataFrame:
+    source_catalog_file = Path(source_catalog_file)
+    if source_catalog_file.suffix == ".csv":
+        format_ = "csv"
+    elif source_catalog_file.suffix == ".parquet":
+        format_ = "parquet"
+    else:
+        raise ValueError(
+            "Couldn't automatically determine source catalog format from the "
+            "extension {source_catalog_file.suffix}. Please pass a .csv or "
+            ".parquet file with at least the columns 'eclipse', 'ra', 'dec'."
+        )
+    try:
+        if format_ == ".csv":
+            sources = _load_csv_catalog(source_catalog_file, eclipse)
+        else:
+            sources = _load_parquet_catalog(source_catalog_file, eclipse)
+        sources = sources[['ra', 'dec']]
+    except KeyError:
+        raise ValueError(
+            "The source catalog file must specify source positions in "
+            "columns named 'ra' and 'dec' with a reference column named "
+            "'eclipse'."
+        )
+    return sources[~sources.duplicated()].reset_index(drop=True)
