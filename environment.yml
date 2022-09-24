@@ -22,7 +22,7 @@ dependencies:
   # optional, used in pipeline CLI
   - fire
   # optional, used for some gzip-handling features
-  - igzip
+  - python-isal
   # non-mandatory, some performance improvements to numba --
   # cannot be used on non-x64 platforms
   - icc_rt
