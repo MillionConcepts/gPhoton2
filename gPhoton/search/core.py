@@ -62,7 +62,7 @@ def eclipses_near_object(object_name: str, arcseconds: float, verbose=True):
         result = query.query_objects([object_name])
     if result is None:
         raise ValueError(f"{object_name} not found in SIMBAD database.")
-    ra_d, dec_d = result['RA_d'][0], result['DEC_d'][0]
+    ra_d, dec_d = float(result['RA_d'][0]), float(result['DEC_d'][0])
     if verbose:
         print(f"{object_name} position: RA {ra_d}, DEC {dec_d}")
     matches = galex_sky_box(ra_d, dec_d, arcseconds)
