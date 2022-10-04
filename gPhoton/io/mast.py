@@ -27,7 +27,7 @@ from gPhoton.types import GalexBand
 # doing!
 
 BASE_URL = (
-    "https://mastcomp.stsci.edu/portal/Mashup/MashupQuery.asmx/Galex"
+    "https://mast.stsci.edu/portal/Mashup/MashupQuery.asmx/Galex"
     "PhotonListQueryTest?query="
 )
 TSCALE = 1000
@@ -127,7 +127,7 @@ def raw_data_paths(eclipse):
 def retrieve_raw6(eclipse: int, band: GalexBand, outbase: str) -> str:
     """retrieve raw6 (L0 telemetry) file from MAST and save it to outbase."""
     raw6file = download_data(
-        eclipse, "raw6", band, datadir=os.path.dirname(outbase)
+        eclipse, "raw6", band, datadir=os.path.dirname(outbase),
     )
     if raw6file is None:
         raise ValueError("Unable to retrieve raw6 file for this eclipse.")
@@ -180,7 +180,6 @@ def manage_networked_sql_request(
     :returns: requests.Response or None -- The response from the server. If the
         query does not receive a response, returns None.
     """
-
     # Keep track of the number of failures.
     cnt = 0
 

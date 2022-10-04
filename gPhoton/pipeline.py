@@ -351,6 +351,7 @@ def _look_for_raw6(
     if not raw6path.exists() and (download is True):
         from gPhoton.io.mast import retrieve_raw6
 
+        print("downloading raw6file")
         raw6file = retrieve_raw6(eclipse, band, raw6path)
         if raw6file is not None:
             raw6path = Path(raw6file)

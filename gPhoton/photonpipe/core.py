@@ -89,6 +89,7 @@ def execute_photonpipe(
     startt = time.time()
     # download raw6 if local file is not passed
     if raw6file is None:
+        print(f"downloading raw6file")
         raw6file = retrieve_raw6(eclipse, band, outfile)
     # get / check eclipse # from raw6 header --
     eclipse = get_eclipse_from_header(raw6file, eclipse)
