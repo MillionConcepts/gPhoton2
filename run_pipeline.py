@@ -2,7 +2,7 @@ from gPhoton.pipeline import execute_pipeline
 
 if __name__ == "__main__":
     execute_pipeline(
-        34414,
+        781,
         "NUV",
         depth=120,
         threads=4,

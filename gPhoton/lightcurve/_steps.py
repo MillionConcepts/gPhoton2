@@ -67,7 +67,7 @@ def count_full_depth_image(
 
 def find_sources(
     eclipse: int,
-    band,
+    band: str,
     datapath: Union[str, Path],
     image_dict,
     wcs,
@@ -119,7 +119,7 @@ def find_sources(
     return source_table, segment_map, extended_source_mask, extended_source_cat
 
 
-def get_point_and_extended_sources(cnt_image, band: str, f_e_mask):
+def get_point_and_extended_sources(cnt_image: np.ndarray, band: str, f_e_mask):
 
     """
     Main function for extracting point and extended sources from an eclipse.
@@ -190,13 +190,13 @@ def get_point_and_extended_sources(cnt_image, band: str, f_e_mask):
     return seg_sources.dropna(), segment_map, extended_source_mask, extended_source_cat
 
 
-def mask_for_extended_sources(cnt_image, band):
+def mask_for_extended_sources(cnt_image: np.ndarray, band: str):
     dao_sources = dao_finder_modified(cnt_image)
     extended_mask, extended_source_cat = get_extended_mask(dao_sources, cnt_image.shape, band)
     return extended_mask, extended_source_cat
 
 
-def dao_finder_modified(cnt_image):
+def dao_finder_modified(cnt_image: np.ndarray):
     """
     DAO Star Finder Arguments:
        fwhm = full width half maximum of gaussian kernel
@@ -225,7 +225,7 @@ def dao_finder_modified(cnt_image):
     return dao_sources
 
 
-def get_extended_mask(dao_sources, image_size, band):
+def get_extended_mask(dao_sources: pd.DataFrame, image_size, band: str):
     """
     DBSCAN groups input local maximum locations from DAOStarFinder according to
     a max. separation distance called "epsilon" to be considered in the same group.
@@ -264,7 +264,7 @@ def get_extended_mask(dao_sources, image_size, band):
     return mask, extended_source_cat
 
 
-def get_hull_mask(group, groupID, imageSize, critSep):
+def get_hull_mask(group, groupID: int, imageSize: tuple, critSep):
     """
     calculates convex hull of pts in group and uses Path to make a mask of
     each convex hull, assigning a number to each hull as they are made
@@ -296,12 +296,12 @@ def get_hull_mask(group, groupID, imageSize, critSep):
     return hull_mask, extended_hull_data
 
 
-def make_source_figs(source_table,
-                     segment_map,
-                     extended_source_mask,
-                     cnt_image,
+def make_source_figs(source_table: pd.DataFrame,
+                     segment_map: np.ndarray,
+                     extended_source_mask: np.ndarray,
+                     cnt_image: np.ndarray,
                      eclipse,
-                     band,
+                     band: str,
                      outpath=".",
                      name="cnt"):
     import matplotlib as mpl
