@@ -6,10 +6,6 @@ part of the course of running gPhoton.lightcurve.core.make_lightcurves(), and
 may not suitable for independent use.
 """
 
-from multiprocessing import Pool
-from typing import Union, Optional, Mapping
-import warnings
-
 import astropy.wcs
 import numpy as np
 import pandas as pd
@@ -85,9 +81,9 @@ def find_sources(
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
 
-            # for some reason image segmentation still finds sources in the masked cnt image?
-            # so we mask twice: once by zeroing and then again by making a bool mask and
-            # feeding it to image segmentation
+            # for some reason image segmentation still finds sources in the
+            # masked cnt image? so we mask twice: once by zeroing and then
+            # again by making a bool mask and feeding it to image segmentation
 
             masked_cnt_image = zero_flag_and_edge(
                 image_dict["cnt"],
@@ -132,7 +128,6 @@ def get_point_and_extended_sources(cnt_image: np.ndarray, band: str, f_e_mask):
 
     from photutils.segmentation import detect_sources
     from photutils.background import Background2D, MedianBackground
-    from photutils.utils import make_random_cmap
     from photutils.segmentation import make_2dgaussian_kernel
     from photutils.segmentation import SourceCatalog
     from photutils.segmentation import deblend_sources
@@ -269,7 +264,7 @@ def get_hull_mask(group, groupID: int, imageSize: tuple, critSep):
     calculates convex hull of pts in group and uses Path to make a mask of
     each convex hull, assigning a number to each hull as they are made
     """
-    from matplotlib.path import Path
+    import matplotlib.path
     from scipy.spatial import ConvexHull
 
     ny, nx = imageSize  # imageSize is a tuple of width, height
@@ -283,7 +278,7 @@ def get_hull_mask(group, groupID: int, imageSize: tuple, critSep):
     extended_hull_data = pd.DataFrame(data=hull_data_dict)
 
     # path takes data as: an array, masked array or sequence of pairs.
-    poly_path = Path(hull_verts)
+    poly_path = matplotlib.path.Path(hull_verts)
     x, y = np.meshgrid(np.arange(nx), np.arange(ny))
     x, y = x.flatten(), y.flatten()
     points = np.vstack((x, y)).T
@@ -294,80 +289,6 @@ def get_hull_mask(group, groupID: int, imageSize: tuple, critSep):
     hull_mask = hull_mask.reshape((ny, nx))
     hull_mask = hull_mask.astype(int) * groupID
     return hull_mask, extended_hull_data
-
-
-def make_source_figs(source_table: pd.DataFrame,
-                     segment_map: np.ndarray,
-                     extended_source_mask: np.ndarray,
-                     cnt_image: np.ndarray,
-                     eclipse,
-                     band: str,
-                     outpath=".",
-                     name="cnt"):
-    import matplotlib as mpl
-    mpl.rcParams["figure.dpi"] = 300
-    mpl.use("agg")
-    # segmentation map
-    fig = fig_plot(
-        segment_map,
-        f"e{eclipse}_{band}_segmented",
-    )
-    fig.savefig(
-        Path(outpath, f"e{eclipse}-{band[0].lower()}d-segmentation.jpg")
-    )
-    # extended source map
-    fig = fig_plot(
-        extended_source_mask,
-        f"e{eclipse}_{band}_extended_mask",
-    )
-    fig.savefig(
-        Path(outpath, f"e{eclipse}-{band[0].lower()}d-extended-mask.jpg")
-    )
-    # sources plotted on eclipse as circles
-    fig = fig_plot_sources(
-        cnt_image,
-        source_table,
-        f"e{eclipse}_{band}_extended_mask",
-    )
-    fig.savefig(
-        Path(outpath, f"e{eclipse}-{band[0].lower()}d-sources-on-image.jpg")
-    )
-
-
-def fig_plot(array, name):
-        import matplotlib.pyplot as plt
-        fig = plt.figure(figsize=(4, 4), dpi=250)
-        cmap = plt.get_cmap('viridis', np.max(array) - np.min(array) + 1)
-        cmap.set_under(color='white')
-        plt.imshow(array, cmap=cmap, vmin=0.5)
-        plt.title(name)
-        return fig
-
-
-def fig_plot_sources(array, sources, name):
-    import matplotlib.pyplot as plt
-    fig = plt.figure(figsize=(6, 6), dpi=350)
-    plt.imshow(centile_clip(array), cmap='viridis', interpolation='none')
-    plt.title(name)
-    for index, point in sources.dropna().iterrows():
-        xypos = np.transpose([point['xcentroid'], point['ycentroid']])
-        if point["extended_source"] == 0:
-            c = "white"
-        else:
-            c = "red"
-        method_r = point['equivalent_radius']
-        ap = CircularAperture(xypos, r=method_r)
-        ap.plot(color=c, lw=.75)
-    return fig
-
-
-def centile_clip(image, centiles=(0, 90)):
-    finite = np.ma.masked_invalid(image)
-    bounds = np.percentile(finite[~finite.mask].data, centiles)
-    result = np.ma.clip(finite, *bounds)
-    if isinstance(image, np.ma.MaskedArray):
-        return result
-    return result.data
 
 
 def extract_frame(frame, apertures):

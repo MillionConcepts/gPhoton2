@@ -4,13 +4,15 @@ if __name__ == "__main__":
     execute_pipeline(
         781,
         "NUV",
-        depth=120,
+        depth=None,
         threads=4,
         local_root="test_data",
+        remote_root="/mnt/s3",
         recreate=False,
         aperture_sizes=[12.8, 51.2],
         write={"movie": False, "image": True},
-        coregister_lightcurves=True,
+        coregister_lightcurves=False,
         compression="rice",
-        lil=True
+        lil=True,
+        photometry_only=True
     )
