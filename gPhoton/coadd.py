@@ -96,6 +96,14 @@ def zero_flag_and_edge(cnt, flag, edge):
     return cnt
 
 
+def flag_and_edge_mask(cnt, flag, edge):
+    flag_edge_mask = np.full_like(cnt, False, dtype=bool)
+    flag_edge_mask[~np.isfinite(cnt)] = True
+    flag_edge_mask[np.nonzero(flag)] = True
+    flag_edge_mask[np.nonzero(edge)] = True
+    return flag_edge_mask
+
+
 # TODO: this version is compatible with RICE compression, but is relatively
 #  inefficient. needs to be juiced up.
 def project_to_shared_wcs(

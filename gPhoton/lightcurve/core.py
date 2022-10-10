@@ -8,7 +8,7 @@ from gPhoton.lightcurve._steps import (
     find_sources,
     count_full_depth_image,
     extract_photometry,
-    write_exptime_file, load_source_catalog,
+    write_exptime_file, load_source_catalog, make_source_figs
 )
 from gPhoton.reference import FakeStopwatch, eclipse_to_paths
 from gPhoton.types import GalexBand
@@ -29,6 +29,8 @@ def make_lightcurves(
     make lightcurves from preprocessed structures generated from FITS images
     and movies, especially ones produced by the gPhoton.moviemaker pipeline.
     """
+    import matplotlib.pyplot as plt
+
     if output_filenames is None:
         output_filenames = eclipse_to_paths(
             eclipse, Path(photonlist_path).parent, None
@@ -37,7 +39,8 @@ def make_lightcurves(
         sources = load_source_catalog(source_catalog_file, eclipse)
     else:
         sources = None
-    source_table = find_sources(
+
+    source_table, segment_map, extended_source_mask, extended_source_cat = find_sources(
         eclipse,
         band,
         str(photonlist_path.parent),
@@ -45,6 +48,18 @@ def make_lightcurves(
         sky_arrays["wcs"],
         source_table=sources,
     )
+    print("saving segment map and extended source mask to files")
+    make_source_figs(source_table,
+                     segment_map,
+                     extended_source_mask,
+                     sky_arrays["image_dict"]["cnt"],
+                     eclipse,
+                     band,
+                     outpath=".",
+                     name="cnt")
+    print("saving extended source catalogue")
+    extended_source_cat.to_csv(Path(".", f"e{eclipse}-{band[0].lower()}d-extended-sources.csv"))
+
     stopwatch.click()
     # failure messages due to low exptime or no data
     if isinstance(source_table, str):
