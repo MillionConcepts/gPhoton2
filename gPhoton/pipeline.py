@@ -9,7 +9,7 @@ gPhoton.io, gPhoton.photonpipe, gPhoton.moviemaker, and gPhoton.lightcurve
 modules. This module is intended to perform them with optimized transitions
 and endpoints / output suitable for remote automation.
 """
-
+import re
 from pathlib import Path
 import shutil
 from time import time
@@ -17,8 +17,10 @@ from types import MappingProxyType
 from typing import Optional, Sequence, Mapping, Literal
 import warnings
 
+from cytoolz import identity, keyfilter
 from gPhoton.reference import eclipse_to_paths, Stopwatch
 from gPhoton.types import GalexBand, Pathlike
+from more_itertools import chunked
 
 # oh no! divide by zero! i am very distracting!
 warnings.filterwarnings(action="ignore", category=RuntimeWarning)
@@ -33,7 +35,7 @@ def get_photonlist(
     recreate: bool = False,
     verbose: int = 1,
     threads: Optional[int] = None,
-    raise_errors: bool = True
+    raise_errors: bool = True,
 ):
     """
     Args:
@@ -60,7 +62,7 @@ def get_photonlist(
             describing that error and its context (False)? Typically this
             should be True for ad-hoc local execution (and especially for
             debugging), and False for managed remote execution.
-        """
+    """
     local_files, photonpath, remote_files, temp_directory = _set_up_paths(
         eclipse, band, local_root, remote_root
     )
@@ -104,6 +106,49 @@ def get_photonlist(
     return photonpath
 
 
+def execute_photometry_only(
+    eclipse,
+    band,
+    local_root,
+    remote_root,
+    depth,
+    compression,
+    lil,
+    aperture_sizes,
+    source_catalog_file,
+    threads,
+    stopwatch
+):
+    if stopwatch is None:
+        stopwatch = Stopwatch()
+        stopwatch.start()
+    loaded_results = load_moviemaker_results(
+        eclipse, band, local_root, remote_root, depth, compression, lil
+    )
+    # this is an error code
+    if isinstance(loaded_results, str):
+        return loaded_results
+    local_files, results = loaded_results
+    from gPhoton.lightcurve import make_lightcurves
+
+    photometry_result = make_lightcurves(
+        results,
+        eclipse,
+        band,
+        aperture_sizes,
+        local_files,
+        source_catalog_file,
+        threads,
+        stopwatch,
+    )
+    print(
+        f"{round(time() - stopwatch.start_time, 2)} seconds for execution"
+    )
+    if not photometry_result.startswith("successful"):
+        return f"return code: {photometry_result}"
+    return "return code: successful"
+
+
 # TODO, maybe: add a check somewhere for: do we have information regarding
 #  this eclipse at all?
 def execute_pipeline(
@@ -125,7 +170,8 @@ def execute_pipeline(
     stop_after: Optional[Literal["photonpipe", "moviemaker"]] = None,
     compression: Literal["none", "gzip", "rice"] = "gzip",
     hdu_constructor_kwargs: Optional[Mapping] = None,
-    min_exptime: Optional[float] = None
+    min_exptime: Optional[float] = None,
+    photometry_only: bool = False,
 ) -> str:
     """
     Args:
@@ -184,6 +230,8 @@ def execute_pipeline(
             parameters)
         min_exptime: minimum effective exposure time to run image/movie
             and lightcurve generation. None means no lower bound.
+        photometry_only: attempt to perform photometry on already-existing
+            images/movies, doing nothing else
 
     Returns:
         str: `"return code: successful"` for fully successful execution;
@@ -197,6 +245,21 @@ def execute_pipeline(
     if eclipse > 47000:
         print("CAUSE data w/eclipse>47000 are not yet supported.")
         return "return code: CAUSE data w/eclipse>47000 are not yet supported."
+    if photometry_only is True:
+        return execute_photometry_only(
+            eclipse,
+            band,
+            local_root,
+            remote_root,
+            depth,
+            compression,
+            lil,
+            aperture_sizes,
+            source_catalog_file,
+            threads,
+            stopwatch
+        )
+
     # fetch, locate, or create photonlist, as requested
     get_photonlist_result = get_photonlist(
         eclipse,
@@ -207,36 +270,33 @@ def execute_pipeline(
         recreate,
         verbose,
         threads,
-        raise_errors=False
+        raise_errors=False,
     )
     # we received an error return code
     if isinstance(get_photonlist_result, str):
         return get_photonlist_result  # this is an error return code
     else:
         photonpath = get_photonlist_result  # strictly explanatory renaming
-
     if stop_after == "photonpipe":
         print(
             f"stop_after='photonpipe' passed, halting; "
             f"{round(time() - stopwatch.start_time, 2)} seconds for execution"
         )
         return "return code: successful (planned stop after photonpipe)"
-
     local_files, _, remote_files, _ = _set_up_paths(
         eclipse, band, local_root, remote_root, depth, compression
     )
     stopwatch.click()
-
     from gPhoton.parquet_utils import get_parquet_stats
 
     file_stats = get_parquet_stats(str(photonpath), ["flags", "ra"])
     if (file_stats["flags"]["min"] > 6) or (file_stats["ra"]["max"] is None):
         print(f"no unflagged data in {photonpath}. bailing out.")
         return "return code: no unflagged data (stopped after photon list)"
-
     # MOVIE-RENDERING SECTION
     from gPhoton.moviemaker import (
-        create_images_and_movies, write_moviemaker_results,
+        create_images_and_movies,
+        write_moviemaker_results,
     )
 
     # check to see if we're pinning our frame / lightcurve time series to
@@ -253,10 +313,10 @@ def execute_pipeline(
         threads,
         maxsize,
         fixed_start_time,
-        min_exptime=min_exptime
+        min_exptime=min_exptime,
     )
     stopwatch.click()
-    if not (results['status'].startswith('successful')):
+    if not (results["status"].startswith("successful")):
         print(
             f"Moviemaker pipeline unsuccessful {(results['status'])}; halting."
         )
@@ -271,7 +331,7 @@ def execute_pipeline(
             maxsize,
             stopwatch,
             compression,
-            hdu_constructor_kwargs
+            hdu_constructor_kwargs,
         )
         print(
             f"stop_after='moviemaker' passed, halting; "
@@ -279,21 +339,16 @@ def execute_pipeline(
             f"execution"
         )
         return "return code: successful (planned stop after moviemaker)"
-    # TODO: if depth is 0, still perform photometry on full-depth images
 
-    # PHOTOMETRY SECTION
     from gPhoton.lightcurve import make_lightcurves
-
-    # TODO: whatever led me to pass the photonlist path into this is bad
     photometry_result = make_lightcurves(
         results,
         eclipse,
         band,
         aperture_sizes,
-        photonpath,
+        local_files,
         source_catalog_file,
         threads,
-        local_files,
         stopwatch,
     )
 
@@ -307,7 +362,7 @@ def execute_pipeline(
         maxsize,
         stopwatch,
         compression,
-        hdu_constructor_kwargs
+        hdu_constructor_kwargs,
     )
     print(f"{round(time() - stopwatch.start_time, 2)} seconds for execution")
     failures = [
@@ -358,13 +413,55 @@ def _look_for_raw6(
     return raw6path
 
 
+def load_moviemaker_results(
+    eclipse, band, local_root, remote_root, depth, compression, lil=True
+):
+    local_files, _, remote_files, temp_directory = _set_up_paths(
+        eclipse, band, local_root, remote_root, depth, compression
+    )
+    image = pick_and_copy_array(
+        local_files, remote_files, temp_directory, "image"
+    )
+    if image is None:
+        print("Photometry-only run, but image not found. Bailing out.")
+        return "return code: image not found"
+    if depth is not None:
+        movie = pick_and_copy_array(
+            local_files, remote_files, temp_directory, "movie"
+        )
+        if movie is None:
+            print("Photometry-only run, but movie not found. Bailing out.")
+            return "return code: movie not found"
+    image_result = unpack_image(image, compression)
+    results = {'wcs': image_result['wcs'], 'image_dict': image_result}
+    if depth is not None:
+        results |= {'movie_dict': unpack_movie(movie, compression, lil)}
+    else:
+        results['movie_dict'] = {}
+    return local_files, results
+
+
+def pick_and_copy_array(
+    local_files, remote_files, temp_directory, which="image"
+):
+    if Path(local_files[which]).exists():
+        return local_files[which]
+    if remote_files is None:
+        return None
+    if not Path(remote_files[which]).exists():
+        return None
+    print(f"making temp copy of {which} from remote")
+    shutil.copy(remote_files[which], temp_directory)
+    return Path(temp_directory, Path(local_files[which]).name)
+
+
 def _set_up_paths(
     eclipse: int,
     band: GalexBand,
     data_root: str,
     remote_root: Optional[str],
     depth: Optional[int] = None,
-    compression: Literal["none", "rice", "gzip"] = "gzip"
+    compression: Literal["none", "rice", "gzip"] = "gzip",
 ) -> tuple[dict, Path, Optional[dict], Path]:
     """
     initial path setup & file retrieval step for execute_pipeline.
@@ -381,15 +478,17 @@ def _set_up_paths(
     :return: tuple of: primary filename dict, path to photon list we'll be
     using, remote filename dict, name of temp/scratch directory
     """
-    local_files = eclipse_to_paths(
-        eclipse, data_root, depth, compression
-    )[band]
+    local_files = eclipse_to_paths(eclipse, data_root, depth, compression)[
+        band
+    ]
     eclipse_dir = Path(list(local_files.values())[0]).parent
     if not eclipse_dir.exists():
         eclipse_dir.mkdir(parents=True)
     if remote_root is not None:
         # we're only ever looking for raw6 & photonlist, don't need depth etc.
-        remote_files = eclipse_to_paths(eclipse, remote_root)[band]
+        remote_files = eclipse_to_paths(
+            eclipse, remote_root, depth, compression
+        )[band]
     else:
         remote_files = None
     temp_directory = Path(data_root, "temp", str(eclipse).zfill(5))
@@ -444,3 +543,44 @@ def check_fixed_start_time(
     # them to disk, even from a remote / fake filesystem
     coreg_exptime = pd.read_csv(expfile)
     return coreg_exptime["t0"].iloc[0]
+
+
+def load_array_file(array_file, compression):
+    import astropy.wcs
+    import fitsio
+
+    hdul = fitsio.FITS(array_file)
+    offset = 0 if compression != "rice" else 1
+    cnt_hdu, flag_hdu, edge_hdu = (hdul[i + offset] for i in range(3))
+    header = dict(cnt_hdu.read_header())
+    tranges = keyfilter(lambda k: re.match(r"T[01]", k), header)
+    tranges = tuple(chunked(tranges.values(), 2))
+    exptimes = tuple(
+        keyfilter(lambda k: re.match(r"EXPT_", k), header).values()
+    )
+    wcs = astropy.wcs.WCS(header)
+    results = {"exptimes": exptimes, "tranges": tranges, "wcs": wcs}
+    return (cnt_hdu, edge_hdu, flag_hdu), results
+
+
+def unpack_movie(movie_file, compression, lil):
+    hdus, results = load_array_file(movie_file, compression)
+    planes = ([], [], [])
+    if lil is True:
+        import scipy.sparse
+
+        constructor = scipy.sparse.coo_matrix
+    else:
+        constructor = identity
+    for hdu, plane in zip(hdus, planes):
+        for frame_ix in range(len(results['exptimes'])):
+            plane.append(constructor(hdu[frame_ix, :, :][0]))
+    return results | {"cnt": planes[0], "flag": planes[1], "edge": planes[2]}
+
+
+def unpack_image(image_file, compression):
+    hdus, results = load_array_file(image_file, compression)
+    planes = {
+        "cnt": hdus[0].read(), "flag": hdus[1].read(), "edge": hdus[2].read()
+    }
+    return results | planes

@@ -38,14 +38,17 @@ def eclipse_to_paths(
             "raw6": f"{prefix}-raw6.fits.gz",
             "photonfile": f"{prefix}.parquet",
             "image": f"{prefix}-full{comp_suffix}",
+            "extended_catalog": f"{prefix}-extended-sources.csv",
         }
         if depth is not None:
             band_dict |= {
                 "movie": f"{prefix}-{depth}s{comp_suffix}",
                 # stem -- multiple aperture sizes possible
                 "photomfile": f"{prefix}-{depth}s-photom-",
-                "expfile": f"{prefix}-{depth}s-exptime.csv",
+                "expfile": f"{prefix}-{depth}s-exptime.csv"
             }
+        else:
+            band_dict |= {"photomfile": f"{prefix}-full-photom-"}
         file_dict[band] = band_dict
     return file_dict
 
