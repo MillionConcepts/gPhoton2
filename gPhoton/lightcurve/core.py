@@ -32,7 +32,7 @@ def make_lightcurves(
     else:
         sources = None
 
-    source_table, segment_map, extended_source_mask, extended_source_cat = (
+    source_table, segment_map, extended_source_paths, extended_source_cat = (
         find_sources(
             eclipse,
             band,
@@ -47,7 +47,6 @@ def make_lightcurves(
     make_source_figs(
         source_table,
         segment_map,
-        extended_source_mask,
         sky_arrays["image_dict"]["cnt"],
         eclipse,
         band,

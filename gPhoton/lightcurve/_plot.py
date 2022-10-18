@@ -14,7 +14,6 @@ TITLE_FONT = mpl.font_manager.FontProperties(fname=TITILLIUM, size=10)
 def make_source_figs(
     source_table: pd.DataFrame,
     segment_map: np.ndarray,
-    extended_source_mask: np.ndarray,
     cnt_image: np.ndarray,
     eclipse,
     band: str,
@@ -30,12 +29,12 @@ def make_source_figs(
         pad_inches=0.1
     )
     # extended source map
-    fig = fig_plot(extended_source_mask, f"e{eclipse}_{band}_extended_mask")
-    fig.savefig(
-        Path(outpath, f"{prefix}extended-mask.jpg"),
-        bbox_inches="tight",
-        pad_inches=0.1
-    )
+    #fig = fig_plot(extended_source_mask, f"e{eclipse}_{band}_extended_mask")
+    #fig.savefig(
+    #    Path(outpath, f"{prefix}extended-mask.jpg"),
+    #    bbox_inches="tight",
+    #    pad_inches=0.1
+    #)
     # sources plotted on eclipse as circles
     fig = fig_plot_sources(
         cnt_image, source_table, f"e{eclipse}_{band}_extended_mask",

@@ -32,8 +32,12 @@ def count_full_depth_image(
     system: astropy.wcs.WCS
 ):
     positions = source_table[["xcentroid", "ycentroid"]].values
+    print(f"length of positions: {len(positions)}")
+    print(f"length of source table: {len(source_table)}")
 
     apertures = CircularAperture(positions, r=aperture_size)
+    print(f"length of apertures: {len(apertures)}")
+
     print("Performing aperture photometry on primary image.")
     phot_table = aperture_photometry(image_dict["cnt"], apertures).to_pandas()
     phot_table = phot_table.set_index("id", drop=True)
@@ -95,7 +99,7 @@ def find_sources(
                 image_dict["flag"],
                 image_dict["edge"])
 
-            source_table, segment_map, extended_source_mask, extended_source_cat = \
+            source_table, segment_map, extended_source_paths, extended_source_cat = \
                 get_point_and_extended_sources(masked_cnt_image / exptime, band, flag_edge_mask, exptime)
         try:
             print(f"Located {len(source_table)} sources")
@@ -112,7 +116,7 @@ def find_sources(
             ]
         )
         source_table[["xcentroid", "ycentroid"]] = positions
-    return source_table, segment_map, extended_source_mask, extended_source_cat
+    return source_table, segment_map, extended_source_paths, extended_source_cat
 
 
 def get_point_and_extended_sources(cnt_image: np.ndarray, band: str, f_e_mask, exposure_time):
@@ -126,28 +130,24 @@ def get_point_and_extended_sources(cnt_image: np.ndarray, band: str, f_e_mask, e
     Extended source extraction occurs in helper functions.
     """
     import gc
-
+    import sys
     print(f"{exposure_time} s exposure time")
+
+    print("cnt image")
+    print(sys.getsizeof(cnt_image))
 
     deblended_segment_map, seg_sources = image_segmentation(cnt_image, band, f_e_mask, exposure_time)
 
     # cnt_image is no longer background subtracted
     # DAO threshold is now based on power law relationship with exposure time
     print("Masking for extended sources.")
-    extended_source_mask, extended_source_cat = mask_for_extended_sources(cnt_image, band, exposure_time)
+    masks, extended_source_cat = mask_for_extended_sources(cnt_image, band, exposure_time)
 
     print("Checking for extended source overlap with point sources.")
     # checking for overlap between extended source mask and segmentation image
-    mask_and_map_matches = list(np.stack((deblended_segment_map, extended_source_mask),
-                                         axis=2).flatten())
-    iterator = iter(mask_and_map_matches)
-    # x & y of masked segments
-    sources_in_extended = set(list(zip(iterator, iterator)))
-    for i in sources_in_extended:
-        if i[0] != 0:
-            seg_sources.loc[i[0], "extended_source"] = i[1]
+    seg_sources = check_point_in_extended(deblended_segment_map, masks, seg_sources)
 
-    return seg_sources.dropna(), deblended_segment_map, extended_source_mask, extended_source_cat
+    return seg_sources.dropna(), deblended_segment_map, masks, extended_source_cat
 
 
 def image_segmentation(cnt_image: np.ndarray, band: str, f_e_mask, exposure_time):
@@ -170,7 +170,8 @@ def image_segmentation(cnt_image: np.ndarray, band: str, f_e_mask, exposure_time
         threshold = np.multiply(3, bkg_rms)
     else:
         threshold = np.multiply(3, bkg_rms)
-
+    print("threshold")
+    print(sys.getsizeof(threshold))
     kernel = make_2dgaussian_kernel(fwhm=3, size=(3, 3))
     convolved_data = convolve(cnt_image, kernel)
 
@@ -190,6 +191,8 @@ def image_segmentation(cnt_image: np.ndarray, band: str, f_e_mask, exposure_time
                                             mode='linear',
                                             progress_bar=False)
 
+    print("deblended seg map")
+    print(sys.getsizeof(deblended_segment_map))
 
     # can add more columns w/ outputs listed in photutils image seg documentation
     columns = ['label', 'xcentroid', 'ycentroid', 'area', 'segment_flux',
@@ -226,18 +229,38 @@ def mask_for_extended_sources(cnt_image: np.ndarray, band: str, exposure_time):
     print("Running DAO for extended source ID.")
     dao_sources = dao_handler(cnt_image, exposure_time)
     print(f"Found {len(dao_sources)} peaks with DAO.")
-    extended_mask, extended_source_cat = get_extended_mask(dao_sources, cnt_image.shape, band)
-    print(cnt_image.shape)
-    return extended_mask, extended_source_cat
+    masks, extended_source_cat = get_extended(dao_sources, cnt_image.shape, band)
+    return masks, extended_source_cat
+
+
+def check_point_in_extended(seg_map, masks, seg_sources):
+    """
+    Checks if the borders of any segments are inside of
+    each extended source, which are paths stored in the
+    dictionary "masks". Adds the ID of overlapping extended
+    source to the DF holding pt sources (seg_sources).
+    """
+
+    outline = seg_map.outline_segments()
+    seg_outlines = np.nonzero(outline)
+    seg_outlines_vert = np.vstack((seg_outlines[0], seg_outlines[1])).T
+
+    for key in masks:
+        inside_extended = masks[key].contains_points(seg_outlines_vert)
+        segments_in_extended = outline[seg_outlines][inside_extended]
+        for i in segments_in_extended:
+            seg_sources.loc[i, "extended_source"] = int(key)
+
+    return seg_sources
 
 
 def dao_handler(cnt_image: np.ndarray, exposure_time):
     print("DAO 1")
     dao_sources1 = dao_finder_1(cnt_image, exposure_time)
-    #print("DAO 2")
-   # dao_sources2 = dao_finder_2(cnt_image, exposure_time)
-    #dao_sources = pd.concat([dao_sources1, dao_sources2])
-    return dao_sources1
+    print("DAO 2")
+    dao_sources2 = dao_finder_2(cnt_image, exposure_time)
+    dao_sources = pd.concat([dao_sources1, dao_sources2])
+    return dao_sources
 
 
 def dao_finder_1(cnt_image: np.ndarray, exposure_time):
@@ -282,7 +305,7 @@ def dao_finder_2(cnt_image: np.ndarray, exposure_time):
     return dao_sources2
 
 
-def get_extended_mask(dao_sources: pd.DataFrame, image_size, band: str):
+def get_extended(dao_sources: pd.DataFrame, image_size, band: str):
     """
     DBSCAN groups input local maximum locations from DAOStarFinder according to
     a max. separation distance called "epsilon" to be considered in the same group.
@@ -300,7 +323,7 @@ def get_extended_mask(dao_sources: pd.DataFrame, image_size, band: str):
     starlist['x_0'] = x_0
     starlist['y_0'] = y_0
 
-    epsilon = 30 if band == "NUV" else 50
+    epsilon = 40 if band == "NUV" else 50
     dbscan_group = DBSCANGroup(crit_separation=epsilon)
     dbsc_star_groups = dbscan_group(starlist)
     dbsc_star_groups = dbsc_star_groups.group_by('group_id')
@@ -309,23 +332,21 @@ def get_extended_mask(dao_sources: pd.DataFrame, image_size, band: str):
     # hull "mask" that shows extent of extended sources. pixel value of
     # each hull is the ID for that extended source.
     extended_source_cat = pd.DataFrame(columns=["id", "hull_area", "num_dao_points", "hull_vertices"])
-    mask = np.full(image_size, 0, dtype=int)
+    masks = {}
     gID = 1
 
     # this way of adding hull masks needs work because sometimes convex hulls overlap
     for i, group in enumerate(dbsc_star_groups.groups):
         if len(group) > 65:
-            print("hi")
-            newMask, extended_hull_data = get_hull_mask(group, gID, image_size, 10)
-            #hull_verts, extended_hull_data = get_hull_mask(group, gID, image_size, 10)
+            path, extended_hull_data = get_hull_path(group, gID, image_size, 10)
             extended_source_cat = pd.concat([extended_source_cat, extended_hull_data])
-            mask = np.add(mask, newMask)
+            masks[gID] = path
             gID += 1
 
-    return mask, extended_source_cat
+    return masks, extended_source_cat
 
 
-def get_hull_mask(group, groupID: int, imageSize: tuple, critSep):
+def get_hull_path(group, groupID: int, imageSize: tuple, critSep):
     """
     calculates convex hull of pts in group and uses Path to make a mask of
     each convex hull, assigning a number to each hull as they are made
@@ -345,16 +366,7 @@ def get_hull_mask(group, groupID: int, imageSize: tuple, critSep):
 
     # path takes data as: an array, masked array or sequence of pairs.
     poly_path = matplotlib.path.Path(hull_verts)
-    x, y = np.meshgrid(np.arange(nx), np.arange(ny))
-    x, y = x.flatten(), y.flatten()
-    points = np.vstack((x, y)).T
-
-    # the buffer area / nature of convex hull means sometimes extended objects overlap, so the methodology
-    # of combining them may have to change
-    hull_mask = poly_path.contains_points(points)  #, radius=critSep * 1.5) radius adds a small buffer area to the mask
-    hull_mask = hull_mask.reshape((ny, nx))
-    hull_mask = hull_mask.astype(int) * groupID
-    return hull_mask, extended_hull_data
+    return poly_path, extended_hull_data
 
 
 def extract_frame(frame, apertures):
