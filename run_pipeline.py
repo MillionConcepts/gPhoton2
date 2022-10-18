@@ -2,7 +2,7 @@ from gPhoton.pipeline import execute_pipeline
 
 if __name__ == "__main__":
     execute_pipeline(
-        781,
+        7330,
         "NUV",
         depth=None,
         threads=4,
@@ -14,5 +14,5 @@ if __name__ == "__main__":
         coregister_lightcurves=False,
         compression="rice",
         lil=True,
-        photometry_only=True
+        photometry_only=False
     )

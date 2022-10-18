@@ -77,7 +77,7 @@ def find_sources(
         return f"{eclipse} appears to contain nothing in {band}."
     exptime = image_dict["exptimes"][0]
     if source_table is None:
-        print("Extracting sources with DAOFIND.")
+        print("Extracting extended and point sources.")
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
 
@@ -96,7 +96,7 @@ def find_sources(
                 image_dict["edge"])
 
             source_table, segment_map, extended_source_mask, extended_source_cat = \
-                get_point_and_extended_sources(masked_cnt_image / exptime, band, flag_edge_mask)
+                get_point_and_extended_sources(masked_cnt_image / exptime, band, flag_edge_mask, exptime)
         try:
             print(f"Located {len(source_table)} sources")
         except TypeError:
@@ -115,39 +115,73 @@ def find_sources(
     return source_table, segment_map, extended_source_mask, extended_source_cat
 
 
-def get_point_and_extended_sources(cnt_image: np.ndarray, band: str, f_e_mask):
+def get_point_and_extended_sources(cnt_image: np.ndarray, band: str, f_e_mask, exposure_time):
 
     """
     Main function for extracting point and extended sources from an eclipse.
-    Image segmentation and point source extraction occurs in this function.
+    Image segmentation and point source extraction occurs in a separate function.
     The threshold for being a source in NUV is set at 1.5 times the background
     rms values (2d array), while for FUV it is 3 times. The FUV setting isn't
     ~perfect~.
     Extended source extraction occurs in helper functions.
     """
+    import gc
+
+    print(f"{exposure_time} s exposure time")
+
+    deblended_segment_map, seg_sources = image_segmentation(cnt_image, band, f_e_mask, exposure_time)
+
+    # cnt_image is no longer background subtracted
+    # DAO threshold is now based on power law relationship with exposure time
+    print("Masking for extended sources.")
+    extended_source_mask, extended_source_cat = mask_for_extended_sources(cnt_image, band, exposure_time)
+
+    print("Checking for extended source overlap with point sources.")
+    # checking for overlap between extended source mask and segmentation image
+    mask_and_map_matches = list(np.stack((deblended_segment_map, extended_source_mask),
+                                         axis=2).flatten())
+    iterator = iter(mask_and_map_matches)
+    # x & y of masked segments
+    sources_in_extended = set(list(zip(iterator, iterator)))
+    for i in sources_in_extended:
+        if i[0] != 0:
+            seg_sources.loc[i[0], "extended_source"] = i[1]
+
+    return seg_sources.dropna(), deblended_segment_map, extended_source_mask, extended_source_cat
+
+
+def image_segmentation(cnt_image: np.ndarray, band: str, f_e_mask, exposure_time):
 
     from photutils.segmentation import detect_sources
-    from photutils.background import Background2D, MedianBackground
     from photutils.segmentation import make_2dgaussian_kernel
     from photutils.segmentation import SourceCatalog
     from photutils.segmentation import deblend_sources
+    import sys
+    import gc
 
-    bkg_estimator = MedianBackground()
-    bkg = Background2D(cnt_image,
-                       (50, 50),
-                       filter_size=(3, 3),
-                       bkg_estimator=bkg_estimator,
-                       mask=f_e_mask)
-    cnt_image -= bkg.background
-    threshold = 1.5 * bkg.background_rms if band == "NUV" else .002
+    print("Estimating background.")
+    bkg_data, bkg_rms = estimate_background(cnt_image, f_e_mask)
+    cnt_image -= bkg_data
+
+    print("Calculating source threshold.")
+    if band == "NUV" and exposure_time > 800:
+        threshold = np.multiply(1.5, bkg_rms)
+    elif band == "NUV" and exposure_time <= 800:
+        threshold = np.multiply(3, bkg_rms)
+    else:
+        threshold = np.multiply(3, bkg_rms)
+
     kernel = make_2dgaussian_kernel(fwhm=3, size=(3, 3))
     convolved_data = convolve(cnt_image, kernel)
-    # changing "npixels" in detect sources to 3 produces more small sources
+
+    # changing "npixels" in detect sources to 3 ID's more small sources
     # but also more spurious looking ones..
+    print("Segmenting and deblending point sources.")
     segment_map = detect_sources(convolved_data,
                                  threshold,
                                  npixels=4,
                                  mask=f_e_mask)
+
     deblended_segment_map = deblend_sources(convolved_data,
                                             segment_map,
                                             npixels=8,
@@ -156,6 +190,7 @@ def get_point_and_extended_sources(cnt_image: np.ndarray, band: str, f_e_mask):
                                             mode='linear',
                                             progress_bar=False)
 
+
     # can add more columns w/ outputs listed in photutils image seg documentation
     columns = ['label', 'xcentroid', 'ycentroid', 'area', 'segment_flux',
                'elongation', 'eccentricity', 'equivalent_radius', 'orientation',
@@ -163,35 +198,49 @@ def get_point_and_extended_sources(cnt_image: np.ndarray, band: str, f_e_mask):
                'minval_xindex', 'minval_yindex', 'bbox_xmin', 'bbox_xmax',
                'bbox_ymin', 'bbox_ymax']
 
-    # cnt_image is background subtracted (could do not background subtracted? hopefully
-    # less "spurious" DAO detections this way)
-    extended_source_mask, extended_source_cat = mask_for_extended_sources(cnt_image, band)
-    # checking for overlap between extended source mask and segmentation image
-    mask_and_map_matches = list(np.stack((deblended_segment_map, extended_source_mask),
-                                         axis=2).flatten())
-    iterator = iter(mask_and_map_matches)
-    # x & y of masked segments
-    sources_in_extended = set(list(zip(iterator, iterator)))
-
-    seg_sources = SourceCatalog(cnt_image, deblended_segment_map, convolved_data=convolved_data)\
+    seg_sources = SourceCatalog(cnt_image, deblended_segment_map, convolved_data=convolved_data) \
         .to_table(columns=columns).to_pandas()
     seg_sources.astype({'label': 'int32'})
     seg_sources = seg_sources.set_index("label", drop=True).dropna(axis=0, how='any')
 
-    for i in sources_in_extended:
-        if i[0] != 0:
-            seg_sources.loc[i[0], "extended_source"] = i[1]
-
-    return seg_sources.dropna(), segment_map, extended_source_mask, extended_source_cat
+    return deblended_segment_map, seg_sources
 
 
-def mask_for_extended_sources(cnt_image: np.ndarray, band: str):
-    dao_sources = dao_finder_modified(cnt_image)
+def estimate_background(cnt_image: np.ndarray, f_e_mask):
+    from photutils.background import Background2D, MedianBackground
+    from astropy.stats import SigmaClip
+
+    sigma_clip = SigmaClip(sigma=3.)
+    bkg_estimator = MedianBackground()
+    bkg = Background2D(cnt_image,
+                       (50, 50),
+                       filter_size=(3, 3),
+                       bkg_estimator=bkg_estimator,
+                       sigma_clip=sigma_clip,
+                       mask=f_e_mask)
+
+    return bkg.background, bkg.background_rms
+
+
+def mask_for_extended_sources(cnt_image: np.ndarray, band: str, exposure_time):
+    print("Running DAO for extended source ID.")
+    dao_sources = dao_handler(cnt_image, exposure_time)
+    print(f"Found {len(dao_sources)} peaks with DAO.")
     extended_mask, extended_source_cat = get_extended_mask(dao_sources, cnt_image.shape, band)
+    print(cnt_image.shape)
     return extended_mask, extended_source_cat
 
 
-def dao_finder_modified(cnt_image: np.ndarray):
+def dao_handler(cnt_image: np.ndarray, exposure_time):
+    print("DAO 1")
+    dao_sources1 = dao_finder_1(cnt_image, exposure_time)
+    #print("DAO 2")
+   # dao_sources2 = dao_finder_2(cnt_image, exposure_time)
+    #dao_sources = pd.concat([dao_sources1, dao_sources2])
+    return dao_sources1
+
+
+def dao_finder_1(cnt_image: np.ndarray, exposure_time):
     """
     DAO Star Finder Arguments:
        fwhm = full width half maximum of gaussian kernel
@@ -202,22 +251,35 @@ def dao_finder_modified(cnt_image: np.ndarray):
        This uses a modified version of DAOStarFinder that returns
        less information called LocalHIGHSlocal.
     """
+    threshold = np.multiply(np.power(exposure_time, -0.86026), 3)
     daofind = LocalHIGHSlocal(fwhm=5,
                               sigma_radius=1.5,
-                              threshold=0.008,
+                              threshold=threshold,
                               ratio=1,
                               theta=0)
+    dao_sources = daofind.find_peaks(cnt_image)
+    return dao_sources
+
+
+def dao_finder_2(cnt_image: np.ndarray, exposure_time):
+    """
+    DAO Star Finder Arguments:
+       fwhm = full width half maximum of gaussian kernel
+       threshold = pixel value below which not to select a source
+       ratio = how round kernel is (1 = circle)
+       theta = angle of kernel wrt to x-axis in degrees
+       Combining two different DAO runs to get more "sources".
+       This uses a modified version of DAOStarFinder that returns
+       less information called LocalHIGHSlocal.
+    """
+    threshold = np.multiply(np.power(exposure_time, -0.86026), 3)
     daofind2 = LocalHIGHSlocal(fwhm=3,
                                sigma_radius=1.5,
-                               threshold=0.02,
+                               threshold=threshold,
                                ratio=1,
                                theta=0)
-    dao_sources = daofind.find_peaks(cnt_image)
     dao_sources2 = daofind2.find_peaks(cnt_image)
-    dao_sources = pd.concat([dao_sources, dao_sources2])
-    print(f"# of DAO sources found: {len(dao_sources)}")
-
-    return dao_sources
+    return dao_sources2
 
 
 def get_extended_mask(dao_sources: pd.DataFrame, image_size, band: str):
@@ -238,7 +300,7 @@ def get_extended_mask(dao_sources: pd.DataFrame, image_size, band: str):
     starlist['x_0'] = x_0
     starlist['y_0'] = y_0
 
-    epsilon = 28 if band == "NUV" else 45
+    epsilon = 30 if band == "NUV" else 50
     dbscan_group = DBSCANGroup(crit_separation=epsilon)
     dbsc_star_groups = dbscan_group(starlist)
     dbsc_star_groups = dbsc_star_groups.group_by('group_id')
@@ -247,11 +309,15 @@ def get_extended_mask(dao_sources: pd.DataFrame, image_size, band: str):
     # hull "mask" that shows extent of extended sources. pixel value of
     # each hull is the ID for that extended source.
     extended_source_cat = pd.DataFrame(columns=["id", "hull_area", "num_dao_points", "hull_vertices"])
-    mask = np.full(image_size, 0)
+    mask = np.full(image_size, 0, dtype=int)
     gID = 1
+
+    # this way of adding hull masks needs work because sometimes convex hulls overlap
     for i, group in enumerate(dbsc_star_groups.groups):
         if len(group) > 65:
+            print("hi")
             newMask, extended_hull_data = get_hull_mask(group, gID, image_size, 10)
+            #hull_verts, extended_hull_data = get_hull_mask(group, gID, image_size, 10)
             extended_source_cat = pd.concat([extended_source_cat, extended_hull_data])
             mask = np.add(mask, newMask)
             gID += 1
