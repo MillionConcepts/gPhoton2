@@ -283,8 +283,7 @@ def check_point_in_extended(outline_seg_map, masks, seg_sources):
     for key in masks:
         inside_extended = masks[key].contains_points(seg_outlines_vert)
         segments_in_extended = outline_seg_map[seg_outlines][inside_extended]
-        for i in segments_in_extended:
-            seg_sources.loc[i, "extended_source"] = int(key)
+        seg_sources.loc[segments_in_extended, "extended_source"] = int(key)
 
     return seg_sources
 
