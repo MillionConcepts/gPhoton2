@@ -34,7 +34,8 @@ def count_full_depth_image(
     image_dict: Mapping[str, np.ndarray],
     system: astropy.wcs.WCS
 ):
-    positions = source_table[["xcentroid", "ycentroid"]].values
+    source_table = source_table.reset_index(drop=True)
+    positions = source_table[["xcentroid", "ycentroid"]].to_numpy()
     print(f"length of positions: {len(positions)}")
     print(f"length of source table: {len(source_table)}")
 
@@ -49,10 +50,10 @@ def count_full_depth_image(
     edge_table = aperture_photometry(image_dict["edge"], apertures).to_pandas()
     source_table = pd.concat(
         [source_table, phot_table[["xcenter", "ycenter", "aperture_sum"]]],
-        axis=1)
+        axis=1
+    )
     source_table["aperture_sum_mask"] = flag_table["aperture_sum"]
     source_table["aperture_sum_edge"] = edge_table["aperture_sum"]
-    source_table = source_table.reset_index(drop=True)
     # TODO: this isn't necessary for specified catalog positions. but
     #  should we do a sanity check?
     if "ra" not in source_table.columns:
@@ -173,7 +174,6 @@ def image_segmentation(cnt_image: np.ndarray, band: str, f_e_mask, exposure_time
     )
     kernel = make_2dgaussian_kernel(fwhm=3, size=(3, 3))
     convolved_data = convolve(cnt_image, kernel)
-    print(convolved_data)
     pm("convolved image")
     # changing "npixels" in detect sources to 3 ID's more small sources
     # but also more spurious looking ones..
