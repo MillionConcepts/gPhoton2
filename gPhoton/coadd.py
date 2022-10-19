@@ -89,7 +89,9 @@ def make_shared_wcs(wcs_sequence):
     return make_bounding_wcs(np.array([[ra_min, dec_min], [ra_max, dec_max]]))
 
 
-def zero_flag_and_edge(cnt, flag, edge):
+def zero_flag_and_edge(cnt, flag, edge, copy=False):
+    if copy is True:
+        cnt = cnt.copy()
     cnt[~np.isfinite(cnt)] = 0
     cnt[np.nonzero(flag)] = 0
     cnt[np.nonzero(edge)] = 0
