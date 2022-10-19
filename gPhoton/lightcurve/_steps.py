@@ -133,21 +133,21 @@ def get_point_and_extended_sources(cnt_image: np.ndarray, band: str, f_e_mask, e
     import sys
     print(f"{exposure_time} s exposure time")
 
-    print("cnt image")
-    print(sys.getsizeof(cnt_image))
-
-    deblended_segment_map, seg_sources = image_segmentation(cnt_image, band, f_e_mask, exposure_time)
-
     # cnt_image is no longer background subtracted
     # DAO threshold is now based on power law relationship with exposure time
     print("Masking for extended sources.")
     masks, extended_source_cat = mask_for_extended_sources(cnt_image, band, exposure_time)
+    gc.collect()
+    print(sys.getsizeof(masks))
+    print(sys.getsizeof(extended_source_cat))
+
+    deblended_seg_map, outline_seg_map, seg_sources = image_segmentation(cnt_image, band, f_e_mask, exposure_time)
 
     print("Checking for extended source overlap with point sources.")
     # checking for overlap between extended source mask and segmentation image
-    seg_sources = check_point_in_extended(deblended_segment_map, masks, seg_sources)
+    seg_sources = check_point_in_extended(outline_seg_map, masks, seg_sources)
 
-    return seg_sources.dropna(), deblended_segment_map, masks, extended_source_cat
+    return seg_sources.dropna(), deblended_seg_map, masks, extended_source_cat
 
 
 def image_segmentation(cnt_image: np.ndarray, band: str, f_e_mask, exposure_time):
@@ -159,19 +159,9 @@ def image_segmentation(cnt_image: np.ndarray, band: str, f_e_mask, exposure_time
     import sys
     import gc
 
-    print("Estimating background.")
-    bkg_data, bkg_rms = estimate_background(cnt_image, f_e_mask)
-    cnt_image -= bkg_data
+    print("Estimating background and threshold.")
+    cnt_image, threshold = estimate_background_and_threshold(cnt_image, f_e_mask, band, exposure_time)
 
-    print("Calculating source threshold.")
-    if band == "NUV" and exposure_time > 800:
-        threshold = np.multiply(1.5, bkg_rms)
-    elif band == "NUV" and exposure_time <= 800:
-        threshold = np.multiply(3, bkg_rms)
-    else:
-        threshold = np.multiply(3, bkg_rms)
-    print("threshold")
-    print(sys.getsizeof(threshold))
     kernel = make_2dgaussian_kernel(fwhm=3, size=(3, 3))
     convolved_data = convolve(cnt_image, kernel)
 
@@ -183,6 +173,10 @@ def image_segmentation(cnt_image: np.ndarray, band: str, f_e_mask, exposure_time
                                  npixels=4,
                                  mask=f_e_mask)
 
+    del threshold
+    del kernel
+    gc.collect()
+
     deblended_segment_map = deblend_sources(convolved_data,
                                             segment_map,
                                             npixels=8,
@@ -191,8 +185,10 @@ def image_segmentation(cnt_image: np.ndarray, band: str, f_e_mask, exposure_time
                                             mode='linear',
                                             progress_bar=False)
 
-    print("deblended seg map")
-    print(sys.getsizeof(deblended_segment_map))
+    del segment_map
+    gc.collect()
+
+    outline_seg_map = deblended_segment_map.outline_segments()
 
     # can add more columns w/ outputs listed in photutils image seg documentation
     columns = ['label', 'xcentroid', 'ycentroid', 'area', 'segment_flux',
@@ -206,10 +202,30 @@ def image_segmentation(cnt_image: np.ndarray, band: str, f_e_mask, exposure_time
     seg_sources.astype({'label': 'int32'})
     seg_sources = seg_sources.set_index("label", drop=True).dropna(axis=0, how='any')
 
-    return deblended_segment_map, seg_sources
+    return deblended_segment_map.data, outline_seg_map, seg_sources
 
 
-def estimate_background(cnt_image: np.ndarray, f_e_mask):
+def estimate_threshold(bkg_rms, band, exposure_time):
+    print("Calculating source threshold.")
+    if band == "NUV" and exposure_time > 800:
+        threshold = np.multiply(1.5, bkg_rms)
+    elif band == "NUV" and exposure_time <= 800:
+        threshold = np.multiply(3, bkg_rms)
+    else:
+        threshold = np.multiply(3, bkg_rms)
+
+    return threshold
+
+
+def estimate_background_and_threshold(cnt_image: np.ndarray, f_e_mask, band, exposure_time):
+
+    cnt_image, bkg_rms = estimate_background(cnt_image, f_e_mask)
+    threshold = estimate_threshold(bkg_rms, band, exposure_time)
+
+    return cnt_image, threshold
+
+
+def estimate_background(cnt_image, f_e_mask):
     from photutils.background import Background2D, MedianBackground
     from astropy.stats import SigmaClip
 
@@ -222,7 +238,9 @@ def estimate_background(cnt_image: np.ndarray, f_e_mask):
                        sigma_clip=sigma_clip,
                        mask=f_e_mask)
 
-    return bkg.background, bkg.background_rms
+    cnt_image -= bkg.background
+
+    return cnt_image, bkg.background_rms
 
 
 def mask_for_extended_sources(cnt_image: np.ndarray, band: str, exposure_time):
@@ -233,7 +251,7 @@ def mask_for_extended_sources(cnt_image: np.ndarray, band: str, exposure_time):
     return masks, extended_source_cat
 
 
-def check_point_in_extended(seg_map, masks, seg_sources):
+def check_point_in_extended(outline_seg_map, masks, seg_sources):
     """
     Checks if the borders of any segments are inside of
     each extended source, which are paths stored in the
@@ -241,13 +259,12 @@ def check_point_in_extended(seg_map, masks, seg_sources):
     source to the DF holding pt sources (seg_sources).
     """
 
-    outline = seg_map.outline_segments()
-    seg_outlines = np.nonzero(outline)
+    seg_outlines = np.nonzero(outline_seg_map)
     seg_outlines_vert = np.vstack((seg_outlines[0], seg_outlines[1])).T
 
     for key in masks:
         inside_extended = masks[key].contains_points(seg_outlines_vert)
-        segments_in_extended = outline[seg_outlines][inside_extended]
+        segments_in_extended = outline_seg_map[seg_outlines][inside_extended]
         for i in segments_in_extended:
             seg_sources.loc[i, "extended_source"] = int(key)
 
