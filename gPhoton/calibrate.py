@@ -8,6 +8,7 @@
 """
 from typing import Sequence
 
+import numba
 from numba import njit
 import numpy as np
 
@@ -510,7 +511,10 @@ def plus7_mod32_minus16(array):
     return ((array + 7) % 32) - 16
 
 
-@njit(cache=True)
+@njit(
+    # (numba.int16[:], numba.int16[:], numba.int16[:], numba.float32, numba.float32, numba.int16[:], numba.int16[:]),
+    cache=True
+)
 def center_scale_step_1(xa, yb, xb, xclk, yclk, xamc, yamc):
     """
     perform an expensive component of the center-and-scale pipeline
@@ -538,7 +542,7 @@ def center_and_scale(band, data, eclipse):
         data["xamc"],
         data["yamc"],
     )
-    data["ya"] = np.array(ya, dtype="int64") % 32
+    data["ya"] = (np.array(ya, dtype="int64") % 32).astype("int16")
     xraw = (
         xraw0 + np.array(plus7_mod32_minus16(data["xa"]), dtype="int64") * xslp
     )

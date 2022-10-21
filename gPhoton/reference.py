@@ -17,7 +17,8 @@ def eclipse_to_paths(
     eclipse: int,
     data_directory: Pathlike = "data",
     depth: Optional[int] = None,
-    compression: Literal["none", "gzip", "rice"] = "gzip"
+    compression: Literal["none", "gzip", "rice"] = "gzip",
+    leg_ix: int = 0
 ) -> dict[str, dict[str, str]]:
     """
     generate canonical paths for files associated with a given eclipse,
@@ -36,19 +37,19 @@ def eclipse_to_paths(
         prefix = f"{eclipse_base}-{initial}d"
         band_dict = {
             "raw6": f"{prefix}-raw6.fits.gz",
-            "photonfile": f"{prefix}.parquet",
-            "image": f"{prefix}-full{comp_suffix}",
-            "extended_catalog": f"{prefix}-extended-sources.csv",
+            "photonfile": f"{prefix}-{leg_ix}.parquet",
+            "image": f"{prefix}-full-{leg_ix}{comp_suffix}",
+            "extended_catalog": f"{prefix}-{leg_ix}-extended-sources.csv",
         }
         if depth is not None:
             band_dict |= {
-                "movie": f"{prefix}-{depth}s{comp_suffix}",
+                "movie": f"{prefix}-{depth}s-{leg_ix}{comp_suffix}",
                 # stem -- multiple aperture sizes possible
-                "photomfile": f"{prefix}-{depth}s-photom-",
-                "expfile": f"{prefix}-{depth}s-exptime.csv"
+                "photomfile": f"{prefix}-{depth}s-{leg_ix}-photom-",
+                "expfile": f"{prefix}-{depth}s-{leg_ix}-exptime.csv"
             }
         else:
-            band_dict |= {"photomfile": f"{prefix}-full-photom-"}
+            band_dict |= {"photomfile": f"{prefix}-full-{leg_ix}-photom-"}
         file_dict[band] = band_dict
     return file_dict
 
