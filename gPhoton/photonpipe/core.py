@@ -42,7 +42,7 @@ def execute_photonpipe(
     chunksz: int = 1000000,
     threads: int = 4,
     share_memory: Optional[bool] = None,
-    write_intermediate_variables: bool = False
+    write_intermediate_variables: bool = True
 ):
     """
     Apply static and sky calibrations to -raw6 GALEX data, producing fully

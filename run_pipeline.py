@@ -4,14 +4,14 @@ if __name__ == "__main__":
     execute_pipeline(
         23456,
         "NUV",
-        depth=120,
-        threads=4,
+        depth=None,
+        threads=None,
         local_root="test_data",
-        recreate=False,
-        aperture_sizes=[12.8, 51.2],
+        recreate=True,
+        aperture_sizes=[12.8],
         write={"movie": True, "image": True},
         coregister_lightcurves=True,
-        stop_after="moviemaker",
+        stop_after="photonpipe",
         compression="rice",
         lil=True
     )
