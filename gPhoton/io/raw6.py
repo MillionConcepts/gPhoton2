@@ -63,7 +63,7 @@ def decode_telemetry(
     """"""
     data = bitwise_decode_photonbytes(unpack_raw6(raw6hdulist))
     data = center_and_scale(band, data, eclipse)
-    data["t"] = data["t"].byteswap().newbyteorder()
+    data["t"] = data["t"].astype("f8")
     return data
 
 

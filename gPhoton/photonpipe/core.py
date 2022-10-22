@@ -43,7 +43,7 @@ def execute_photonpipe(
     chunksz: int = 1000000,
     threads: int = 4,
     share_memory: Optional[bool] = True,
-    write_intermediate_variables: bool = True
+    write_intermediate_variables: bool = False
 ):
     """
     Apply static and sky calibrations to -raw6 GALEX data, producing fully
@@ -126,13 +126,15 @@ def execute_photonpipe(
     for leg_ix in legs.keys():
         addresses += [(leg_ix, chunk_ix) for chunk_ix in legs[leg_ix].keys()]
     for leg_ix, chunk_ix in addresses:
+        infix = f" (leg {leg_ix}) " if len(legs) > 1 else ""
+        title = f"{(chunk_ix + 1) * (leg_ix + 1)}{infix}/ {len(addresses)}: "
         chunk = legs[leg_ix].pop(chunk_ix)
         process_args = (
             aspect,
             band,
             cal_data,
             chunk,
-            f"{str((chunk_ix + 1) * (leg_ix + 1))} (leg {leg_ix}) / {len(addresses)}: ",
+            title,
             stim_coefficients,
             xoffset,
             yoffset,
@@ -244,6 +246,7 @@ def chunk_by_legs(aspect, chunksz, data, share_memory):
 FIELDS_FOR_WHICH_DICTIONARY_COMPRESSION_IS_USEFUL = [
     "t",
     "flags",
+    "x",
     "y",
     "xa",
     "xb",
@@ -252,6 +255,4 @@ FIELDS_FOR_WHICH_DICTIONARY_COMPRESSION_IS_USEFUL = [
     "yamc",
     "xamc",
     "q",
-    "mask",
-    "detrad",
 ]

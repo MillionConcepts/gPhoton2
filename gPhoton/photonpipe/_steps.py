@@ -27,7 +27,7 @@ from gPhoton.photonpipe._numbafied import (
     init_wiggle_arrays,
     float_between_wiggled_points,
     unfancy_distortion_component,
-    sum_corners,
+    sum_corners
 )
 
 # TODO, IMPORTANT: flag 7 is intended to be for gaps >= 2s in aspect_data sol
@@ -149,7 +149,9 @@ def calibrate_photons_inline(band, cal_data, chunk, chunkid):
     det_fields = {
         "mask": cal_data["mask"]["array"][col_ix, row_ix] == 0,
         "flat": cal_data["flat"]["array"][col_ix, row_ix],
-        "scale": compute_flat_scale(chunk["t"][det_indices], band),
+        "scale": compute_flat_scale(
+            chunk["t"][det_indices], band
+        ).astype("f4"),
     }
     del col_ix, row_ix
     det_fields["response"] = det_fields["flat"] * det_fields["scale"]
@@ -254,8 +256,7 @@ def apply_on_detector_corrections(
         y,
         ya,
     )
-    floor_x = np.array(fptrx, dtype="int64")
-    floor_y = np.array(fptry, dtype="int64")
+    floor_x, floor_y = fptrx.astype("i4"), fptry.astype("i4")
     flags, ok_indices = post_wiggle_update_indices_and_flags(
         flags, fptrx, fptry, floor_x, floor_y, q, cal_data["walk"]
     )
@@ -295,7 +296,7 @@ def apply_on_detector_corrections(
         yoffset,
         yp_as,
     )
-    xi, eta, col, row, flags = convert_to_detector_coordinates(
+    xi, eta, col, row, flags = unfancy_detector_coordinates(
         band,
         dx,
         dy,
@@ -308,35 +309,8 @@ def apply_on_detector_corrections(
     return {"xi": xi, "eta": eta, "col": col, "row": row, "flags": flags}
 
 
-def convert_to_detector_coordinates(
-    band,
-    dx,
-    dy,
-    flags,
-    xp_as,
-    xshift,
-    yp_as,
-    yshift,
-):
-    # TODO: this is for numba. consider replacing fancy indexing in mask below
-    #  with a for-loop to numba-fy the rest of the function...although casting
-    #  to int is weirdly slow in numpy, so maybe not.
-    col, row, xi, eta, cut, ok_indices = unfancy_detector_coordinates(
-        band,
-        dx,
-        dy,
-        flags,
-        xp_as,
-        xshift,
-        yp_as,
-        yshift,
-    )
-    return xi, eta, col, row, flags
-
-
 def compute_detector_orientation(fptrx, fptry, linearity, ok_indices):
-    floor_x = np.array(fptrx, dtype="int64")
-    floor_y = np.array(fptry, dtype="int64")
+    floor_x, floor_y = fptrx.astype("i4"), fptry.astype("i4")
     corners = make_corners(floor_x, floor_y, fptrx, fptry, ok_indices)
     lin_indices = make_cal_indices(
         linearity["x"].shape, ok_indices, (floor_y, floor_x)
@@ -375,7 +349,7 @@ def post_wiggle_update_indices_and_flags(
 
 
 def scale_corners(cal_x, cal_y, cal_indices, corners, base_shape, ok_indices):
-    out_x, out_y = np.zeros(base_shape), np.zeros(base_shape)
+    out_x, out_y = np.zeros(base_shape, "f4"), np.zeros(base_shape, dtype="f4")
     out_x[ok_indices] = sum_corners(cal_x, *cal_indices, corners)
     out_y[ok_indices] = sum_corners(cal_y, *cal_indices, corners)
     return out_x, out_y
@@ -437,8 +411,7 @@ def check_walk_flags(walk_indices, walk_x, walk_y):
 def wiggle_and_dig(fptrx, fptry, ix, wig_x, wig_y, x, xa, y, ya):
     # floating point corrections...?
 
-    floor_x = np.array(fptrx, dtype="int64")
-    floor_y = np.array(fptry, dtype="int64")
+    floor_x, floor_y = fptrx.astype("i4"), fptry.astype("i4")
     blt, blu, floor_x, floor_y, wigx, wigy, xa_ix, ya_ix = init_wiggle_arrays(
         floor_x, floor_y, fptrx, fptry, ix, xa, ya
     )
@@ -663,7 +636,7 @@ def apply_stim_distortion_correction(
         cube_nr,
     ) = distortion[
         "header"
-    ]  # unpacking for numba compiler introspection
+    ].astype(np.float32)  # unpacking for numba compiler introspection
     col, depth, ok_indices, row, xshift, yshift = unfancy_distortion_component(
         cube_x0,
         cube_dx,
@@ -684,9 +657,9 @@ def apply_stim_distortion_correction(
         raveled_ix = np.ravel_multi_index(
             np.array(
                 [
-                    depth[ok_indices].astype(np.int64),
-                    row[ok_indices].astype(np.int64),
-                    col[ok_indices].astype(np.int64),
+                    depth[ok_indices].astype("i4"),
+                    row[ok_indices].astype("i4"),
+                    col[ok_indices].astype("i4"),
                 ]
             ),
             distortion["x"].shape,
@@ -699,7 +672,7 @@ def apply_stim_distortion_correction(
     yshift[ok_indices] = distortion["y"].ravel()[raveled_ix]
     xshift = (xshift * c.ARCSECPERPIXEL) + xoffset
     yshift = (yshift * c.ARCSECPERPIXEL) + yoffset
-    return xshift, yshift, flags, ok_indices
+    return xshift.astype("f4"), yshift.astype("f4"), flags, ok_indices
 
 
 def create_ssd_from_decoded_data(data, band, eclipse, verbose, margin=90.001):

@@ -67,7 +67,7 @@ def make_frame(
     )
     if booleanize:
         return booleanize_for_fits(frame)
-    return frame
+    return frame.astype("f4")
 
 
 def shared_compute_exptime(
@@ -303,15 +303,15 @@ def write_fits_array(
     wcs,
     compression: Literal["gzip", "rice", "none"] = "gzip",
     clean_up=False,
-    fitsio_write_kwargs = None
+    hdu_constructor_kwargs=None
 ):
     """
     convert an intermediate movie or image dictionary, perhaps previously
     used for photometry, into a FITS object; write it to disk; compress it
     using the best available gzip-compatible compression binary
     """
-    if fitsio_write_kwargs is None:
-        fitsio_write_kwargs = {}
+    if hdu_constructor_kwargs is None:
+        hdu_constructor_kwargs = {}
     # TODO, maybe: rewrite this to have to not assemble the primary hdu in
     #  order to make the header
     header = populate_fits_header(
@@ -335,7 +335,7 @@ def write_fits_array(
             movie_dict[key],
             header,
             compression,
-            **fitsio_write_kwargs
+            **hdu_constructor_kwargs
         )
         if clean_up:
             del movie_dict[key]
@@ -368,6 +368,7 @@ def add_movie_to_fits_file(
     compression_type: Literal["none", "gzip", "rice"] = "none",
     **fitsio_write_kwargs
 ):
+    # noinspection PyUnresolvedReferences
     if isinstance(movie[0], scipy.sparse.spmatrix):
         data = np.stack([frame.toarray() for frame in movie])
     else:

@@ -5,13 +5,12 @@
     numba just-in-time compiler to accelerate the very large number of
     vectorized trig operations involved.
 """
-import numpy as np
-
 from numba import njit
+import numpy as np
 
 
 # being obvious is helpful to numba.
-R2D = 180./3.141592658979
+R2D = 180/np.pi
 
 
 # ------------------------------------------------------------------------------

@@ -136,9 +136,9 @@ def make_full_depth_image(
     exposure_array, map_ix_dict, total_trange, imsz, maxsize=None, band="NUV"
 ) -> tuple[str, dict]:
     if maxsize is not None:
-        # nominally, peak memory usage will be ~17 -- 8 + 1 + 8 -- just before
-        # the final map is cast from float64 to uint8.
-        memory = predict_movie_memory(imsz, n_frames=1, nbytes=17)
+        # nominally, peak memory usage will be ~9 -- 4 + 1 + 4 -- just before
+        # the final map is cast from float32 to uint8.
+        memory = predict_movie_memory(imsz, n_frames=1, nbytes=9)
         if memory > maxsize:
             failure_string = (
                 f"failure: {round(memory/(1024**3), 2)} GB needed to make "
@@ -167,23 +167,24 @@ def write_moviemaker_results(
     filenames,
     depth,
     band,
-    leg_ix,
+    leg,
     write,
     maxsize,
     stopwatch,
     compression,
-    fitsio_write_kwargs
+    hdu_constructor_kwargs,
+    **unused_options
 ):
     if write["image"] and (results["image_dict"] != {}):
         write_fits_array(
             band,
             None,
-            filenames["images"][leg_ix].replace(".gz", ""),
+            filenames["images"][leg].replace(".gz", ""),
             results["image_dict"],
             clean_up=True,
             wcs=results["wcs"],
             compression=compression,
-            fitsio_write_kwargs=fitsio_write_kwargs
+            hdu_constructor_kwargs=hdu_constructor_kwargs
         )
     del results["image_dict"]
     stopwatch.click()
@@ -205,7 +206,7 @@ def write_moviemaker_results(
         write_fits_array(
             band,
             depth,
-            filenames["movies"][leg_ix].replace(".gz", ""),
+            filenames["movies"][leg].replace(".gz", ""),
             results["movie_dict"],
             clean_up=True,
             wcs=results["wcs"],
@@ -225,7 +226,8 @@ def create_images_and_movies(
     maxsize=None,
     fixed_start_time: Optional[int] = None,
     edge_threshold: int = 350,
-    min_exptime: Optional[float] = None
+    min_exptime: Optional[float] = None,
+    **_unused_options
 ) -> Union[dict, str]:
     print(f"making images from {photonfile}")
     print("indexing data and making WCS solution")

@@ -16,13 +16,15 @@ from gPhoton.types import GalexBand
 
 def make_lightcurves(
     sky_arrays: Mapping,
+    output_filenames,
     eclipse: int,
     band: GalexBand,
+    leg: int,
     aperture_sizes: Collection[float],
-    output_filenames,
     source_catalog_file=None,
     threads=None,
     stopwatch: FakeStopwatch = FakeStopwatch(),
+    **_unused_options
 ):
     """
     make lightcurves from preprocessed structures generated from FITS images
@@ -60,10 +62,10 @@ def make_lightcurves(
                 sky_arrays["movie_dict"], photometry_table, apertures, threads
             )
             write_exptime_file(
-                output_filenames["expfile"], sky_arrays["movie_dict"]
+                output_filenames["expfiles"][leg], sky_arrays["movie_dict"]
             )
         photomfile = (
-            f"{output_filenames['photomfile']}"
+            f"{output_filenames['photomfiles'][leg]}"
             f"{str(aperture_size).replace('.', '_')}.csv"
         )
         print(f"writing source table to {photomfile}")

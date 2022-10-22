@@ -26,6 +26,7 @@ def eclipse_to_paths(
     generate canonical paths for files associated with a given eclipse,
     optionally including files at a specific depth
     """
+    data_directory = "data" if data_directory is None else data_directory
     from gPhoton.aspect import aspect_tables
     zpad = str(eclipse).zfill(5)
     eclipse_path = f"{data_directory}/e{zpad}/"
