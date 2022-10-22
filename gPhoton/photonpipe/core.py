@@ -2,16 +2,16 @@
 
 import time
 import warnings
-from itertools import chain
 from multiprocessing import Pool
 from pathlib import Path
+from sys import stdout
 from typing import Optional
 
 import numpy as np
 import pyarrow
 from pyarrow import parquet
 
-from gPhoton.aspect import load_aspect_solution
+from gPhoton.aspect import load_aspect_solution, aspect_tables
 from gPhoton.calibrate import find_fuv_offset
 from gPhoton.io.mast import retrieve_raw6
 from gPhoton.io.raw6 import load_raw6, get_eclipse_from_header
@@ -85,7 +85,7 @@ def execute_photonpipe(
         raw6file = retrieve_raw6(eclipse, band, outpath)
     # get / check eclipse # from raw6 header --
     eclipse = get_eclipse_from_header(raw6file, eclipse)
-    print_inline("Processing eclipse {eclipse}".format(eclipse=eclipse))
+    print(f"Processing eclipse {eclipse}")
     if band == "FUV":
         xoffset, yoffset = find_fuv_offset(eclipse)
     else:
@@ -132,7 +132,7 @@ def execute_photonpipe(
             band,
             cal_data,
             chunk,
-            f"{str(chunk_ix + 1)} of {str(len(addresses))}:",
+            f"{str((chunk_ix + 1) * (leg_ix + 1))} (leg {leg_ix}) / {len(addresses)}: ",
             stim_coefficients,
             xoffset,
             yoffset,
@@ -141,7 +141,9 @@ def execute_photonpipe(
         if pool is None:
             results[(leg_ix, chunk_ix)] = chunk_function(*process_args)
         else:
-            results[(leg_ix, chunk_ix)] = pool.apply_async(chunk_function, process_args)
+            results[(leg_ix, chunk_ix)] = pool.apply_async(
+                chunk_function, process_args
+            )
         del process_args
         del chunk
     if pool is not None:
@@ -152,8 +154,11 @@ def execute_photonpipe(
         #     time.sleep(0.1)
         # TODO, maybe: write per-leg photonlists aysnchronously
         pool.join()
+        stdout.flush()
+        print_inline("cleaning up processes")
         results = {task: result.get() for task, result in results.items()}
     if share_memory is True:
+        print_inline("cleaning up cal data")
         unlink_nested_block_dict(cal_data)
     proc_count = 0
     outfiles = []
@@ -165,10 +170,11 @@ def execute_photonpipe(
         array_dict = retrieve_leg_results(leg_results, share_memory)
         proc_count += len(array_dict["t"])
         filename = Path(
-            eclipse_to_paths(eclipse, leg_ix=leg_ix)[band]["photonfile"]
+            eclipse_to_paths(eclipse)[band]["photonfiles"][leg_ix]
         ).name
         outfile = Path(outpath, filename)
         # noinspection PyArgumentList
+        print(f"writing table to {outfile}")
         parquet.write_table(
             pyarrow.Table.from_arrays(
                 list(array_dict.values()), names=list(array_dict.keys())

@@ -774,7 +774,7 @@ def create_ssd_from_decoded_data(data, band, eclipse, verbose, margin=90.001):
     # noinspection PyTupleAssignmentBalance
     m, C = np.polyfit(avt, sep, 1)
     if verbose > 1:
-        print("	    stim_coef0, stim_coef1 = " + str(C) + ", " + str(m))
+        print("\nstim_coef0, stim_coef1 = " + str(C) + ", " + str(m))
 
     return stims, (C, m)
 

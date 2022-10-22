@@ -36,9 +36,8 @@ def eclipse_to_paths(
     comp = {
         "gzip": ".fits.gz", "none": ".fits", "rice": "-rice.fits"
     }[compression]
-    legs = tuple(
-        range(aspect_tables(eclipse, ("metadata",))[0]['legs'][0].as_py())
-    )
+    leg_number = aspect_tables(eclipse, ("metadata",))[0]['legs'][0].as_py()
+    legs = (0,) if leg_number == 0 else tuple(range(leg_number))
     for band, initial in zip(bands, band_initials):
         prefix = f"{eclipse_base}-{initial}d"
         band_dict = {

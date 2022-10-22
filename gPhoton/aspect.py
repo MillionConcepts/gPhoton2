@@ -91,14 +91,6 @@ def load_aspect_solution(
         tab.to_pandas()
         for tab in aspect_tables(eclipse, ("aspect", "boresight"))
     ]
-    if verbose > 1:
-        trange = [aspect["time"].min(), aspect["time"].max()]
-        print(f"                        trange= ( {trange[0]} , {trange[1]} )")
-    if verbose > 1:
-        print(
-            f"RA AVG: {aspect['ra'].mean()}, DEC AVG: {aspect['dec'].mean()}, "
-            f"ROLL AVG: {aspect['roll'].mean()}"
-        )
     # This projects the aspect_data solutions onto the MPS field centers.
     if verbose > 0:
         print_inline("Computing aspect_data vectors...")
@@ -112,4 +104,11 @@ def load_aspect_solution(
         1.0 / 36000.0,
         0.0,
     )
+    if verbose > 1:
+        trange = [aspect["time"].min(), aspect["time"].max()]
+        print(f"trange= ( {trange[0]} , {trange[1]} )")
+        print(
+            f"RA AVG: {aspect['ra'].mean()}, DEC AVG: {aspect['dec'].mean()}, "
+            f"ROLL AVG: {aspect['roll'].mean()}"
+        )
     return aspect

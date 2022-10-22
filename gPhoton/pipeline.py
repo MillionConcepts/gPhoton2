@@ -248,6 +248,14 @@ def execute_pipeline(
     if eclipse > 47000:
         print("CAUSE data w/eclipse>47000 are not yet supported.")
         return "return code: CAUSE data w/eclipse>47000 are not yet supported."
+    if verbose > 1:
+        from gPhoton.aspect import aspect_tables
+
+        metadata = aspect_tables(eclipse, ("metadata",))[0]
+        print(
+            f"eclipse {eclipse} {band}  -- {metadata['obstype'][0].as_py()}; "
+            f"{metadata['legs'][0].as_py()} leg(s)"
+        )
     if photometry_only is True:
         return execute_photometry_only(
             eclipse,
