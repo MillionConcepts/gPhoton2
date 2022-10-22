@@ -63,21 +63,24 @@ def get_photonlist(
             should be True for ad-hoc local execution (and especially for
             debugging), and False for managed remote execution.
     """
-    local_files, photonpath, remote_files, temp_directory = _set_up_paths(
+    # TODO: check for expected legs, maybe parameter to run only certain legs
+    local_files, photonpaths, remote_files, temp_directory = _set_up_paths(
         eclipse, band, local_root, remote_root
     )
     if (remote_root is not None) and (recreate is False):
-        if Path(remote_files["photonfile"]).exists():
+        if all([Path(file).exists() for file in remote_files["photonfiles"]]):
             print(
-                f"making temp local copy of photon file from remote: "
-                f"{remote_files['photonfile']}"
+                f"making temp local copies of photon files from remote: "
+                f"{remote_files['photonfiles']}"
             )
-            photonpath = Path(
-                shutil.copy(Path(remote_files["photonfile"]), temp_directory)
-            )
-    if recreate or not photonpath.exists():
-        if not photonpath.parent.exists():
-            photonpath.parent.mkdir(parents=True)
+            photonpaths = []
+            for file in remote_files['photonfiles']:
+                photonpaths.append(
+                    Path(shutil.copy(Path(file), temp_directory))
+                )
+    if recreate or not all([path.exists() for path in photonpaths]):
+        if not photonpaths[0].parent.exists():
+            photonpaths[0].parent.mkdir(parents=True)
         raw6path = _look_for_raw6(
             eclipse, band, download, local_files, remote_files, temp_directory
         )
@@ -90,7 +93,7 @@ def get_photonlist(
 
         try:
             execute_photonpipe(
-                photonpath,
+                photonpaths[0].parent,
                 band,
                 raw6file=str(raw6path),
                 verbose=verbose,
@@ -102,8 +105,8 @@ def get_photonlist(
                 raise value_error
             return parse_photonpipe_error(value_error)
     else:
-        print(f"using existing photon list {photonpath}")
-    return photonpath
+        print(f"using existing photon list(s) {photonpaths}")
+    return photonpaths
 
 
 def execute_photometry_only(
@@ -276,7 +279,7 @@ def execute_pipeline(
     if isinstance(get_photonlist_result, str):
         return get_photonlist_result  # this is an error return code
     else:
-        photonpath = get_photonlist_result  # strictly explanatory renaming
+        photonpaths = get_photonlist_result  # strictly explanatory renaming
     if stop_after == "photonpipe":
         print(
             f"stop_after='photonpipe' passed, halting; "
@@ -289,9 +292,14 @@ def execute_pipeline(
     stopwatch.click()
     from gPhoton.parquet_utils import get_parquet_stats
 
-    file_stats = get_parquet_stats(str(photonpath), ["flags", "ra"])
-    if (file_stats["flags"]["min"] > 6) or (file_stats["ra"]["max"] is None):
-        print(f"no unflagged data in {photonpath}. bailing out.")
+    ok_paths = []
+    for path in photonpaths:
+        file_stats = get_parquet_stats(str(path), ["flags", "ra"])
+        if (file_stats["flags"]["min"] > 6) or (file_stats["ra"]["max"] is None):
+            print(f"no unflagged data in {path}, not processing")
+        ok_paths.append(path)
+    if len(ok_paths) == 0:
+        print("no usable legs, bailing out.")
         return "return code: no unflagged data (stopped after photon list)"
     # MOVIE-RENDERING SECTION
     from gPhoton.moviemaker import (
@@ -299,79 +307,69 @@ def execute_pipeline(
         write_moviemaker_results,
     )
 
+    # TODO: fix this bit to work with legs
     # check to see if we're pinning our frame / lightcurve time series to
     # the time series of existing analysis for the other band
     fixed_start_time = check_fixed_start_time(
         eclipse, depth, local_root, remote_root, band, coregister_lightcurves
     )
-    # TODO: whatever led me to cast the photonlist path to str here is bad
-    results = create_images_and_movies(
-        str(photonpath),
-        depth,
-        band,
-        lil,
-        threads,
-        maxsize,
-        fixed_start_time,
-        min_exptime=min_exptime,
-    )
-    stopwatch.click()
-    if not (results["status"].startswith("successful")):
-        print(
-            f"Moviemaker pipeline unsuccessful {(results['status'])}; halting."
+    errors = []
+    for leg_ix, path in enumerate(photonpaths):
+        print(f"processing leg {leg_ix} of {len(photonpaths)}")
+        results = create_images_and_movies(
+            path,
+            depth,
+            band,
+            lil,
+            threads,
+            maxsize,
+            fixed_start_time,
+            min_exptime=min_exptime,
         )
-        return "return code: " + results["status"]
-    if stop_after == "moviemaker":
-        write_moviemaker_results(
+        stopwatch.click()
+        if not (results["status"].startswith("successful")):
+            message = (
+                f"Moviemaker pipeline unsuccessful on leg {leg_ix} "
+                f"{(results['status'])}"
+            )
+            print(message)
+            errors.append(message)
+            continue
+        if not stop_after == "moviemaker":
+            from gPhoton.lightcurve import make_lightcurves
+            photometry_result = make_lightcurves(
+                results,
+                eclipse,
+                band,
+                aperture_sizes,
+                local_files,
+                source_catalog_file,
+                threads,
+                stopwatch,
+            )
+        else:
+            photometry_result = 'successful'
+        write_result = write_moviemaker_results(
             results,
             local_files,
             depth,
             band,
+            leg_ix,
             write,
             maxsize,
             stopwatch,
             compression,
             hdu_constructor_kwargs,
         )
-        print(
-            f"stop_after='moviemaker' passed, halting; "
-            f"{round(time() - stopwatch.start_time, 2)} seconds for "
-            f"execution"
-        )
-        return "return code: successful (planned stop after moviemaker)"
-
-    from gPhoton.lightcurve import make_lightcurves
-    photometry_result = make_lightcurves(
-        results,
-        eclipse,
-        band,
-        aperture_sizes,
-        local_files,
-        source_catalog_file,
-        threads,
-        stopwatch,
+        if photometry_result != 'successful':
+            errors.append(photometry_result)
+        if write_result != 'successful':
+            errors.append(write_result)
+    print(
+        f"{round(time() - stopwatch.start_time, 2)} seconds for execution"
     )
-
-    # CLEANUP & CLOSEOUT SECTION
-    write_result = write_moviemaker_results(
-        results,
-        local_files,
-        depth,
-        band,
-        write,
-        maxsize,
-        stopwatch,
-        compression,
-        hdu_constructor_kwargs,
-    )
-    print(f"{round(time() - stopwatch.start_time, 2)} seconds for execution")
-    failures = [
-        result
-        for result in (photometry_result, write_result)
-        if result != "successful"
-    ]
-    if len(failures) > 0:
-        return "return code: " + ";".join(failures)
+    if len(errors) > 0:
+        return "return code: " + ";".join(errors)
     return "return code: successful"
 
 
@@ -462,7 +460,7 @@ def _set_up_paths(
     remote_root: Optional[str],
     depth: Optional[int] = None,
     compression: Literal["none", "rice", "gzip"] = "gzip",
-) -> tuple[dict, Path, Optional[dict], Path]:
+) -> tuple[dict, list[Path], Optional[dict], Path]:
     """
     initial path setup & file retrieval step for execute_pipeline.
     :param eclipse: GALEX eclipse number to run
@@ -494,8 +492,8 @@ def _set_up_paths(
     temp_directory = Path(data_root, "temp", str(eclipse).zfill(5))
     if not temp_directory.exists():
         temp_directory.mkdir(parents=True)
-    photonpath = Path(local_files["photonfile"])
-    return local_files, photonpath, remote_files, temp_directory
+    photonpaths = [Path(file) for file in local_files["photonfiles"]]
+    return local_files, photonpaths, remote_files, temp_directory
 
 
 def parse_photonpipe_error(value_error: ValueError) -> str:
@@ -526,7 +524,8 @@ def check_fixed_start_time(
     for location in (remote, local):
         if location is None:
             continue
-        exp_fn = eclipse_to_paths(eclipse, location, depth)[other]["expfile"]
+        # TODO: must fix this
+        exp_fn = eclipse_to_paths(eclipse, location, depth)[other]["expfiles"]
         if Path(exp_fn).exists():
             expfile = exp_fn
             break

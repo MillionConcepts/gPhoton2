@@ -35,7 +35,7 @@ def make_lightcurves(
     source_table = find_sources(
         eclipse,
         band,
-        str(Path(output_filenames['photomfile']).parent),
+        str(Path(output_filenames['photomfiles'][0]).parent),
         sky_arrays["image_dict"],
         sky_arrays["wcs"],
         source_table=sources,

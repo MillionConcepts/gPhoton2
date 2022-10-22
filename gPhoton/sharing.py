@@ -73,14 +73,14 @@ def send_to_shared_memory(array_dict):
     return block_info
 
 
-def slice_into_shared_chunks(chunksz, data, nphots):
-    variable_names = [key for key in data.keys()]
-    chunk_slices = make_chunk_slices(chunksz, nphots)
+def slice_into_shared_chunks(chunksz, data):
+    names = [key for key in data.keys()]
+    chunk_slices = make_chunk_slices(chunksz, len(data[names[0]]))
     total_chunks = len(chunk_slices)
     block_directory = {}
     for chunk_ix in range(total_chunks):
         block_directory = slice_chunk_into_memory(
-            block_directory, chunk_ix, data, chunk_slices, variable_names
+            block_directory, chunk_ix, data, chunk_slices, names
         )
     return block_directory
 
@@ -103,17 +103,17 @@ def slice_into_memory(data, indices):
 
 
 def slice_chunk_into_memory(
-    block_directory, chunk_ix, data, table_indices, variable_names=None
+    block_directory, chunk_ix, data, table_indices, names=None
 ):
     arrays = [
         array[slice(*table_indices[chunk_ix])] for array in data.values()
     ]
-    if variable_names is None:
-        variable_names = tuple(data.keys())
+    if names is None:
+        names = tuple(data.keys())
     block_info = send_to_shared_memory(
         {
             variable_name: array
-            for variable_name, array in zip(variable_names, arrays)
+            for variable_name, array in zip(names, arrays)
         }
     )
     block_directory[chunk_ix] = block_info

@@ -2,6 +2,7 @@
 
 import time
 import warnings
+from itertools import chain
 from multiprocessing import Pool
 from pathlib import Path
 from typing import Optional
@@ -23,6 +24,7 @@ from gPhoton.photonpipe._steps import (
     process_chunk_in_unshared_memory,
 )
 from gPhoton.pretty import print_inline
+from gPhoton.reference import eclipse_to_paths
 from gPhoton.sharing import (
     unlink_nested_block_dict,
     slice_into_shared_chunks,
@@ -33,15 +35,14 @@ from gPhoton.types import GalexBand, Pathlike
 
 
 def execute_photonpipe(
-    outfile: Pathlike,
+    outpath: Pathlike,
     band: GalexBand,
     raw6file: Optional[str] = None,
     verbose: int = 0,
     eclipse: Optional[int] = None,
-    overwrite: int = True,
     chunksz: int = 1000000,
     threads: int = 4,
-    share_memory: Optional[bool] = None,
+    share_memory: Optional[bool] = True,
     write_intermediate_variables: bool = True
 ):
     """
@@ -60,9 +61,9 @@ def execute_photonpipe(
 
     :type band: str
 
-    :param outfile: Base of the output file names.
+    :param outpath: output directory.
 
-    :type outfile: str, pathlib.Path
+    :type outpath: str, pathlib.Path
 
     :param verbose: Verbosity level, to be detailed later.
 
@@ -77,20 +78,11 @@ def execute_photonpipe(
             "Using shared memory without multithreading. "
             "This incurs a performance cost to no end."
         )
-    outfile = Path(outfile)
-    if outfile.exists():
-        if overwrite:
-            print(f"{outfile} already exists... deleting")
-            outfile.unlink()
-        else:
-            print(f"{outfile} already exists... aborting run")
-            return outfile
-
     startt = time.time()
     # download raw6 if local file is not passed
     if raw6file is None:
         print(f"downloading raw6file")
-        raw6file = retrieve_raw6(eclipse, band, outfile)
+        raw6file = retrieve_raw6(eclipse, band, outpath)
     # get / check eclipse # from raw6 header --
     eclipse = get_eclipse_from_header(raw6file, eclipse)
     print_inline("Processing eclipse {eclipse}".format(eclipse=eclipse))
@@ -121,37 +113,35 @@ def execute_photonpipe(
     cal_data = load_cal_data(stims, band, eclipse)
     if share_memory is True:
         cal_data = send_mapping_to_shared_memory(cal_data)
-
+    legs = chunk_by_legs(aspect, chunksz, data, share_memory)
+    del data
+    # explode to dict of arrays for numba etc.
+    aspect = {col: aspect[col].to_numpy() for col in aspect.columns}
     if share_memory is True:
-        chunks = slice_into_shared_chunks(chunksz, data, nphots)
         chunk_function = process_chunk_in_shared_memory
     else:
-        chunks = chunk_data(chunksz, data, nphots, copy=True)
         chunk_function = process_chunk_in_unshared_memory
-    del data
-    if threads is not None:
-        pool = Pool(threads)
-    else:
-        pool = None
-    results = {}
-    chunk_indices = list(chunks.keys())
-    for chunk_ix in chunk_indices:
-        chunk = chunks.pop(chunk_ix)
+    pool = None if threads is None else Pool(threads)
+    results, addresses = {}, []
+    for leg_ix in legs.keys():
+        addresses += [(leg_ix, chunk_ix) for chunk_ix in legs[leg_ix].keys()]
+    for leg_ix, chunk_ix in addresses:
+        chunk = legs[leg_ix].pop(chunk_ix)
         process_args = (
             aspect,
             band,
             cal_data,
             chunk,
-            f"{str(chunk_ix + 1)} of {str(len(chunk_indices))}:",
+            f"{str(chunk_ix + 1)} of {str(len(addresses))}:",
             stim_coefficients,
             xoffset,
             yoffset,
             write_intermediate_variables
         )
         if pool is None:
-            results[chunk_ix] = chunk_function(*process_args)
+            results[(leg_ix, chunk_ix)] = chunk_function(*process_args)
         else:
-            results[chunk_ix] = pool.apply_async(chunk_function, process_args)
+            results[(leg_ix, chunk_ix)] = pool.apply_async(chunk_function, process_args)
         del process_args
         del chunk
     if pool is not None:
@@ -160,40 +150,34 @@ def execute_photonpipe(
         # while not all(res.ready() for res in results.values()):
         #     print(_ProcessMemoryInfoProc().rss / 1024 ** 3)
         #     time.sleep(0.1)
+        # TODO, maybe: write per-leg photonlists aysnchronously
         pool.join()
         results = {task: result.get() for task, result in results.items()}
-    # make sure this remains in order
-    chunk_indices = sorted(results.keys())
-    array_dict = {}
     if share_memory is True:
         unlink_nested_block_dict(cal_data)
-        for name in results[0].keys():
-            array_dict[name] = get_column_from_shared_memory(
-                results, name, unlink=True
-            )
-    else:
-        child_dicts = [results[ix] for ix in chunk_indices]
-        # TODO: this is memory-greedy.
-        for name in child_dicts[0].keys():
-            array_dict[name] = np.hstack(
-                [child_dict[name] for child_dict in child_dicts]
-            )
-        del child_dicts
-    proc_count = len(array_dict["t"])
-
-    dict_comp = VARIABLES_FOR_WHICH_DICTIONARY_COMPRESSION_IS_USEFUL.copy()
-    if band == "FUV":
-        dict_comp.append("x")
-
-    # noinspection PyArgumentList
-    parquet.write_table(
-        pyarrow.Table.from_arrays(
-            list(array_dict.values()), names=list(array_dict.keys())
-        ),
-        outfile,
-        use_dictionary=dict_comp,
-        version="2.6",
-    )
+    proc_count = 0
+    outfiles = []
+    for leg_ix in legs.keys():
+        leg_results = {}
+        leg_addresses = tuple(filter(lambda k: k[0] == leg_ix, results.keys()))
+        for address in leg_addresses:
+            leg_results[address[1]] = results.pop(address)
+        array_dict = retrieve_leg_results(leg_results, share_memory)
+        proc_count += len(array_dict["t"])
+        filename = Path(
+            eclipse_to_paths(eclipse, leg_ix=leg_ix)[band]["photonfile"]
+        ).name
+        outfile = Path(outpath, filename)
+        # noinspection PyArgumentList
+        parquet.write_table(
+            pyarrow.Table.from_arrays(
+                list(array_dict.values()), names=list(array_dict.keys())
+            ),
+            outfile,
+            use_dictionary=FIELDS_FOR_WHICH_DICTIONARY_COMPRESSION_IS_USEFUL,
+            version="2.6",
+        )
+        outfiles.append(outfile)
     stopt = time.time()
     print_inline("")
     print("")
@@ -206,12 +190,52 @@ def execute_photonpipe(
         if proc_count < nphots:
             print("		WARNING: MISSING EVENTS! ")
         print(f"rate		=	{rate} photons/sec.\n")
-    return outfile
+    return outfiles
+
+
+def retrieve_leg_results(results, share_memory):
+    array_dict = {}
+    if share_memory is True:
+        for name in results[0].keys():
+            array_dict[name] = get_column_from_shared_memory(
+                results, name, unlink=True
+            )
+    else:
+        child_dicts = [results[ix] for ix in sorted(results.keys())]
+        # TODO: this is memory-greedy.
+        for name in child_dicts[0].keys():
+            array_dict[name] = np.hstack(
+                [child_dict[name] for child_dict in child_dicts]
+            )
+        del child_dicts
+    return array_dict
+
+
+def chunk_by_legs(aspect, chunksz, data, share_memory):
+    chunks = {}
+    bounds = []
+    start = 0
+    leg_groups = tuple(aspect.groupby('leg'))
+    for leg_ix, leg in leg_groups:
+        times = leg['time']
+        start_ix = np.nonzero(data['t'][start:] >= times.iloc[0])[0][0]
+        end_ix = np.nonzero(data['t'][start:] <= times.iloc[-1])[0][-1]
+        bounds.append((start + start_ix, start + end_ix))
+        leg_data = {
+            field: data[field][start + start_ix:start + end_ix]
+            for field in data.keys()
+        }
+        start += end_ix
+        if share_memory is True:
+            chunks[leg_ix] = slice_into_shared_chunks(chunksz, leg_data)
+        else:
+            chunks[leg_ix] = chunk_data(chunksz, leg_data, copy=True)
+    return chunks
 
 
 # ------------------------------------------------------------------------------
 
-VARIABLES_FOR_WHICH_DICTIONARY_COMPRESSION_IS_USEFUL = [
+FIELDS_FOR_WHICH_DICTIONARY_COMPRESSION_IS_USEFUL = [
     "t",
     "flags",
     "y",

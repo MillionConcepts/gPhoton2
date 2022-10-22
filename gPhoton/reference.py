@@ -3,6 +3,9 @@ utilities for generating shared reference points between pipeline components:
 canonical file paths, timer objects, etc.
 this module is supposed to be essentially free to import: only standard
 library modules should be used, at least as module-level imports.
+
+# TODO: the leg count lookup I've added militates against the 'free to import'
+# intent, but there's a ton of complexity it potentially reduces
 """
 import functools
 import subprocess
@@ -18,38 +21,49 @@ def eclipse_to_paths(
     data_directory: Pathlike = "data",
     depth: Optional[int] = None,
     compression: Literal["none", "gzip", "rice"] = "gzip",
-    leg_ix: int = 0
 ) -> dict[str, dict[str, str]]:
     """
     generate canonical paths for files associated with a given eclipse,
     optionally including files at a specific depth
     """
+    from gPhoton.aspect import aspect_tables
     zpad = str(eclipse).zfill(5)
     eclipse_path = f"{data_directory}/e{zpad}/"
     eclipse_base = f"{eclipse_path}e{zpad}"
     bands = "NUV", "FUV"
     band_initials = "n", "f"
     file_dict = {}
-    comp_suffix = {
+    comp = {
         "gzip": ".fits.gz", "none": ".fits", "rice": "-rice.fits"
     }[compression]
+    legs = tuple(
+        range(aspect_tables(eclipse, ("metadata",))[0]['legs'][0].as_py())
+    )
     for band, initial in zip(bands, band_initials):
         prefix = f"{eclipse_base}-{initial}d"
         band_dict = {
             "raw6": f"{prefix}-raw6.fits.gz",
-            "photonfile": f"{prefix}-{leg_ix}.parquet",
-            "image": f"{prefix}-full-{leg_ix}{comp_suffix}",
-            "extended_catalog": f"{prefix}-{leg_ix}-extended-sources.csv",
+            "photonfiles": [f"{prefix}-{leg}.parquet" for leg in legs],
+            "images": [f"{prefix}-full-{leg}{comp}" for leg in legs],
+            "extended_catalogs": [
+                f"{prefix}-{leg}-extended-sources.csv" for leg in legs
+            ]
         }
         if depth is not None:
             band_dict |= {
-                "movie": f"{prefix}-{depth}s-{leg_ix}{comp_suffix}",
+                "movies": [f"{prefix}-{depth}s-{leg}{comp}" for leg in legs],
                 # stem -- multiple aperture sizes possible
-                "photomfile": f"{prefix}-{depth}s-{leg_ix}-photom-",
-                "expfile": f"{prefix}-{depth}s-{leg_ix}-exptime.csv"
+                "photomfiles": [
+                    f"{prefix}-{depth}s-{leg}-photom-" for leg in legs
+                ],
+                "expfiles": [
+                    f"{prefix}-{depth}s-{leg}-exptime.csv" for leg in legs
+                ]
             }
         else:
-            band_dict |= {"photomfile": f"{prefix}-full-{leg_ix}-photom-"}
+            band_dict |= {
+                "photomfiles": [f"{prefix}-full-{leg}-photom-" for leg in legs]
+            }
         file_dict[band] = band_dict
     return file_dict
 

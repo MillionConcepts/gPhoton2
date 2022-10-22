@@ -789,11 +789,12 @@ def unpack_data_chunk(data, chunkbeg, chunkend, copy=True):
     return chunk
 
 
-def chunk_data(chunksz, data, nphots, copy=True):
+def chunk_data(chunksz, data, copy=True):
+    length = len(data[tuple(data.keys())[0]])
     chunk_slices = []
-    for chunk_ix in range(int(nphots / chunksz) + 1):
+    for chunk_ix in range(int(length / chunksz) + 1):
         chunkbeg, chunkend = chunk_ix * chunksz, (chunk_ix + 1) * chunksz
-        if chunkend > nphots:
+        if chunkend > length:
             chunkend = None
         chunk_slices.append((chunkbeg, chunkend))
     return {

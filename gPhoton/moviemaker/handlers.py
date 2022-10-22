@@ -167,6 +167,7 @@ def write_moviemaker_results(
     filenames,
     depth,
     band,
+    leg_ix,
     write,
     maxsize,
     stopwatch,
@@ -177,7 +178,7 @@ def write_moviemaker_results(
         write_fits_array(
             band,
             None,
-            filenames["image"].replace(".gz", ""),
+            filenames["images"][leg_ix].replace(".gz", ""),
             results["image_dict"],
             clean_up=True,
             wcs=results["wcs"],
@@ -204,7 +205,7 @@ def write_moviemaker_results(
         write_fits_array(
             band,
             depth,
-            filenames["movie"].replace(".gz", ""),
+            filenames["movies"][leg_ix].replace(".gz", ""),
             results["movie_dict"],
             clean_up=True,
             wcs=results["wcs"],
