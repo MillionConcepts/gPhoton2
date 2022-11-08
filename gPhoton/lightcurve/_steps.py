@@ -155,7 +155,8 @@ def get_point_and_extended_sources(cnt_image: np.ndarray, band: str, f_e_mask, e
     # checking for overlap between extended source mask and segmentation image
     seg_sources = check_point_in_extended(outline_seg_map, masks, seg_sources)
 
-    return seg_sources.dropna(), deblended_seg_map, masks, extended_source_cat
+    #seg_sources.dropna() was old setting
+    return seg_sources, deblended_seg_map, masks, extended_source_cat
 
 
 def image_segmentation(cnt_image: np.ndarray, band: str, f_e_mask, exposure_time):
@@ -279,12 +280,12 @@ def check_point_in_extended(outline_seg_map, masks, seg_sources):
     pm("check points")
     seg_outlines = np.nonzero(outline_seg_map)
     seg_outlines_vert = np.vstack((seg_outlines[0], seg_outlines[1])).T
-
+    seg_sources["extended_source"] = 0 # added to fix key error?
     for key in masks:
         inside_extended = masks[key].contains_points(seg_outlines_vert)
         segments_in_extended = outline_seg_map[seg_outlines][inside_extended]
         seg_sources.loc[segments_in_extended, "extended_source"] = int(key)
-
+    seg_sources.to_csv("seg_sources_in_extented.csv")
     return seg_sources
 
 

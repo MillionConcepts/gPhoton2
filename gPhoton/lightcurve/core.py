@@ -37,7 +37,7 @@ def make_lightcurves(
     source_table, segment_map, extended_source_paths, extended_source_cat = find_sources(
         eclipse,
         band,
-        str(Path(output_filenames['photomfiles'][0]).parent),
+        str(Path(output_filenames['photomfiles'][leg]).parent), # zero to leg
         sky_arrays["image_dict"],
         sky_arrays["wcs"],
         source_table=sources,
@@ -50,11 +50,12 @@ def make_lightcurves(
         sky_arrays["image_dict"]["cnt"],
         eclipse,
         band,
-        outpath=str(Path(output_filenames['image']).parent),
-    )
+        leg,
+        outpath=str(Path(output_filenames['images'][0]).parent)
+    ) # added an s to image and [0]
     print("saving extended source catalogue")
     extended_source_cat.to_csv(
-        output_filenames["extended_catalog"], index=None
+        output_filenames["extended_catalogs"][leg], index=None  # added s and [leg]
     )
 
     stopwatch.click()
