@@ -21,6 +21,7 @@ from cytoolz import identity, keyfilter
 from gPhoton.reference import eclipse_to_paths, Stopwatch
 from gPhoton.types import GalexBand, Pathlike
 from more_itertools import chunked
+from more_itertools import windowed
 
 # oh no! divide by zero! i am very distracting!
 warnings.filterwarnings(action="ignore", category=RuntimeWarning)
@@ -162,6 +163,49 @@ def execute_photometry_only(
     )
     if len(errors) > 0:
         return "return code: " + ";".join(errors)
+    return "return code: successful"
+
+
+def execute_photometry_only(
+    eclipse,
+    band,
+    local_root,
+    remote_root,
+    depth,
+    compression,
+    lil,
+    aperture_sizes,
+    source_catalog_file,
+    threads,
+    stopwatch
+):
+    if stopwatch is None:
+        stopwatch = Stopwatch()
+        stopwatch.start()
+    loaded_results = load_moviemaker_results(
+        eclipse, band, local_root, remote_root, depth, compression, lil
+    )
+    # this is an error code
+    if isinstance(loaded_results, str):
+        return loaded_results
+    local_files, results = loaded_results
+    from gPhoton.lightcurve import make_lightcurves
+
+    photometry_result = make_lightcurves(
+        results,
+        eclipse,
+        band,
+        aperture_sizes,
+        local_files,
+        source_catalog_file,
+        threads,
+        stopwatch,
+    )
+    print(
+        f"{round(time() - stopwatch.start_time, 2)} seconds for execution"
+    )
+    if not photometry_result.startswith("successful"):
+        return f"return code: {photometry_result}"
     return "return code: successful"
 
 

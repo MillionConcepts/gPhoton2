@@ -3,19 +3,18 @@
    :synopsis: individual components of gPhoton movie- and image-making
    processes. generally should not be called on their own.
 """
+import warnings
 from pathlib import Path
 from typing import Mapping, Sequence, Literal
-import warnings
 
-import fitsio
-import pyarrow
-from astropy.io import fits as pyfits
-from dustgoggles.structures import NestingDict
 import fast_histogram as fh
+import fitsio
 import numpy as np
-from pyarrow import parquet
+import pyarrow
 import scipy.sparse
 import sh
+from astropy.io import fits as pyfits
+from dustgoggles.structures import NestingDict
 
 from gPhoton import __version__
 from gPhoton.calibrate import compute_exptime
@@ -30,6 +29,7 @@ from gPhoton.sharing import (
 )
 from gPhoton.types import Pathlike
 from gPhoton.vorpal import between, slice_between
+from pyarrow import parquet
 
 
 def booleanize_for_fits(array: np.ndarray) -> np.ndarray:
