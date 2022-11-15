@@ -9,7 +9,7 @@ if __name__ == "__main__":
         local_root="test_data",
         recreate=True,
         aperture_sizes=[12.8],
-        write={"movie": True, "image": True},
+        write={"movie": True, "image": False},
         coregister_lightcurves=False,
         # stop_after="moviemaker",
         photometry_only=False,
