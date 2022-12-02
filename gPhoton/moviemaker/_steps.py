@@ -321,19 +321,17 @@ def write_fits_array(
         movie_name = f"{depth}-second depth movie"
     movie_path = Path(moviefile)
     if movie_path.exists():
-        print(f"overwriting {movie_path} with {movie_name}")
         movie_path.unlink()
-    else:
-        print(f"writing {movie_name} to {movie_path}")
     # TODO: write names / descriptions into the headers
 
     if burst and depth is not None:
         # burst mode writes each frame as a separate image w/ cnt, flag, and edge
         for frame in range(len(movie_dict["cnt"])):
+            frame_num = str(frame).zfill(4)  # padding with zeros
+            movie_path = Path(moviefile[:len(moviefile) - 12] + f"-f{frame_num}" + "-rice.fits")  # a lil hacky
+            print(f"writing {movie_name} frame {frame} to {movie_path}")
             for key in ["cnt", "flag", "edge"]:
                 print(f"writing frame {frame} {key} map")
-                frame_num = str(frame).zfill(4) # padding with zeros
-                movie_path = Path(moviefile[:len(moviefile)-12]+f"-f{frame_num}"+"-rice.fits")                 # a lil hacky
                 header = populate_fits_header(
                     band, wcs, movie_dict["tranges"], movie_dict["exptimes"]
                 )
@@ -350,6 +348,7 @@ def write_fits_array(
             header = populate_fits_header(
                 band, wcs, movie_dict["tranges"], movie_dict["exptimes"]
             )
+            print(f"writing {movie_name} to {movie_path}")
             add_movie_to_fits_file(
                 movie_path,
                 movie_dict[key],
