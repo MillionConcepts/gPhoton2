@@ -188,6 +188,7 @@ def execute_pipeline(
     hdu_constructor_kwargs: Optional[Mapping] = None,
     min_exptime: Optional[float] = None,
     photometry_only: bool = False,
+    burst: bool = False
 ) -> str:
     """
     Args:
@@ -248,6 +249,7 @@ def execute_pipeline(
             and lightcurve generation. None means no lower bound.
         photometry_only: attempt to perform photometry on already-existing
             images/movies, doing nothing else
+        burst: write movie frames to individual fits files? default is False.
 
     Returns:
         str: `"return code: successful"` for fully successful execution;
@@ -355,7 +357,7 @@ def execute_pipeline(
         else:
             photometry_result = 'successful'
         write_result = write_moviemaker_results(
-            results, files['local'], leg=leg, **opt
+            results, files['local'], leg=leg, burst=burst, **opt
         )
         if photometry_result != 'successful':
             errors.append(photometry_result)

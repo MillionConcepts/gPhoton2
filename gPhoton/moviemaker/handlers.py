@@ -132,6 +132,117 @@ def make_movies(
     )
 
 
+def make_burst_movies(
+    depth: Optional[int],
+    exposure_array: np.ndarray,
+    map_ix_dict: dict,
+    total_trange: tuple[int, int],
+    imsz: tuple[int, int],
+    band: str,
+    lil: bool = False,
+    threads: Optional[int] = 4,
+    maxsize: Optional[int] = None,
+    fixed_start_time: Optional[float] = None,
+) -> tuple[str, dict]:
+    """
+    :param depth: framesize in seconds
+    :param exposure_array: t and flags, _including_ off-detector, for exptime
+    :param map_ix_dict: cnt, edge, and mask indices for weights, t, and foc
+    :param total_trange: (time minimum, time maximum) for on-detector events
+    :param imsz: size of each frame, as given by upstream WCS object
+    :param band: "FUV" or "NUV"
+    :param lil: sparsify matrices to reduce memory footprint, at compute cost
+    :param threads: how many threads to use to calculate frames
+    :param maxsize: terminate if predicted size (in bytes) of cntmap > maxsize
+    :param fixed_start_time: externally-defined time for start of first frame,
+    primarily intended to help coregister NUV and FUV frames
+    """
+    if fixed_start_time is not None:
+        total_trange = (fixed_start_time, total_trange[1])
+    t0s = np.arange(total_trange[0], total_trange[1] + depth, depth)
+    tranges = list(windowed(t0s, 2))
+    # TODO, maybe: at very short depths, slicing arrays into memory becomes a
+    #  meaningful single-core-speed-dependent bottleneck. overhead of
+    #  distributing across processes may not be worth it anyway.
+    #  also, jamming the entirety of the arrays into memory and indexing as
+    #  needed _is_ an option if rigorous thread safety is practiced, although
+    #  this will significantly increase the memory pressure of this portion
+    #  of the execute_pipeline.
+    if maxsize is not None:
+        # TODO: this is jury-rigged and ignores unsparsified cases etc. etc.
+        # we're ignoring most of the per-frame overhead at this point because
+        # it is probably (?) trivial for large arrays.
+        # sparse = 0.08 if lil else 1
+        memory = predict_sparse_movie_memory(
+            imsz, n_frames=len(tranges), threads=threads
+        )
+        # add a single-frame 'penalty' for unsparsified full-depth image
+        # 10 = sum of element sizes across planes
+        memory += imsz[0] * imsz[1] * 10
+        if memory > maxsize:
+            failure_string = (
+                f"{round(memory / (1024 ** 3), 2)} GB needed to make movie "
+                f"> size threshold {maxsize}"
+            )
+            print(failure_string + "; halting execute_pipeline")
+            return failure_string, {}
+    print("slicing exposure array into memory")
+    exposure_directory = slice_exposure_into_memory(exposure_array, tranges)
+    del exposure_array
+    map_directory = NestingDict()
+    for map_name in list(map_ix_dict.keys()):
+        for frame_ix, trange in enumerate(tranges):
+            # 0-count exposure times have 'None' entries assigned in
+            # slice_exposure_into_memory
+            print(
+                f"slicing {map_name} data {frame_ix + 1} of {len(tranges)} "
+                f"into memory"
+            )
+            map_directory[frame_ix][map_name] = slice_frame_into_memory(
+                exposure_directory, map_ix_dict, map_name, frame_ix, trange
+            )
+        del map_ix_dict[map_name]
+    del map_ix_dict
+    if threads is None:
+        pool = None
+    else:
+        pool = Pool(threads)
+    results = {}
+    for frame_ix, trange in enumerate(tranges):
+        headline = f"Integrating frame {frame_ix + 1} of {len(tranges)}"
+        frame_params = (
+            band,
+            map_directory[frame_ix],
+            exposure_directory[frame_ix],
+            trange,
+            imsz,
+            lil,
+            headline,
+        )
+        if pool is None:
+            results[frame_ix] = sm_compute_movie_frame(*frame_params)
+        else:
+            results[frame_ix] = pool.apply_async(
+                sm_compute_movie_frame, frame_params
+            )
+    if pool is not None:
+        pool.close()
+        pool.join()
+        results = {task: result.get() for task, result in results.items()}
+    frame_indices = sorted(results.keys())
+    movies = {"cnt": [], "flag": [], "edge": []}
+    exptimes = []
+    for frame_ix in frame_indices:
+        for map_name in ("cnt", "flag", "edge"):
+            movies[map_name].append(results[frame_ix][map_name])
+        exptimes.append(results[frame_ix]["exptime"])
+        del results[frame_ix]
+    return (
+        "successfully made movies",
+        {"tranges": tranges, "exptimes": exptimes} | movies,
+    )
+
+
 def make_full_depth_image(
     exposure_array, map_ix_dict, total_trange, imsz, maxsize=None, band="NUV"
 ) -> tuple[str, dict]:
@@ -172,6 +283,7 @@ def write_moviemaker_results(
     maxsize,
     stopwatch,
     compression,
+    burst,
     hdu_constructor_kwargs,
     **unused_options
 ):
@@ -211,7 +323,8 @@ def write_moviemaker_results(
             clean_up=True,
             wcs=results["wcs"],
             compression=compression,
-            fitsio_write_kwargs=fitsio_write_kwargs
+            burst=burst,
+            hdu_constructor_kwargs=hdu_constructor_kwargs
         )
         stopwatch.click()
     return "successful"
@@ -264,13 +377,24 @@ def create_images_and_movies(
         }
     if (depth is not None) and status.startswith("success"):
         print(f"making {depth}-second depth movies")
-        status, movie_dict = make_movies(
-            depth=depth,
-            lil=lil,
-            threads=threads,
-            fixed_start_time=fixed_start_time,
-            **render_kwargs,
-        )
+        burst_mode = True # temporary, need to add to pipeline
+        if burst_mode:
+            status, movie_dict = make_movies(
+                depth=depth,
+                lil=lil,
+                threads=threads,
+                fixed_start_time=fixed_start_time,
+                **render_kwargs,
+            )
+        elif burst_mode:
+            print("using burst mode to save individual movie frames.")
+            status, movie_dict = make_burst_movies(
+                depth=depth,
+                lil=lil,
+                threads=threads,
+                fixed_start_time=fixed_start_time,
+                **render_kwargs,
+            )
     return {
         "wcs": wcs,
         "movie_dict": movie_dict,
