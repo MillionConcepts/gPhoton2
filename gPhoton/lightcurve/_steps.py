@@ -191,7 +191,7 @@ def load_source_catalog(
             ".parquet file with at least the columns 'eclipse', 'ra', 'dec'."
         )
     try:
-        if format_ == ".csv":
+        if format_ == "csv":
             sources = _load_csv_catalog(source_catalog_file, eclipse)
         else:
             sources = _load_parquet_catalog(source_catalog_file, eclipse)

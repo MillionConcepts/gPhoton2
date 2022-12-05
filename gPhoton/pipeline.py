@@ -139,7 +139,7 @@ def execute_photometry_only(
         )
         # this is an error code
         if isinstance(loaded_results, str):
-            errors.append(errors)
+            errors.append(loaded_results)
             continue
         output_filenames, results = loaded_results
         from gPhoton.lightcurve import make_lightcurves
@@ -326,17 +326,24 @@ def execute_pipeline(
         write_moviemaker_results,
     )
 
-    # TODO: fix this bit to work with legs
-    # check to see if we're pinning our frame / lightcurve time series to
-    # the time series of existing analysis for the other band
-    fixed_start_time = check_fixed_start_time(
-        eclipse, depth, local_root, remote_root, band, coregister_lightcurves
-    )
     errors = []
     for leg, path in enumerate(photonpaths):
+        # check to see if we're pinning our frame / lightcurve time series to
+        # the time series of existing analysis for the other band
+        fixed_start_time = check_fixed_start_time(
+            eclipse,
+            depth,
+            local_root,
+            remote_root,
+            band,
+            coregister_lightcurves,
+            leg
+        )
         if len(photonpaths) > 0:
             print(f"processing leg {leg + 1} of {len(photonpaths)}")
-        results = create_images_and_movies(path, **opt)
+        results = create_images_and_movies(
+            path, fixed_start_time=fixed_start_time, **opt
+        )
         opt['stopwatch'].click()
         if not (results["status"].startswith("successful")):
             message = (
@@ -512,6 +519,7 @@ def check_fixed_start_time(
     remote: Optional[Pathlike],
     band: GalexBand,
     coregister: bool,
+    leg: int
 ) -> Optional[str]:
     if (coregister is not True) or (depth is None):
         return None
@@ -521,7 +529,16 @@ def check_fixed_start_time(
         if location is None:
             continue
         # TODO: must fix this
-        exp_fn = eclipse_to_paths(eclipse, location, depth)[other]["expfiles"]
+        try:
+            exp_fn = eclipse_to_paths(
+                eclipse, location, depth
+            )[other]["expfiles"][leg]
+        except IndexError:
+            print(
+                f"Disturbingly, the cross-band eclipse does not appear to "
+                f"possess an equivalent leg."
+            )
+            break
         if Path(exp_fn).exists():
             expfile = exp_fn
             break

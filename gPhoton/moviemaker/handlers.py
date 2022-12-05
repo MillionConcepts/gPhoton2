@@ -211,7 +211,7 @@ def write_moviemaker_results(
             clean_up=True,
             wcs=results["wcs"],
             compression=compression,
-            fitsio_write_kwargs=fitsio_write_kwargs
+            hdu_constructor_kwargs=hdu_constructor_kwargs
         )
         stopwatch.click()
     return "successful"
