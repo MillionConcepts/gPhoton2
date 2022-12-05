@@ -43,26 +43,26 @@ def eclipse_to_paths(
         prefix = f"{eclipse_base}-{initial}d"
         band_dict = {
             "raw6": f"{prefix}-raw6.fits.gz",
-            "photonfiles": [f"{prefix}-{leg}.parquet" for leg in legs],
-            "images": [f"{prefix}-full-{leg}{comp}" for leg in legs],
+            "photonfiles": [f"{prefix}.parquet" for _ in legs],
+            "images": [f"{prefix}-full{comp}" for _ in legs],
             "extended_catalogs": [
-                f"{prefix}-{leg}-extended-sources.csv" for leg in legs
+                f"{prefix}-extended-sources.csv" for leg in legs
             ]
         }
         if depth is not None:
             band_dict |= {
-                "movies": [f"{prefix}-{depth}s-{leg}{comp}" for leg in legs],
+                "movies": [f"{prefix}-{depth}s{comp}" for leg in legs],
                 # stem -- multiple aperture sizes possible
                 "photomfiles": [
-                    f"{prefix}-{depth}s-{leg}-photom-" for leg in legs
+                    f"{prefix}-{depth}s-photom-" for leg in legs
                 ],
                 "expfiles": [
-                    f"{prefix}-{depth}s-{leg}-exptime.csv" for leg in legs
+                    f"{prefix}-{depth}s-exptime.csv" for leg in legs
                 ]
             }
         else:
             band_dict |= {
-                "photomfiles": [f"{prefix}-full-{leg}-photom-" for leg in legs]
+                "photomfiles": [f"{prefix}-full-photom-" for leg in legs]
             }
         file_dict[band] = band_dict
     return file_dict
