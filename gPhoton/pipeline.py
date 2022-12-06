@@ -590,7 +590,11 @@ def unpack_movie(movie_file, compression, lil):
         constructor = identity
     for hdu, plane in zip(hdus, planes):
         for frame_ix in range(len(results['exptimes'])):
-            plane.append(constructor(hdu[frame_ix, :, :][0]))
+            # deal with array slice difference between fitsio and astropy
+            cut = hdu[frame_ix, :, :]
+            if len(cut.shape) == 3:
+                cut = cut[0]
+            plane.append(constructor(cut))
     return results | {"cnt": planes[0], "flag": planes[1], "edge": planes[2]}
 
 

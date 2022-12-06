@@ -66,6 +66,9 @@ class AgnosticHDU:
             pass
         return self._hdu.__getattribute__(attr)
 
+    # TODO, maybe: attempt to deal with weird array shape differences
+    #  between astropy and fitsio in response to the same slices
+
     def __str__(self):
         return self._hdu.__str__()
 
