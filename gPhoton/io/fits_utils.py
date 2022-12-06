@@ -190,7 +190,7 @@ def pyfits_open_igzip(fn: str) -> astropy.io.fits.hdu.HDUList:
     from isal import igzip
 
     # TODO: does this leak the igzip stream handle?
-    if Path(fn).endswith("gz"):
+    if str(fn).endswith("gz"):
         stream = igzip.open(fn)
         return astropy.io.fits.open(stream)
     else:
