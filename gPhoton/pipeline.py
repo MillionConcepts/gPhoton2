@@ -567,13 +567,13 @@ def load_array_file(array_file, compression):
         hdul = AgnosticHDUL(fitsio.FITS(array_file))
     offset = 0 if compression != "rice" else 1
     cnt_hdu, flag_hdu, edge_hdu = (hdul[i + offset] for i in range(3))
-    header = dict(cnt_hdu.header)
-    tranges = keyfilter(lambda k: re.match(r"T[01]", k), header)
+    headerdict = dict(cnt_hdu.header)
+    tranges = keyfilter(lambda k: re.match(r"T[01]", k), headerdict)
     tranges = tuple(chunked(tranges.values(), 2))
     exptimes = tuple(
-        keyfilter(lambda k: re.match(r"EXPT_", k), header).values()
+        keyfilter(lambda k: re.match(r"EXPT_", k), headerdict).values()
     )
-    wcs = astropy.wcs.WCS(header)
+    wcs = astropy.wcs.WCS(cnt_hdu.header)
     results = {"exptimes": exptimes, "tranges": tranges, "wcs": wcs}
     return (cnt_hdu, edge_hdu, flag_hdu), results
 
