@@ -560,11 +560,14 @@ def check_fixed_start_time(
 def load_array_file(array_file, compression):
     import astropy.wcs
     import fitsio
-
-    hdul = fitsio.FITS(array_file)
+    from gPhoton.io.fits_utils import AgnosticHDUL, pyfits_open_igzip
+    if compression == 'gzip':
+        hdul = AgnosticHDUL(pyfits_open_igzip(array_file))
+    else:
+        hdul = AgnosticHDUL(fitsio.FITS(array_file))
     offset = 0 if compression != "rice" else 1
     cnt_hdu, flag_hdu, edge_hdu = (hdul[i + offset] for i in range(3))
-    header = dict(cnt_hdu.read_header())
+    header = dict(cnt_hdu.header)
     tranges = keyfilter(lambda k: re.match(r"T[01]", k), header)
     tranges = tuple(chunked(tranges.values(), 2))
     exptimes = tuple(
@@ -594,6 +597,6 @@ def unpack_movie(movie_file, compression, lil):
 def unpack_image(image_file, compression):
     hdus, results = load_array_file(image_file, compression)
     planes = {
-        "cnt": hdus[0].read(), "flag": hdus[1].read(), "edge": hdus[2].read()
+        "cnt": hdus[0].data, "flag": hdus[1].data, "edge": hdus[2].data
     }
     return results | planes
