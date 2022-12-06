@@ -6,6 +6,7 @@ TODO: these are somewhat repetitive/redundant, tossed around inconsistently,
 """
 
 import warnings
+from pathlib import Path
 from typing import Sequence
 
 import astropy.io.fits
@@ -189,7 +190,7 @@ def pyfits_open_igzip(fn: str) -> astropy.io.fits.hdu.HDUList:
     from isal import igzip
 
     # TODO: does this leak the igzip stream handle?
-    if fn.endswith("gz"):
+    if Path(fn).endswith("gz"):
         stream = igzip.open(fn)
         return astropy.io.fits.open(stream)
     else:
