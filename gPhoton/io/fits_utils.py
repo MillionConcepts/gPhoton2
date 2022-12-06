@@ -6,6 +6,7 @@ TODO: these are somewhat repetitive/redundant, tossed around inconsistently,
 """
 
 import warnings
+from pathlib import Path
 from typing import Sequence
 
 import astropy.io.fits
@@ -64,6 +65,9 @@ class AgnosticHDU:
         except AttributeError:
             pass
         return self._hdu.__getattribute__(attr)
+
+    # TODO, maybe: attempt to deal with weird array shape differences
+    #  between astropy and fitsio in response to the same slices
 
     def __str__(self):
         return self._hdu.__str__()
@@ -189,7 +193,7 @@ def pyfits_open_igzip(fn: str) -> astropy.io.fits.hdu.HDUList:
     from isal import igzip
 
     # TODO: does this leak the igzip stream handle?
-    if fn.endswith("gz"):
+    if str(fn).endswith("gz"):
         stream = igzip.open(fn)
         return astropy.io.fits.open(stream)
     else:

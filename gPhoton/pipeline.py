@@ -560,17 +560,20 @@ def check_fixed_start_time(
 def load_array_file(array_file, compression):
     import astropy.wcs
     import fitsio
-
-    hdul = fitsio.FITS(array_file)
+    from gPhoton.io.fits_utils import AgnosticHDUL, pyfits_open_igzip
+    if compression == 'gzip':
+        hdul = AgnosticHDUL(pyfits_open_igzip(array_file))
+    else:
+        hdul = AgnosticHDUL(fitsio.FITS(array_file))
     offset = 0 if compression != "rice" else 1
     cnt_hdu, flag_hdu, edge_hdu = (hdul[i + offset] for i in range(3))
-    header = dict(cnt_hdu.read_header())
-    tranges = keyfilter(lambda k: re.match(r"T[01]", k), header)
+    headerdict = dict(cnt_hdu.header)
+    tranges = keyfilter(lambda k: re.match(r"T[01]", k), headerdict)
     tranges = tuple(chunked(tranges.values(), 2))
     exptimes = tuple(
-        keyfilter(lambda k: re.match(r"EXPT_", k), header).values()
+        keyfilter(lambda k: re.match(r"EXPT_", k), headerdict).values()
     )
-    wcs = astropy.wcs.WCS(header)
+    wcs = astropy.wcs.WCS(cnt_hdu.header)
     results = {"exptimes": exptimes, "tranges": tranges, "wcs": wcs}
     return (cnt_hdu, edge_hdu, flag_hdu), results
 
@@ -587,13 +590,17 @@ def unpack_movie(movie_file, compression, lil):
         constructor = identity
     for hdu, plane in zip(hdus, planes):
         for frame_ix in range(len(results['exptimes'])):
-            plane.append(constructor(hdu[frame_ix, :, :][0]))
+            # deal with array slice difference between fitsio and astropy
+            cut = hdu[frame_ix, :, :]
+            if len(cut.shape) == 3:
+                cut = cut[0]
+            plane.append(constructor(cut))
     return results | {"cnt": planes[0], "flag": planes[1], "edge": planes[2]}
 
 
 def unpack_image(image_file, compression):
     hdus, results = load_array_file(image_file, compression)
     planes = {
-        "cnt": hdus[0].read(), "flag": hdus[1].read(), "edge": hdus[2].read()
+        "cnt": hdus[0].data, "flag": hdus[1].data, "edge": hdus[2].data
     }
     return results | planes
