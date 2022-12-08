@@ -276,7 +276,8 @@ def execute_pipeline(
         'maxsize': maxsize,
         'stopwatch': Stopwatch(),
         'hdu_constructor_kwargs': hdu_constructor_kwargs,
-        'write': write
+        'write': write,
+        'burst': burst
     }
 
     # SETUP AND FILE RETRIEVAL
@@ -357,7 +358,7 @@ def execute_pipeline(
         else:
             photometry_result = 'successful'
         write_result = write_moviemaker_results(
-            results, files['local'], leg=leg, burst=burst, **opt
+            results, files['local'], leg=leg, **opt
         )
         if photometry_result != 'successful':
             errors.append(photometry_result)
@@ -454,6 +455,7 @@ def _set_up_paths(
     roots: dict[str],
     depth: Optional[int] = None,
     compression: Literal["none", "rice", "gzip"] = "gzip",
+    burst: bool = False,
     **_unused_options
 ) -> tuple[dict, list[Path], Path]:
     """
@@ -472,7 +474,7 @@ def _set_up_paths(
     using, remote filename dict, name of temp/scratch directory
     """
     local_files = eclipse_to_paths(
-        eclipse, roots.get('local'), depth, compression
+        eclipse, roots.get('local'), depth, compression, burst
     )[band]
     eclipse_dir = Path(list(local_files.values())[0]).parent
     if not eclipse_dir.exists():

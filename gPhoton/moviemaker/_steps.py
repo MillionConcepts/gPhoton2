@@ -323,12 +323,11 @@ def write_fits_array(
     if movie_path.exists():
         movie_path.unlink()
     # TODO: write names / descriptions into the headers
-
     if burst and depth is not None:
-        # burst mode writes each frame as a separate image w/ cnt, flag, and edge
+        # burst mode writes each frame as a separate file w/ cnt, flag, and edge
         for frame in range(len(movie_dict["cnt"])):
-            frame_num = str(frame).zfill(4)  # padding with zeros
-            movie_path = Path(moviefile[:len(moviefile) - 12] + f"-f{frame_num}" + "-rice.fits")  # a lil hacky
+            frame_num = "f"+str(frame).zfill(4)
+            movie_path = Path(moviefile.replace("f0000", frame_num))
             print(f"writing {movie_name} frame {frame} to {movie_path}")
             for key in ["cnt", "flag", "edge"]:
                 print(f"writing frame {frame} {key} map")
@@ -343,12 +342,12 @@ def write_fits_array(
                     **hdu_constructor_kwargs
                 )
     else:
+        print(f"writing {movie_name} to {movie_path}")
         for key in ["cnt", "flag", "edge"]:
             print(f"writing {key} map")
             header = populate_fits_header(
                 band, wcs, movie_dict["tranges"], movie_dict["exptimes"]
             )
-            print(f"writing {movie_name} to {movie_path}")
             add_movie_to_fits_file(
                 movie_path,
                 movie_dict[key],

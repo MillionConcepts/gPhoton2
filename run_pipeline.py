@@ -2,9 +2,9 @@ from gPhoton.pipeline import execute_pipeline
 
 if __name__ == "__main__":
     execute_pipeline(
-        21442,
+        781,
         "NUV",
-        depth=2,
+        depth=60,
         threads=4,
         local_root="test_data",
         recreate=True,

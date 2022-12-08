@@ -21,6 +21,7 @@ def eclipse_to_paths(
     data_directory: Pathlike = "data",
     depth: Optional[int] = None,
     compression: Literal["none", "gzip", "rice"] = "gzip",
+    burst: bool = False
 ) -> dict[str, dict[str, str]]:
     """
     generate canonical paths for files associated with a given eclipse,
@@ -50,8 +51,14 @@ def eclipse_to_paths(
             ]
         }
         if depth is not None:
+            if burst:
+                # default f0000 for frame bc we don't know how many frames there will be at this
+                # point in the pipeline, although we could change that
+                movie_names = [f"{prefix}-{depth}s-{leg}-f0000{comp}" for leg in legs]
+            else:
+                movie_names = [f"{prefix}-{depth}s-{leg}{comp}" for leg in legs]
             band_dict |= {
-                "movies": [f"{prefix}-{depth}s-{leg}{comp}" for leg in legs],
+                "movies": movie_names,
                 # stem -- multiple aperture sizes possible
                 "photomfiles": [
                     f"{prefix}-{depth}s-{leg}-photom-" for leg in legs
