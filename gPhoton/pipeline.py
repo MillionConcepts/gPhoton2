@@ -10,15 +10,16 @@ modules. This module is intended to perform them with optimized transitions
 and endpoints / output suitable for remote automation.
 """
 import re
+from functools import partial
 from pathlib import Path
 import shutil
 from time import time
 from types import MappingProxyType
-from typing import Optional, Sequence, Mapping, Literal
+from typing import Optional, Sequence, Mapping, Literal, Callable, Any
 import warnings
 
 from cytoolz import identity, keyfilter
-from gPhoton.reference import eclipse_to_paths, Stopwatch
+from gPhoton.reference import eclipse_to_paths, Stopwatch, get_legs
 from gPhoton.types import GalexBand, Pathlike
 from more_itertools import chunked
 
@@ -26,7 +27,8 @@ from more_itertools import chunked
 warnings.filterwarnings(action="ignore", category=RuntimeWarning)
 
 
-def get_photonlist(
+def get_photonlists(
+    e2p: Callable,
     eclipse: int,
     band: GalexBand,
     roots: dict[str],
@@ -48,6 +50,7 @@ def get_photonlist(
             bucket or something) to check for input files.
             Unlike local root, there is no assumption that write access is
             available to these paths.
+        e2p: partially-evaluated form of reference.eclipse_to_paths
         download: If raw6 (L0 telemetry) files cannot be found in the expected
             paths from local_root or remote_root, shall we try to download
             them from MAST?
@@ -65,53 +68,62 @@ def get_photonlist(
             debugging), and False for managed remote execution.
     """
     # TODO, maybe: parameter to run only certain legs
-    files, photonpaths, temp_directory = _set_up_paths(eclipse, band, roots)
-    if (roots.get("remote") is not None) and (recreate is False):
-        if all([Path(file).exists() for file in roots["remote"]["photonfiles"]]):
+    temp_directory = _set_up_local_paths(eclipse, roots, e2p)
+    if recreate is False:
+        photonpaths = find_photonfiles(e2p, eclipse, roots, temp_directory)
+        if all([path.exists() for path in photonpaths]):
+            print(
+                f"using existing photon list(s): "
+                f"{[str(path) for path in photonpaths]}"
+            )
+            return photonpaths
+    raw6path = _look_for_raw6(
+        eclipse, band, download, e2p, roots, temp_directory
+    )
+    if not raw6path.exists():
+        print("couldn't find raw6 file.")
+        if raise_errors is True:
+            raise OSError("couldn't find raw6 file.")
+        return "return code: couldn't find raw6 file."
+    from gPhoton.photonpipe import execute_photonpipe
+
+    try:
+        return execute_photonpipe(
+            Path(e2p()['photonpath']).parent,
+            band,
+            raw6file=str(raw6path),
+            verbose=verbose,
+            chunksz=1000000,
+            threads=threads,
+        )
+    except ValueError as value_error:
+        if raise_errors:
+            raise value_error
+        return parse_photonpipe_error(value_error)
+
+
+def find_photonfiles(e2p, eclipse, roots, temp_directory):
+    photonpaths = []
+    if roots.get("remote") is not None:
+        r_photpaths = [
+            Path(e2p(leg=leg, root=roots['remote']))
+            for leg in get_legs(eclipse)
+        ]
+        if all([path.exists() for path in r_photpaths]):
             print(
                 f"making temp local copies of photon file(s) from remote: "
-                f"{roots['remote']['photonfiles']}"
+                f"{[p.name for p in r_photpaths]}"
             )
-            photonpaths = []
-            for file in roots['remote']['photonfiles']:
-                photonpaths.append(
-                    Path(shutil.copy(Path(file), temp_directory))
-                )
-    if recreate or not all([path.exists() for path in photonpaths]):
-        if not photonpaths[0].parent.exists():
-            photonpaths[0].parent.mkdir(parents=True)
-        raw6path = _look_for_raw6(
-            eclipse, band, download, files, temp_directory
-        )
-        if not raw6path.exists():
-            print("couldn't find raw6 file.")
-            if raise_errors is True:
-                raise OSError("couldn't find raw6 file.")
-            return "return code: couldn't find raw6 file."
-        from gPhoton.photonpipe import execute_photonpipe
-
-        try:
-            execute_photonpipe(
-                photonpaths[0].parent,
-                band,
-                raw6file=str(raw6path),
-                verbose=verbose,
-                chunksz=1000000,
-                threads=threads,
-            )
-        except ValueError as value_error:
-            if raise_errors:
-                raise value_error
-            return parse_photonpipe_error(value_error)
-    else:
-        print(
-            f"using existing photon list(s): "
-            f"{[str(path) for path in photonpaths]}"
-        )
+            photonpaths = [
+                Path(shutil.copy(path, temp_directory)) for path in r_photpaths
+            ]
+    if len(photonpaths) == 0:
+        photonpaths = [Path(e2p(leg=leg)) for leg in get_legs(eclipse)]
     return photonpaths
 
 
 def execute_photometry_only(
+    e2p: Callable,
     eclipse,
     band,
     roots,
@@ -135,7 +147,7 @@ def execute_photometry_only(
     errors = []
     for leg in legs:
         loaded_results = load_moviemaker_results(
-            eclipse, band,  leg, roots, depth,  compression, lil
+            eclipse, band, leg, roots, depth,  compression, lil
         )
         # this is an error code
         if isinstance(loaded_results, str):
@@ -277,9 +289,11 @@ def execute_pipeline(
         'stopwatch': Stopwatch(),
         'hdu_constructor_kwargs': hdu_constructor_kwargs,
         'write': write,
-        'burst': burst
+        'burst': burst,
     }
-
+    e2p = partial(
+        eclipse_to_paths, eclipse, band, depth, compression, local_root
+    )
     # SETUP AND FILE RETRIEVAL
     opt['stopwatch'].click()
     if eclipse > 47000:
@@ -293,11 +307,12 @@ def execute_pipeline(
             f"eclipse {eclipse} {band}  -- {metadata['obstype'][0].as_py()}; "
             f"{metadata['legs'][0].as_py()} leg(s)"
         )
+    # TODO: FINISH IMPLEMENTING THIS PART!!!
     if photometry_only is True:
-        return execute_photometry_only(**opt)
+        return execute_photometry_only(e2p, **opt)
 
     # fetch, locate, or create photonlist, as requested
-    get_photonlist_result = get_photonlist(**opt, raise_errors=False)
+    get_photonlist_result = get_photonlists(e2p, **opt, raise_errors=False)
     # we received an error return code
     if isinstance(get_photonlist_result, str):
         return get_photonlist_result  # this is an error return code
@@ -310,7 +325,6 @@ def execute_pipeline(
             f"seconds for execution"
         )
         return "return code: successful (planned stop after photonpipe)"
-    files, _, _ = _set_up_paths(**opt)
     opt['stopwatch'].click()
     from gPhoton.parquet_utils import get_parquet_stats
 
@@ -325,22 +339,16 @@ def execute_pipeline(
         return "return code: no unflagged data (stopped after photon list)"
     # MOVIE-RENDERING SECTION
     from gPhoton.moviemaker import (
-        create_images_and_movies,
-        write_moviemaker_results,
+        create_images_and_movies, write_moviemaker_results,
     )
-
     errors = []
     for leg, path in enumerate(photonpaths):
+        # now we are only writing locally, for brevity:
+        e2p = partial(opt['e2p'],  leg=leg)
         # check to see if we're pinning our frame / lightcurve time series to
         # the time series of existing analysis for the other band
         fixed_start_time = check_fixed_start_time(
-            eclipse,
-            depth,
-            local_root,
-            remote_root,
-            band,
-            coregister_lightcurves,
-            leg
+            local_root, remote_root, coregister_lightcurves, e2p
         )
         if len(photonpaths) > 0:
             print(f"processing leg {leg + 1} of {len(photonpaths)}")
@@ -359,14 +367,10 @@ def execute_pipeline(
         if not stop_after == "moviemaker":
             from gPhoton.lightcurve import make_lightcurves
 
-            photometry_result = make_lightcurves(
-                results, files['local'], leg=leg, **opt
-            )
+            photometry_result = make_lightcurves(results, e2p, **opt)
         else:
             photometry_result = 'successful'
-        write_result = write_moviemaker_results(
-            results, files['local'], leg=leg, **opt
-        )
+        write_result = write_moviemaker_results(results, e2p, **opt)
         if photometry_result != 'successful':
             errors.append(photometry_result)
         if write_result != 'successful':
@@ -384,31 +388,28 @@ def _look_for_raw6(
     eclipse: int,
     band: GalexBand,
     download: bool,
-    files,
+    e2p,
+    roots,
     temp_directory: Path,
 ) -> Path:
     """
     :param eclipse: GALEX eclipse number to run
     :param band: "NUV" or "FUV" -- near or far ultraviolet
-    :param files: mapping of paths to local and remote_files generated in
-    _set_up_paths(); 'remote' key may be absent if there is no remote root
+    :param e2p: partially-evaluated version of reference.eclipse_to_paths
     :param temp_directory: path to scratch directory for temp copy of raw6
     from remote_root
     :return: tuple of primary filename dict, path to photon list we'll be
     using, remote filename dict, name of temp/scratch directory
     :return: path to raw6 file
     """
-
-    raw6path = Path(files['local']["raw6"])
-    if not raw6path.exists() and (files.get('remote') is not None):
-        if Path(files['remote']["raw6"]).exists():
+    raw6path = Path(e2p(root=roots['local'])["raw6"])
+    if not raw6path.exists() and 'remote' in roots.keys():
+        if (raw6 := Path(e2p(root=roots['local'])['raw6'])).exists():
             print(
                 f"making temp local copy of raw6 file from remote: "
-                f"{files['remote']['raw6']}"
+                f"{str(raw6)}"
             )
-            raw6path = Path(
-                shutil.copy(files['remote']["raw6"], temp_directory)
-            )
+            raw6path = Path(shutil.copy(raw6, temp_directory))
     if not raw6path.exists() and (download is True):
         from gPhoton.io.mast import retrieve_raw6
 
@@ -420,11 +421,9 @@ def _look_for_raw6(
 
 
 def load_moviemaker_results(
-    eclipse, band, leg, roots, depth, compression, lil=True
+    eclipse, leg, roots, depth, compression, lil=True
 ):
-    files, _, temp_directory = _set_up_paths(
-        eclipse, band, roots, depth, compression
-    )
+    files, _, temp_directory = _set_up_local_paths(eclipse, roots, e2p)
     image = pick_and_copy_array(files, temp_directory, "images", leg)
     if image is None:
         print("Photometry-only run, but image not found. Skipping.")
@@ -456,51 +455,33 @@ def pick_and_copy_array(files, temp_directory, which="images", leg=0):
     return Path(temp_directory, Path(files["local"][which][leg]).name)
 
 
-def _set_up_paths(
+def _set_up_local_paths(
     eclipse: int,
-    band: GalexBand,
     roots: dict[str],
-    depth: Optional[int] = None,
-    compression: Literal["none", "rice", "gzip"] = "gzip",
-    burst: bool = False,
+    e2p: Callable,
     **_unused_options
-) -> tuple[dict, list[Path], Path]:
+) -> Path:
     """
     initial path setup & file retrieval step for execute_pipeline.
     :param eclipse: GALEX eclipse number to run
-    :param band: "NUV" or "FUV" -- near or far ultraviolet
-    :param depth: how many seconds of events to use when integrating each
-    movie frame. in a sense: inverse FPS.
     :param roots: 'local': path to write pipeline results to, 'remote':
     additional path to check for preexisting raw6 and photonlist files
     (intended primarily for multiple servers referencing a shared set
     of remote resources)
-    :param compression: planned type of compression for movie/image files
-
+    :param e2p: partially-evaluated form of reference.eclipse_to_paths
     :return: tuple of: primary filename dict, path to photon list we'll be
     using, remote filename dict, name of temp/scratch directory
     """
-    local_files = eclipse_to_paths(
-        eclipse, roots.get('local'), depth, compression, burst
-    )[band]
+    local_files = e2p(root=roots.get('local'))
     eclipse_dir = Path(list(local_files.values())[0]).parent
     if not eclipse_dir.exists():
         eclipse_dir.mkdir(parents=True)
-    if roots.get('remote') is not None:
-        # we're only ever looking for raw6 & photonlist, don't need depth etc.
-        remote_files = eclipse_to_paths(
-            eclipse, roots.get('remote'), depth, compression
-        )[band]
-    else:
-        remote_files = None
     temp_directory = Path(
         roots.get('local', 'data'), "temp", str(eclipse).zfill(5)
     )
     if not temp_directory.exists():
         temp_directory.mkdir(parents=True)
-    photonpaths = [Path(file) for file in local_files["photonfiles"]]
-    files = {'local': local_files, 'remote': remote_files}
-    return files, photonpaths, temp_directory
+    return temp_directory
 
 
 def parse_photonpipe_error(value_error: ValueError) -> str:
@@ -517,13 +498,11 @@ def parse_photonpipe_error(value_error: ValueError) -> str:
 
 
 def check_fixed_start_time(
-    eclipse,
-    depth,
     local: Pathlike,
     remote: Optional[Pathlike],
-    band: GalexBand,
     coregister: bool,
-    leg: int
+    local: Callable,
+    depth: Optional[int]
 ) -> Optional[str]:
     if (coregister is not True) or (depth is None):
         return None
@@ -534,9 +513,7 @@ def check_fixed_start_time(
             continue
         # TODO: must fix this
         try:
-            exp_fn = eclipse_to_paths(
-                eclipse, location, depth
-            )[other]["expfiles"][leg]
+            exp_fn = eclipse_to_paths(eclipse, location, depth)[other]["expfiles"][leg]
         except IndexError:
             print(
                 f"Disturbingly, the cross-band eclipse does not appear to "

@@ -17,80 +17,66 @@ from inspect import getmodule
 from typing import Any, Callable
 from typing import Optional, Literal
 
-from gPhoton.types import Pathlike
+from gPhoton.types import Pathlike, GalexBand
 
 
 @cache
-def iterleg(eclipse):
+def get_legs(eclipse):
     from gPhoton.aspect import aspect_tables
 
-    leg_count = aspect_tables(eclipse, ("metadata",))[0]['legs'][0].as_py()
-    sequence = (0,) if leg_count == 0 else tuple(range(leg_count))
-    return [str(leg).zfill(2) for leg in sequence]
+    leg_count = aspect_tables(eclipse, ("metadata",))[0]["legs"][0].as_py()
+    return (0,) if leg_count == 0 else tuple(range(leg_count))
 
 
 def eclipse_to_paths(
     eclipse: int,
-    data_directory: Pathlike = "data",
+    band: GalexBand = "NUV",
     depth: Optional[int] = None,
     compression: Literal["none", "gzip", "rice"] = "gzip",
+    root: Pathlike = "data",
     frame: Optional[int] = None,
     mode: str = "direct",
-    **kwargs
-) -> dict[str, dict[str, str]]:
+    leg: int = 0,
+    aperture: Optional[float] = None,
+    **kwargs,
+) -> dict[str, str]:
     """
     generate canonical paths for files associated with a given eclipse,
     optionally including files at a specific depth
     """
-    data_directory = "data" if data_directory is None else data_directory
-    legs, bands, zpad = iterleg(eclipse), ("NUV", "FUV"), str(eclipse).zfill(5)
-    eclipse_path = f"{data_directory}/e{zpad}/"
+    root = "data" if root is None else root
+    zpad, leg = str(eclipse).zfill(5), str(leg).zfill(2)
+    eclipse_path = f"{root}/e{zpad}/"
     eclipse_base = f"{eclipse_path}e{zpad}"
     if kwargs.get("emoji") is True:
         from gPhoton.__emoji import emojified
-        return emojified(compression, depth, legs, eclipse_base, frame)
-    file_dict = {}
+
+        return emojified(compression, depth, leg, eclipse_base, frame)
     ext = {"gzip": ".fits.gz", "none": ".fits", "rice": ".fits"}[compression]
     comp = {"gzip": "g", "none": "u", "rice": "r"}[compression]
     mode = {"direct": "d", "grism": "g", "opaque": "o"}[mode]
     frame = "movie" if frame is None else f"f{str(frame).zfill(4)}"
     depth = None if depth is None else f"t{str(depth).zfill(4)}"
-    for band in bands:
-        prefix = f"{eclipse_base}-{band[0].lower()}{mode}"
-        band_dict = {
-            "raw6": f"{prefix}-raw6.fits.gz",
-            "photonfiles": [f"{prefix}-b{leg}.parquet" for leg in legs],
-            "images": [
-                f"{prefix}-tfull-b{leg}-image-{comp}{ext}" for leg in legs
-            ],
-            # TODO: frames, etc. -- decide exactly how once we are using
-            #  extended source detection on movies
-            "extended_catalogs": [
-                f"{prefix}-b{leg}-extended-sources.csv" for leg in legs
-            ]
+    prefix = f"{eclipse_base}-{band[0].lower()}{mode}"
+    aper = "" if aperture is None else str(aperture).replace(".", "_")
+    file_dict = {
+        "raw6": f"{prefix}-raw6.fits.gz",
+        "photonfile": f"{prefix}-b{leg}.parquet",
+        "image": f"{prefix}-tfull-b{leg}-image-{comp}{ext}",
+        # TODO: frames, etc. -- decide exactly how once we are using
+        #  extended source detection on movies
+        "extended_catalog": f"{prefix}-b{leg}-extended-sources.csv",
+    }
+    if depth is not None:
+        file_dict |= {
+            "movie": f"{prefix}-{depth}-{leg}-{frame}-{comp}{ext}",
+            "photomfile": f"{prefix}-{depth}-b{leg}-{frame}-photom-{aper}.csv",
+            "expfile": f"{prefix}-{depth}-b{leg}-{frame}-exptime.csv",
         }
-        if depth is not None:
-            band_dict |= {
-                "movies": [
-                    f"{prefix}-{depth}-{leg}-{frame}-{comp}{ext}"
-                    for leg in legs
-                ],
-                # stem -- multiple aperture sizes possible
-                "photomfiles": [
-                    f"{prefix}-{depth}-b{leg}-{frame}-photom-" for leg in legs
-                ],
-                "expfiles": [
-                    f"{prefix}-{depth}-b{leg}-{frame}-exptime.csv"
-                    for leg in legs
-                ]
-            }
-        else:
-            band_dict |= {
-                "photomfiles": [
-                    f"{prefix}-tfull-b{leg}-image-photom-" for leg in legs
-                ]
-            }
-        file_dict[band] = band_dict
+    else:
+        file_dict[
+            "photomfile"
+        ] = f"{prefix}-tfull-b{leg}-image-photom-{aper}.csv"
     return file_dict
 
 

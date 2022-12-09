@@ -1,6 +1,5 @@
 from pathlib import Path
-from typing import Mapping, Collection
-
+from typing import Mapping, Collection, Callable
 
 import gPhoton.constants as c
 from gPhoton.lightcurve._steps import (
@@ -16,10 +15,9 @@ from gPhoton.types import GalexBand
 
 def make_lightcurves(
     sky_arrays: Mapping,
-    output_filenames,
+    e2p: Callable,
     eclipse: int,
     band: GalexBand,
-    leg: int,
     aperture_sizes: Collection[float],
     source_catalog_file=None,
     threads=None,
@@ -37,7 +35,7 @@ def make_lightcurves(
     source_table = find_sources(
         eclipse,
         band,
-        str(Path(output_filenames['photomfiles'][0]).parent),
+        str(Path(e2p()['photomfile']).parent),
         sky_arrays["image_dict"],
         sky_arrays["wcs"],
         source_table=sources,
@@ -62,12 +60,9 @@ def make_lightcurves(
                 sky_arrays["movie_dict"], photometry_table, apertures, threads
             )
             write_exptime_file(
-                output_filenames["expfiles"][leg], sky_arrays["movie_dict"]
+                e2p()["expfile"], sky_arrays["movie_dict"]
             )
-        photomfile = (
-            f"{output_filenames['photomfiles'][leg]}"
-            f"{str(aperture_size).replace('.', '_')}.csv"
-        )
+        photomfile = e2p(aperture=aperture_size)['photomfile']
         print(f"writing source table to {photomfile}")
         photometry_table.to_csv(photomfile, index=False)
         stopwatch.click()
