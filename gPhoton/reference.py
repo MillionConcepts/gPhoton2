@@ -3,6 +3,8 @@ utilities for generating shared reference points between pipeline components:
 canonical file paths, timer objects, etc.
 this module is supposed to be essentially free to import: only standard
 library modules should be used, at least as module-level imports.
+the leg-count lookup militates against this idea some, but it reduces a great
+deal of complexity.
 
 # TODO: the leg count lookup I've added militates against the 'free to import'
 # intent, but there's a ton of complexity it potentially reduces
@@ -10,10 +12,21 @@ library modules should be used, at least as module-level imports.
 import functools
 import subprocess
 import time
+from functools import cache
 from inspect import getmodule
-from typing import Optional, Literal, Any, Callable
+from typing import Any, Callable
+from typing import Optional, Literal
 
 from gPhoton.types import Pathlike
+
+
+@cache
+def iterlegs(eclipse):
+    from gPhoton.aspect import aspect_tables
+
+    leg_count = aspect_tables(eclipse, ("metadata",))[0]['legs'][0].as_py()
+    sequence = (0,) if leg_count == 0 else tuple(range(leg_count))
+    return [str(leg).zfill(2) for leg in sequence]
 
 
 def eclipse_to_paths(
@@ -21,48 +34,59 @@ def eclipse_to_paths(
     data_directory: Pathlike = "data",
     depth: Optional[int] = None,
     compression: Literal["none", "gzip", "rice"] = "gzip",
+    frame: Optional[int] = None,
+    mode: str = "direct",
+    **kwargs
 ) -> dict[str, dict[str, str]]:
     """
     generate canonical paths for files associated with a given eclipse,
     optionally including files at a specific depth
     """
     data_directory = "data" if data_directory is None else data_directory
-    from gPhoton.aspect import aspect_tables
     zpad = str(eclipse).zfill(5)
     eclipse_path = f"{data_directory}/e{zpad}/"
     eclipse_base = f"{eclipse_path}e{zpad}"
-    bands = "NUV", "FUV"
-    band_initials = "n", "f"
+    legs = iterlegs(eclipse)
+    if kwargs.get("emoji") is True:
+        from __emoji import emojified
+        return emojified(compression, depth, legs, eclipse_base, frame)
+    bands = ("NUV", "FUV")
     file_dict = {}
-    comp = {
-        "gzip": ".fits.gz", "none": ".fits", "rice": "-rice.fits"
-    }[compression]
-    leg_number = aspect_tables(eclipse, ("metadata",))[0]['legs'][0].as_py()
-    legs = (0,) if leg_number == 0 else tuple(range(leg_number))
-    for band, initial in zip(bands, band_initials):
-        prefix = f"{eclipse_base}-{initial}d"
+    ext = {"gzip": ".fits.gz", "none": ".fits", "rice": ".fits"}[compression]
+    comp = {"gzip": "g", "none": "u", "rice": "r"}[compression]
+    mode = {"direct": "d", "grism": "g", "opaque": "o"}[mode]
+    frame = "movie" if frame is None else f"f{str(frame).zfill(4)}"
+    for band in bands:
+        prefix = f"{eclipse_base}-{band[0].lower()}{mode}"
         band_dict = {
             "raw6": f"{prefix}-raw6.fits.gz",
-            "photonfiles": [f"{prefix}-{leg}.parquet" for leg in legs],
-            "images": [f"{prefix}-full-{leg}{comp}" for leg in legs],
+            "photonfiles": [f"{prefix}-b{leg}.parquet" for leg in legs],
+            "images": [f"{prefix}-b{leg}-image-{comp}-{ext}" for leg in legs],
             "extended_catalogs": [
-                f"{prefix}-{leg}-extended-sources.csv" for leg in legs
+                f"{prefix}-b{leg}-extended-sources.csv" for leg in legs
             ]
         }
         if depth is not None:
+            depth = f"t{str(depth).zfill(4)}"
             band_dict |= {
-                "movies": [f"{prefix}-{depth}s-{leg}{comp}" for leg in legs],
+                "movies": [
+                    f"{prefix}-{depth}-{leg}-{frame}-{comp}{ext}"
+                    for leg in legs
+                ],
                 # stem -- multiple aperture sizes possible
                 "photomfiles": [
-                    f"{prefix}-{depth}s-{leg}-photom-" for leg in legs
+                    f"{prefix}-{depth}-b{leg}-{frame}-photo-" for leg in legs
                 ],
                 "expfiles": [
-                    f"{prefix}-{depth}s-{leg}-exptime.csv" for leg in legs
+                    f"{prefix}-{depth}-b{leg}-{frame}-exptm.csv"
+                    for leg in legs
                 ]
             }
         else:
             band_dict |= {
-                "photomfiles": [f"{prefix}-full-{leg}-photom-" for leg in legs]
+                "photomfiles": [
+                    f"{prefix}-tfull-b{leg}-image-photom-" for leg in legs
+                ]
             }
         file_dict[band] = band_dict
     return file_dict
