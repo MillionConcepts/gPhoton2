@@ -9,7 +9,7 @@ def emojified(compression, depth, legs, eclipse_base, frame):
         band_dict = {
             "raw6": f"{prefix}-raw6.fits.gz",
             "photonfiles": [f"{prefix}-🦿{leg}.parquet" for leg in legs],
-            "images": [f"{prefix}-️-🦿{leg}-🖼-{comp}-{ext}" for leg in legs],
+            "images": [f"{prefix}-️-🦿{leg}-🖼-{comp}{ext}" for leg in legs],
             "extended_catalogs": [
                 f"{prefix}-🦿{leg}-extended-sources.csv" for leg in legs
             ]
@@ -27,7 +27,7 @@ def emojified(compression, depth, legs, eclipse_base, frame):
                     for leg in legs
                 ],
                 "expfiles": [
-                    f"{prefix}-⏱️{depth}-🦿{leg}-{frame}-exptim.csv"
+                    f"{prefix}-⏱️{depth}-🦿{leg}-{frame}-exptime.csv"
                     for leg in legs
                 ]
             }

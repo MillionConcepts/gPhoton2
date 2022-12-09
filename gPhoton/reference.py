@@ -21,7 +21,7 @@ from gPhoton.types import Pathlike
 
 
 @cache
-def iterlegs(eclipse):
+def iterleg(eclipse):
     from gPhoton.aspect import aspect_tables
 
     leg_count = aspect_tables(eclipse, ("metadata",))[0]['legs'][0].as_py()
@@ -43,31 +43,33 @@ def eclipse_to_paths(
     optionally including files at a specific depth
     """
     data_directory = "data" if data_directory is None else data_directory
-    zpad = str(eclipse).zfill(5)
+    legs, bands, zpad = iterleg(eclipse), ("NUV", "FUV"), str(eclipse).zfill(5)
     eclipse_path = f"{data_directory}/e{zpad}/"
     eclipse_base = f"{eclipse_path}e{zpad}"
-    legs = iterlegs(eclipse)
     if kwargs.get("emoji") is True:
-        from __emoji import emojified
+        from gPhoton.__emoji import emojified
         return emojified(compression, depth, legs, eclipse_base, frame)
-    bands = ("NUV", "FUV")
     file_dict = {}
     ext = {"gzip": ".fits.gz", "none": ".fits", "rice": ".fits"}[compression]
     comp = {"gzip": "g", "none": "u", "rice": "r"}[compression]
     mode = {"direct": "d", "grism": "g", "opaque": "o"}[mode]
     frame = "movie" if frame is None else f"f{str(frame).zfill(4)}"
+    depth = None if depth is None else f"t{str(depth).zfill(4)}"
     for band in bands:
         prefix = f"{eclipse_base}-{band[0].lower()}{mode}"
         band_dict = {
             "raw6": f"{prefix}-raw6.fits.gz",
             "photonfiles": [f"{prefix}-b{leg}.parquet" for leg in legs],
-            "images": [f"{prefix}-b{leg}-image-{comp}-{ext}" for leg in legs],
+            "images": [
+                f"{prefix}-tfull-b{leg}-image-{comp}{ext}" for leg in legs
+            ],
+            # TODO: frames, etc. -- decide exactly how once we are using
+            #  extended source detection on movies
             "extended_catalogs": [
                 f"{prefix}-b{leg}-extended-sources.csv" for leg in legs
             ]
         }
         if depth is not None:
-            depth = f"t{str(depth).zfill(4)}"
             band_dict |= {
                 "movies": [
                     f"{prefix}-{depth}-{leg}-{frame}-{comp}{ext}"
@@ -75,10 +77,10 @@ def eclipse_to_paths(
                 ],
                 # stem -- multiple aperture sizes possible
                 "photomfiles": [
-                    f"{prefix}-{depth}-b{leg}-{frame}-photo-" for leg in legs
+                    f"{prefix}-{depth}-b{leg}-{frame}-photom-" for leg in legs
                 ],
                 "expfiles": [
-                    f"{prefix}-{depth}-b{leg}-{frame}-exptm.csv"
+                    f"{prefix}-{depth}-b{leg}-{frame}-exptime.csv"
                     for leg in legs
                 ]
             }
