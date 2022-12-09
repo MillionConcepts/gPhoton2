@@ -172,6 +172,7 @@ def write_moviemaker_results(
     maxsize,
     stopwatch,
     compression,
+    burst,
     hdu_constructor_kwargs,
     **unused_options
 ):
@@ -192,7 +193,7 @@ def write_moviemaker_results(
         # we don't check size of the image, because if we can handle the image
         # in memory, we can write it, but we handle the movies frame by frame
         # earlier in the execute_pipeline, so that doesn't hold true for them.
-        if maxsize is not None:
+        if maxsize is not None and not burst:
             imsz = results["movie_dict"]["cnt"][0].shape
             n_frames = len(results["movie_dict"]["cnt"])
             memory = predict_movie_memory(imsz, n_frames)
@@ -211,6 +212,7 @@ def write_moviemaker_results(
             clean_up=True,
             wcs=results["wcs"],
             compression=compression,
+            burst=burst,
             hdu_constructor_kwargs=hdu_constructor_kwargs
         )
         stopwatch.click()

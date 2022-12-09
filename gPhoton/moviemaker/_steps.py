@@ -302,6 +302,7 @@ def write_fits_array(
     movie_dict,
     wcs,
     compression: Literal["gzip", "rice", "none"] = "gzip",
+    burst=False,
     clean_up=False,
     hdu_constructor_kwargs=None
 ):
@@ -314,31 +315,48 @@ def write_fits_array(
         hdu_constructor_kwargs = {}
     # TODO, maybe: rewrite this to have to not assemble the primary hdu in
     #  order to make the header
-    header = populate_fits_header(
-        band, wcs, movie_dict["tranges"], movie_dict["exptimes"]
-    )
     if depth is None:
         movie_name = "full-depth image"
     else:
         movie_name = f"{depth}-second depth movie"
     movie_path = Path(moviefile)
     if movie_path.exists():
-        print(f"overwriting {movie_path} with {movie_name}")
         movie_path.unlink()
+    # TODO: write names / descriptions into the headers
+    if burst and depth is not None:
+        # burst mode writes each frame as a separate file w/ cnt, flag, and edge
+        for frame in range(len(movie_dict["cnt"])):
+            frame_num = "f"+str(frame).zfill(4)
+            movie_path = Path(moviefile.replace("f0000", frame_num))
+            print(f"writing {movie_name} frame {frame} to {movie_path}")
+            for key in ["cnt", "flag", "edge"]:
+                print(f"writing frame {frame} {key} map")
+                header = populate_fits_header(
+                    band, wcs, movie_dict["tranges"], movie_dict["exptimes"]
+                )
+                add_movie_to_fits_file_burst(
+                    movie_path,
+                    movie_dict[key][frame],
+                    header,
+                    compression,
+                    **hdu_constructor_kwargs
+                )
     else:
         print(f"writing {movie_name} to {movie_path}")
-    # TODO: write names / descriptions into the headers
-    for key in ["cnt", "flag", "edge"]:
-        print(f"writing {key} map")
-        add_movie_to_fits_file(
-            movie_path,
-            movie_dict[key],
-            header,
-            compression,
-            **hdu_constructor_kwargs
-        )
-        if clean_up:
-            del movie_dict[key]
+        for key in ["cnt", "flag", "edge"]:
+            print(f"writing {key} map")
+            header = populate_fits_header(
+                band, wcs, movie_dict["tranges"], movie_dict["exptimes"]
+            )
+            add_movie_to_fits_file(
+                movie_path,
+                movie_dict[key],
+                header,
+                compression,
+                **hdu_constructor_kwargs
+            )
+            if clean_up:
+                del movie_dict[key]
     if clean_up:
         del movie_dict
     if compression != "gzip":
@@ -371,6 +389,55 @@ def add_movie_to_fits_file(
     # noinspection PyUnresolvedReferences
     if isinstance(movie[0], scipy.sparse.spmatrix):
         data = np.stack([frame.toarray() for frame in movie])
+    else:
+        data = np.stack(movie)
+    fits_stream = fitsio.FITS(fits_path, "rw")
+
+    # this pipeline supports monolithic gzipping after file construction,
+    # not gzipping of individual HDUs.
+    if compression_type in ("none", "gzip"):
+        fits_stream.write(data, header=dict(header), **fitsio_write_kwargs)
+    elif compression_type == "rice":
+        if 'tile_size' in fitsio_write_kwargs:
+            tile_size = fitsio_write_kwargs.pop('tile_size')
+        else:
+            tile_size = (1, 100, 100) if len(data.shape) == 3 else (100, 100)
+        if len(tile_size) > len(data.shape):
+            tile_size = tile_size[:len(data.shape)]
+        if len(tile_size) < len(data.shape):
+            tile_size = [
+                1 for _ in range(len(data.shape) - len(tile_size))
+            ] + list(tile_size)
+        if 'qlevel' in fitsio_write_kwargs:
+            qlevel = fitsio_write_kwargs.pop('qlevel')
+        else:
+            qlevel = 10
+
+        fits_stream.write(
+            data,
+            header=dict(header),
+            compress='RICE',
+            tile_dims=tile_size,
+            qlevel=qlevel,
+            qmethod=2
+            # **fitsio_write_kwargs
+        )
+    else:
+        fits_stream.close()
+        raise ValueError(f"unsupported compression type {compression_type}")
+    fits_stream.close()
+
+
+def add_movie_to_fits_file_burst(
+    fits_path,
+    movie,
+    header,
+    compression_type: Literal["none", "gzip", "rice"] = "none",
+    **fitsio_write_kwargs
+):
+    # noinspection PyUnresolvedReferences
+    if isinstance(movie, scipy.sparse.spmatrix):
+        data = np.stack([movie.toarray()])
     else:
         data = np.stack(movie)
     fits_stream = fitsio.FITS(fits_path, "rw")
