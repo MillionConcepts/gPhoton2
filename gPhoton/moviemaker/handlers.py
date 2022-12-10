@@ -164,28 +164,22 @@ def make_full_depth_image(
 
 def write_moviemaker_results(
     results,
-    filenames,
-    depth,
-    band,
-    leg,
+    context,
     write,
     maxsize,
     stopwatch,
-    compression,
     burst,
     hdu_constructor_kwargs,
-    **unused_options
+    **_unused_options
 ):
     if write["image"] and (results["image_dict"] != {}):
         write_fits_array(
-            band,
-            None,
-            filenames["images"][leg].replace(".gz", ""),
+            context,
             results["image_dict"],
-            clean_up=True,
-            wcs=results["wcs"],
-            compression=compression,
-            hdu_constructor_kwargs=hdu_constructor_kwargs
+            results["wcs"],
+            False,
+            hdu_constructor_kwargs,
+            is_movie=False
         )
     del results["image_dict"]
     stopwatch.click()
@@ -205,14 +199,10 @@ def write_moviemaker_results(
                 print(failure_string + "; not writing")
                 return failure_string
         write_fits_array(
-            band,
-            depth,
-            filenames["movies"][leg].replace(".gz", ""),
+            context,
             results["movie_dict"],
-            clean_up=True,
-            wcs=results["wcs"],
-            compression=compression,
-            burst=burst,
+            results["wcs"],
+            burst,
             hdu_constructor_kwargs=hdu_constructor_kwargs
         )
         stopwatch.click()

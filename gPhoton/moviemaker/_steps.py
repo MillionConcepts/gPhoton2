@@ -296,15 +296,13 @@ def populate_fits_header(band, wcs, tranges, exptimes):
 
 
 def write_fits_array(
-    band,
-    depth,
-    moviefile,
-    movie_dict,
+    context,
+    arraymap,
     wcs,
-    compression: Literal["gzip", "rice", "none"] = "gzip",
     burst=False,
-    clean_up=False,
-    hdu_constructor_kwargs=None
+    hdu_constructor_kwargs=None,
+    is_movie=True,
+    clean_up=True
 ):
     """
     convert an intermediate movie or image dictionary, perhaps previously
@@ -313,28 +311,23 @@ def write_fits_array(
     """
     if hdu_constructor_kwargs is None:
         hdu_constructor_kwargs = {}
-    # TODO, maybe: rewrite this to have to not assemble the primary hdu in
-    #  order to make the header
-    if depth is None:
-        movie_name = "full-depth image"
+    if is_movie is False:
+        array_name = "full-depth image"
     else:
-        movie_name = f"{depth}-second depth movie"
-    movie_path = Path(moviefile)
-    if movie_path.exists():
-        movie_path.unlink()
+        array_name = f"{context.depth}-second depth movie"
+
     # TODO: write names / descriptions into the headers
-    if burst and depth is not None:
-        # burst mode writes each frame as a separate file w/ cnt, flag, and edge
-        for frame in range(len(movie_dict["cnt"])):
-            frame_num = "f"+str(frame).zfill(4)
-            movie_path = Path(moviefile.replace("f0000", frame_num))
-            print(f"writing {movie_name} frame {frame} to {movie_path}")
+    if (burst is True) and (is_movie is True):
+        # burst mode writes each frame as a separate file w/cnt, flag, and edge
+        for frame in range(len(arraymap["cnt"])):
+            movie_path = context(frame=frame)["movie"]
+            print(f"writing {array_name} frame {frame} to {movie_path}")
             for key in ["cnt", "flag", "edge"]:
                 print(f"writing frame {frame} {key} map")
                 header = populate_fits_header(
-                    band, wcs, movie_dict["tranges"], movie_dict["exptimes"]
+                    context.band, wcs, arraymap["tranges"], arraymap["exptimes"]
                 )
-                add_movie_to_fits_file_burst(
+                add_movie_to_fits_file(
                     movie_path,
                     movie_dict[key][frame],
                     header,
@@ -342,11 +335,15 @@ def write_fits_array(
                     **hdu_constructor_kwargs
                 )
     else:
-        print(f"writing {movie_name} to {movie_path}")
+        array_file = context["movie"] if is_movie is True else context["image"]
+        array_path = Path(array_file)
+        if array_path.exists():
+            array_path.unlink()
+        print(f"writing {array_name} to {array_path}")
         for key in ["cnt", "flag", "edge"]:
             print(f"writing {key} map")
             header = populate_fits_header(
-                band, wcs, movie_dict["tranges"], movie_dict["exptimes"]
+                context.band, wcs, arraymap["tranges"], arraymap["exptimes"]
             )
             add_movie_to_fits_file(
                 movie_path,
@@ -381,13 +378,17 @@ def write_fits_array(
 
 def add_movie_to_fits_file(
     fits_path,
-    movie,
+    array,
     header,
     compression_type: Literal["none", "gzip", "rice"] = "none",
     **fitsio_write_kwargs
 ):
+    if isinstance(array, np.ndarray):
+        data = array
+    elif isinstance(array, scipy.sparse.spmatrix):
+        data = array.toarray()
     # noinspection PyUnresolvedReferences
-    if isinstance(movie[0], scipy.sparse.spmatrix):
+    elif isinstance(array[0], scipy.sparse.spmatrix):
         data = np.stack([frame.toarray() for frame in movie])
     else:
         data = np.stack(movie)
