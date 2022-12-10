@@ -21,177 +21,6 @@ from typing import Any, Callable, Sequence, Mapping, Optional, Literal
 from gPhoton.types import Pathlike, GalexBand
 
 
-@cache
-def get_legs(eclipse):
-    from gPhoton.aspect import aspect_tables
-
-    leg_count = aspect_tables(eclipse, ("metadata",))[0]["legs"][0].as_py()
-    return (0,) if leg_count == 0 else tuple(range(leg_count))
-
-
-def eclipse_to_paths(
-    eclipse: int,
-    band: GalexBand = "NUV",
-    depth: Optional[int] = None,
-    compression: Literal["none", "gzip", "rice"] = "gzip",
-    root: Pathlike = "data",
-    frame: Optional[int] = None,
-    mode: str = "direct",
-    leg: int = 0,
-    aperture: Optional[float] = None,
-    **kwargs,
-) -> dict[str, str]:
-    """
-    generate canonical paths for files associated with a given eclipse,
-    optionally including files at a specific depth
-    """
-    root = "data" if root is None else root
-    zpad, leg = str(eclipse).zfill(5), str(leg).zfill(2)
-    eclipse_path = f"{root}/e{zpad}/"
-    eclipse_base = f"{eclipse_path}e{zpad}"
-    if kwargs.get("emoji") is True:
-        from gPhoton.__emoji import emojified
-
-        return emojified(compression, depth, leg, eclipse_base, frame)
-    ext = {"gzip": ".fits.gz", "none": ".fits", "rice": ".fits"}[compression]
-    comp = {"gzip": "g", "none": "u", "rice": "r"}[compression]
-    mode = {"direct": "d", "grism": "g", "opaque": "o"}[mode]
-    frame = "movie" if frame is None else f"f{str(frame).zfill(4)}"
-    depth = None if depth is None else f"t{str(depth).zfill(4)}"
-    prefix = f"{eclipse_base}-{band[0].lower()}{mode}"
-    aper = "" if aperture is None else str(aperture).replace(".", "_")
-    file_dict = {
-        "raw6": f"{prefix}-raw6.fits.gz",
-        "photonfile": f"{prefix}-b{leg}.parquet",
-        "image": f"{prefix}-tfull-b{leg}-image-{comp}{ext}",
-        # TODO: frames, etc. -- decide exactly how once we are using
-        #  extended source detection on movies
-        "extended_catalog": f"{prefix}-b{leg}-extended-sources.csv",
-    }
-    if depth is not None:
-        file_dict |= {
-            "movie": f"{prefix}-{depth}-{leg}-{frame}-{comp}{ext}",
-            "photomfile": f"{prefix}-{depth}-b{leg}-{frame}-photom-{aper}.csv",
-            "expfile": f"{prefix}-{depth}-b{leg}-{frame}-exptime.csv",
-        }
-    else:
-        file_dict[
-            "photomfile"
-        ] = f"{prefix}-tfull-b{leg}-image-photom-{aper}.csv"
-    return file_dict
-
-
-class PipeContext:
-    """
-    simple class for tracking identifying options / elements of a pipeline
-    execution and constructing paths based on those options.
-    """
-    def __init__(
-        self,
-        eclipse: int,
-        band: GalexBand = "NUV",
-        depth: Optional[int] = None,
-        compression: Literal["none", "gzip", "rice"] = "gzip",
-        local: Pathlike = "data",
-        remote: Optional[Pathlike] = None,
-        aperture_sizes: Sequence[float] = (12.8,),
-        leg: int = 0,
-        frame: Optional[int] = None,
-        mode: str = "direct",
-        download: bool = True,
-        recreate: bool = False,
-        verbose: int = 2,
-        maxsize: Optional[int] = None,
-        source_catalog_file: Optional[str] = None,
-        write: Mapping = MappingProxyType({"image": True, "movie": True}),
-        lil: bool = True,
-        coregister_lightcurves: bool = False,
-        stop_after: Optional[Literal["photonpipe", "moviemaker"]] = None,
-        min_exptime: Optional[float] = None,
-        photometry_only: bool = False,
-        burst: bool = False
-    ):
-        self.eclipse = eclipse
-        self.band = band
-        self.depth = depth
-        self.compression = compression
-        self.local = local
-        self.remote = remote
-        self.frame = frame
-        self.mode = mode
-        self.leg = leg
-        self.aperture_sizes = aperture_sizes
-        self.download = download
-        self.recreate = recreate
-        self.verbose = verbose
-        self.maxsize = maxsize
-        self.source_catalog_file = source_catalog_file
-        self.write = write
-        self.lil = lil
-        self.coregister_lightcurves = coregister_lightcurves
-        self.stop_after = stop_after
-        self.min_exptime = min_exptime
-        self.photometry_only = photometry_only
-        self.burst = burst
-
-    def __repr__(self):
-        return (
-            f"PipeContext(eclipse={self.eclipse}, band={self.band}, "
-            f"depth={self.depth}, compression={self.compression}, "
-            f"frame={self.frame}, mode={self.mode}, leg={self.leg}, "
-            f"apertures={self.aperture_sizes}, local={self.local}, "
-            f"remote={self.remote}"
-        )
-
-    def __str__(self):
-        return repr(self)
-
-    def pathdict(self) -> dict[str, Any]:
-        return {
-            "eclipse": self.eclipse,
-            "band": self.band,
-            "depth": self.depth,
-            "compression": self.compression,
-            "local": self.local,
-            "remote": self.remote,
-            "frame": self.frame,
-            "mode": self.mode,
-            "leg": self.leg,
-            "apertures": self.aperture_sizes,
-        }
-
-    def eclipse_path(self, remote=False):
-        root = self.local if remote is False else self.remote
-        return Path(root, str(self.eclipse).zfill(5))
-
-    def temp_path(self, remote=False):
-        root = self.local if remote is False else self.remote
-        return Path(root, "temp", str(self.eclipse).zfill(5))
-
-    def __call__(self, remote=False, **kwargs):
-        kwargs = self.pathdict() | kwargs
-        apertures = kwargs.pop("apertures")
-        if "aperture" not in kwargs.keys():
-            kwargs["aperture"] = apertures[0]
-        if "root" not in kwargs.keys():
-            kwargs["root"] = self.remote if remote is True else self.local
-        kwargs.pop("local"), kwargs.pop("remote")
-        return eclipse_to_paths(**kwargs)
-
-    def __getitem__(self, key):
-        return self()[key]
-
-    def explode_legs(self, **kwargs):
-        """
-        generate a list of PipeContexts, one for each leg of the eclipse
-        """
-        legs = get_legs(self.eclipse)
-        return [
-            PipeContext(leg=leg, **self.pathdict() | kwargs)
-            for leg in legs
-        ]
-
-
 
 class FakeStopwatch:
     """fake simple timer object"""
@@ -303,3 +132,208 @@ def crudely_find_library(obj: Any) -> str:
                 return crudely_find_library(obj.args[0])
         return crudely_find_library(obj.func)
     return getmodule(obj).__name__.split(".")[0]
+
+
+@cache
+def get_legs(eclipse):
+    from gPhoton.aspect import aspect_tables
+
+    leg_count = aspect_tables(eclipse, ("metadata",))[0]["legs"][0].as_py()
+    return (0,) if leg_count == 0 else tuple(range(leg_count))
+
+
+def eclipse_to_paths(
+    eclipse: int,
+    band: GalexBand = "NUV",
+    depth: Optional[int] = None,
+    compression: Literal["none", "gzip", "rice"] = "gzip",
+    root: Pathlike = "data",
+    frame: Optional[int] = None,
+    mode: str = "direct",
+    leg: int = 0,
+    aperture: Optional[float] = None,
+    **kwargs,
+) -> dict[str, str]:
+    """
+    generate canonical paths for files associated with a given eclipse,
+    optionally including files at a specific depth
+    """
+    root = "data" if root is None else root
+    zpad, leg = str(eclipse).zfill(5), str(leg).zfill(2)
+    eclipse_path = f"{root}/e{zpad}/"
+    eclipse_base = f"{eclipse_path}e{zpad}"
+    if kwargs.get("emoji") is True:
+        from gPhoton.__emoji import emojified
+
+        return emojified(compression, depth, leg, eclipse_base, frame)
+    ext = {"gzip": ".fits.gz", "none": ".fits", "rice": ".fits"}[compression]
+    comp = {"gzip": "g", "none": "u", "rice": "r"}[compression]
+    mode = {"direct": "d", "grism": "g", "opaque": "o"}[mode]
+    frame = "movie" if frame is None else f"f{str(frame).zfill(4)}"
+    depth = None if depth is None else f"t{str(depth).zfill(4)}"
+    prefix = f"{eclipse_base}-{band[0].lower()}{mode}"
+    aper = "" if aperture is None else str(aperture).replace(".", "_")
+    file_dict = {
+        "raw6": f"{prefix}-raw6.fits.gz",
+        "photonfile": f"{prefix}-b{leg}.parquet",
+        "image": f"{prefix}-tfull-b{leg}-image-{comp}{ext}",
+        # TODO: frames, etc. -- decide exactly how once we are using
+        #  extended source detection on movies
+        "extended_catalog": f"{prefix}-b{leg}-extended-sources.csv",
+    }
+    if depth is not None:
+        file_dict |= {
+            "movie": f"{prefix}-{depth}-b{leg}-{frame}-{comp}{ext}",
+            "photomfile": f"{prefix}-{depth}-b{leg}-{frame}-photom-{aper}.csv",
+            "expfile": f"{prefix}-{depth}-b{leg}-{frame}-exptime.csv",
+        }
+    else:
+        file_dict[
+            "photomfile"
+        ] = f"{prefix}-tfull-b{leg}-image-photom-{aper}.csv"
+    return file_dict
+
+
+class PipeContext:
+    """
+    simple class for tracking identifying options / elements of a pipeline
+    execution and constructing paths based on those options.
+    """
+    def __init__(
+        self,
+        eclipse: int,
+        band: GalexBand = "NUV",
+        depth: Optional[int] = None,
+        compression: Literal["none", "gzip", "rice"] = "gzip",
+        local: Pathlike = "data",
+        remote: Optional[Pathlike] = None,
+        aperture_sizes: Sequence[float] = (12.8,),
+        leg: int = 0,
+        frame: Optional[int] = None,
+        mode: str = "direct",
+        download: bool = True,
+        recreate: bool = False,
+        verbose: int = 2,
+        maxsize: Optional[int] = None,
+        source_catalog_file: Optional[str] = None,
+        write: Mapping = MappingProxyType({"image": True, "movie": True}),
+        lil: bool = True,
+        coregister_lightcurves: bool = False,
+        stop_after: Optional[Literal["photonpipe", "moviemaker"]] = None,
+        min_exptime: Optional[float] = None,
+        photometry_only: bool = False,
+        burst: bool = False,
+        hdu_constructor_kwargs: Mapping = MappingProxyType({}),
+        threads: Optional[int] = None,
+        watch: Optional[Stopwatch] = None
+    ):
+        self.eclipse = eclipse
+        self.band = band
+        self.depth = depth
+        self.compression = compression
+        self.local = local
+        self.remote = remote
+        self.frame = frame
+        self.mode = mode
+        self.leg = leg
+        self.aperture_sizes = aperture_sizes
+        self.download = download
+        self.recreate = recreate
+        self.verbose = verbose
+        self.maxsize = maxsize
+        self.source_catalog_file = source_catalog_file
+        self.write = write
+        self.lil = lil
+        self.coregister_lightcurves = coregister_lightcurves
+        self.stop_after = stop_after
+        self.min_exptime = min_exptime
+        self.photometry_only = photometry_only
+        self.burst = burst
+        self.hdu_constructor_kwargs = hdu_constructor_kwargs
+        self.threads = threads
+        self.watch = watch if watch is not None else Stopwatch()
+
+    def __repr__(self):
+        return (
+            f"PipeContext(eclipse={self.eclipse}, band={self.band}, "
+            f"depth={self.depth}, compression={self.compression}, "
+            f"frame={self.frame}, mode={self.mode}, leg={self.leg}, "
+            f"apertures={self.aperture_sizes}, local={self.local}, "
+            f"remote={self.remote}"
+        )
+
+    def __str__(self):
+        return repr(self)
+
+    def pathdict(self) -> dict[str, Any]:
+        return {
+            "eclipse": self.eclipse,
+            "band": self.band,
+            "depth": self.depth,
+            "compression": self.compression,
+            "local": self.local,
+            "remote": self.remote,
+            "frame": self.frame,
+            "mode": self.mode,
+            "leg": self.leg,
+            "aperture_sizes": self.aperture_sizes,
+        }
+
+    def asdict(self) -> dict[str, Any]:
+        return {
+            "eclipse": self.eclipse,
+            "band": self.band,
+            "depth": self.depth,
+            "compression": self.compression,
+            "local": self.local,
+            "remote": self.remote,
+            "frame": self.frame,
+            "mode": self.mode,
+            "leg": self.leg,
+            "aperture_sizes": self.aperture_sizes,
+            "download": self.download,
+            "recreate": self.recreate,
+            "verbose": self.verbose,
+            "maxsize": self.maxsize,
+            "source_catalog_file": self.source_catalog_file,
+            "write": self.write,
+            "lil": self.lil,
+            "coregister_lightcurves": self.coregister_lightcurves,
+            "stop_after": self.stop_after,
+            "min_exptime": self.min_exptime,
+            "photometry_only": self.photometry_only,
+            "burst": self.burst,
+            "hdu_constructor_kwargs": self.hdu_constructor_kwargs,
+            "threads": self.threads,
+            "watch": self.watch,
+        }
+
+    def eclipse_path(self, remote=False):
+        root = self.local if remote is False else self.remote
+        return Path(root, f"e{str(self.eclipse).zfill(5)}")
+
+    def temp_path(self, remote=False):
+        root = self.local if remote is False else self.remote
+        return Path(root, "temp", f"e{str(self.eclipse).zfill(5)}")
+
+    def __call__(self, remote=False, **kwargs):
+        kwargs = self.pathdict() | kwargs
+        apertures = kwargs.pop("aperture_sizes")
+        if "aperture" not in kwargs.keys():
+            kwargs["aperture"] = apertures[0]
+        if "root" not in kwargs.keys():
+            kwargs["root"] = self.remote if remote is True else self.local
+        kwargs.pop("local"), kwargs.pop("remote")
+        return eclipse_to_paths(**kwargs)
+
+    def __getitem__(self, key):
+        return self()[key]
+
+    def explode_legs(self):
+        """
+        generate a list of PipeContexts, one for each leg of the eclipse
+        """
+        legs = get_legs(self.eclipse)
+        kdict = self.asdict()
+        del kdict['leg']
+        return [PipeContext(leg=leg, **kdict) for leg in legs]
