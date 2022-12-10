@@ -214,7 +214,6 @@ class PipeContext:
         download: bool = True,
         recreate: bool = False,
         verbose: int = 2,
-        maxsize: Optional[int] = None,
         source_catalog_file: Optional[str] = None,
         write: Mapping = MappingProxyType({"image": True, "movie": True}),
         lil: bool = True,
@@ -240,7 +239,6 @@ class PipeContext:
         self.download = download
         self.recreate = recreate
         self.verbose = verbose
-        self.maxsize = maxsize
         self.source_catalog_file = source_catalog_file
         self.write = write
         self.lil = lil

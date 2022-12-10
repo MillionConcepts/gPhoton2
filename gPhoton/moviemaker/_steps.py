@@ -429,33 +429,3 @@ def add_array_to_fits_file(
         )
     finally:
         fits_stream.close()
-
-
-def predict_movie_memory(imsz, n_frames, nbytes=8):
-    """
-    predict memory size in bytes of movie during write. nbytes is equal to the
-    per-element size of _only_ the largest plane, which should be the cntmap
-    with the current execute_pipeline configuration. this will be something of
-    an undercount due to handling costs.
-    """
-    return imsz[0] * imsz[1] * n_frames * nbytes
-
-
-def predict_sparse_movie_memory(imsz, n_frames, threads, nbytes=17):
-    """
-    nbytes here is equal to the sum of the per-element sizes of all movie
-    planes -- cnt / flag / edge, in the worst-case where one has not yet
-    been reduced to uint8.
-    sparsification means that, for large arrays, the process will usually
-    get cheaper as it goes on unless there are a truly huge number of frames,
-    so we're sort of ignoring framesize in that calculation for now.
-    """
-    if threads is None:
-        threads = 1
-    threads = min(threads, n_frames)
-    framesize = imsz[0] * imsz[1] * nbytes
-    # we need to be able to hold one full frame in memory for each thread
-    base_cost = framesize * threads
-    # and also there's some small amount of overhead from frames
-    slice_cost = n_frames * (15 * 1024 ** 2)
-    return base_cost + slice_cost

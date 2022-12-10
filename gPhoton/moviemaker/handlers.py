@@ -8,14 +8,12 @@ from more_itertools import windowed
 import numpy as np
 
 from gPhoton.moviemaker._steps import (
-    predict_sparse_movie_memory,
     slice_exposure_into_memory,
     slice_frame_into_memory,
     sm_compute_movie_frame,
     unshared_compute_exptime,
     make_frame,
     write_fits_array,
-    predict_movie_memory,
     prep_image_inputs,
 )
 from gPhoton.reference import PipeContext
@@ -50,24 +48,6 @@ def make_movies(
     #  needed _is_ an option if rigorous thread safety is practiced, although
     #  this will significantly increase the memory pressure of this portion
     #  of the execute_pipeline.
-    if ctx.maxsize is not None:
-        # TODO: this is jury-rigged and ignores unsparsified cases etc. etc.
-        # we're ignoring most of the per-frame overhead at this point because
-        # it is probably (?) trivial for large arrays.
-        # sparse = 0.08 if lil else 1
-        memory = predict_sparse_movie_memory(
-            imsz, n_frames=len(tranges), threads=ctx.threads
-        )
-        # add a single-frame 'penalty' for unsparsified full-depth image
-        # 10 = sum of element sizes across planes
-        memory += imsz[0] * imsz[1] * 10
-        if memory > ctx.maxsize:
-            failure_string = (
-                f"{round(memory / (1024 ** 3), 2)} GB needed to make movie "
-                f"> size threshold {ctx.maxsize}"
-            )
-            print(failure_string + "; halting execute_pipeline")
-            return failure_string, {}
     print("slicing exposure array into memory")
     exposure_directory = slice_exposure_into_memory(exposure_array, tranges)
     del exposure_array
@@ -128,17 +108,6 @@ def make_movies(
 def make_full_depth_image(
     exposure_array, map_ix_dict, total_trange, imsz, maxsize=None, band="NUV"
 ) -> tuple[str, dict]:
-    if maxsize is not None:
-        # nominally, peak memory usage will be ~9 -- 4 + 1 + 4 -- just before
-        # the final map is cast from float32 to uint8.
-        memory = predict_movie_memory(imsz, n_frames=1, nbytes=9)
-        if memory > maxsize:
-            failure_string = (
-                f"failure: {round(memory/(1024**3), 2)} GB needed to make "
-                f"image > size threshold {maxsize}"
-            )
-            print(failure_string + "; halting execute_pipeline")
-            return failure_string, {}
     # TODO: this weird arithmetic cartwheel doesn't seem _wrong_, but it can't
     #  be _necessary_, right?
     interval = total_trange[1] - total_trange[0]
@@ -161,20 +130,6 @@ def write_moviemaker_results(results, ctx):
     del results["image_dict"]
     ctx.watch.click()
     if ctx.write["movie"] and (results["movie_dict"] != {}):
-        # we don't check size of the image, because if we can handle the image
-        # in memory, we can write it, but we handle the movies frame by frame
-        # earlier in the execute_pipeline, so that doesn't hold true for them.
-        if ctx.maxsize is not None and not ctx.burst:
-            imsz = results["movie_dict"]["cnt"][0].shape
-            n_frames = len(results["movie_dict"]["cnt"])
-            memory = predict_movie_memory(imsz, n_frames)
-            if memory > ctx.maxsize:
-                failure_string = (
-                    f"{round(memory / (1024 ** 3), 2)} GB needed to write "
-                    f"movie > size threshold {ctx.maxsize}"
-                )
-                print(failure_string + "; not writing")
-                return failure_string
         write_fits_array(ctx, results["movie_dict"], results["wcs"])
         ctx.watch.click()
     return "successful"

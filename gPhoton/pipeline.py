@@ -120,7 +120,6 @@ def execute_pipeline(
     download: bool = True,
     recreate: bool = False,
     verbose: int = 2,
-    maxsize: Optional[int] = None,
     source_catalog_file: Optional[str] = None,
     write: Mapping = MappingProxyType({"image": True, "movie": True}),
     aperture_sizes: Sequence[float] = (12.8,),
@@ -159,10 +158,6 @@ def execute_pipeline(
             (and possibly overwrite) it?
         verbose: how many messages do you want to see? 0 turns almost all
             output off; levels up to 4 are meaningful.
-        maxsize: maximum working memory size in bytes. None deactivates
-            estimated size checking. if estimated memory cost of generating
-            image or movie frames exceeds this threshold, the pipeline will
-            stop. Note that estimates are not 100% reliable!
         source_catalog_file: by default, the pipeline performs photometry on
             automatically-detected sources. passing the path to a CSV file as
             source_catalog_file specifies positions, preempting automated
@@ -214,7 +209,6 @@ def execute_pipeline(
         download=download,
         recreate=recreate,
         verbose=verbose,
-        maxsize=maxsize,
         source_catalog_file=source_catalog_file,
         write=write,
         lil=lil,
