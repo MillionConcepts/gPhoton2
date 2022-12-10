@@ -71,7 +71,8 @@ def find_sources(
         print("Extracting sources with DAOFIND.")
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            threshold = 0.004 if band == 'NUV' else 0.002
+            threshold = 0.01
+            # threshold = 0.004 if band == 'NUV' else 0.002
             daofind = DAOStarFinder(fwhm=6, threshold=threshold, sharplo=0.05)
             source_table = daofind(image_dict["cnt"] / exptime).to_pandas()
         try:

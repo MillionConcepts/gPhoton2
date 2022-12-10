@@ -11,7 +11,7 @@ import numpy as np
 import pyarrow
 from pyarrow import parquet
 
-from gPhoton.aspect import load_aspect_solution, aspect_tables
+from gPhoton.aspect import load_aspect_solution
 from gPhoton.calibrate import find_fuv_offset
 from gPhoton.io.mast import retrieve_raw6
 from gPhoton.io.raw6 import load_raw6, get_eclipse_from_header
@@ -24,25 +24,21 @@ from gPhoton.photonpipe._steps import (
     process_chunk_in_unshared_memory,
 )
 from gPhoton.pretty import print_inline
-from gPhoton.reference import eclipse_to_paths
+from gPhoton.reference import eclipse_to_paths, PipeContext
 from gPhoton.sharing import (
     unlink_nested_block_dict,
     slice_into_shared_chunks,
     send_mapping_to_shared_memory,
     get_column_from_shared_memory,
 )
-from gPhoton.types import GalexBand, Pathlike
+from gPhoton.types import Pathlike
 
 
 def execute_photonpipe(
-    outpath: Pathlike,
-    band: GalexBand,
+    ctx: PipeContext,
     raw6file: Optional[str] = None,
-    verbose: int = 0,
-    eclipse: Optional[int] = None,
     chunksz: int = 1000000,
-    threads: int = 4,
-    share_memory: Optional[bool] = True,
+    share_memory: Optional[bool] = None,
     write_intermediate_variables: bool = False
 ):
     """
@@ -57,10 +53,6 @@ def execute_photonpipe(
 
     :type scstfile: str
 
-    :param band: Name of the band to use, either 'FUV' or 'NUV'.
-
-    :type band: str
-
     :param outpath: output directory.
 
     :type outpath: str, pathlib.Path
@@ -71,9 +63,9 @@ def execute_photonpipe(
 
     """
     if share_memory is None:
-        share_memory = threads is not None
+        share_memory = ctx.threads is not None
 
-    if (share_memory is True) and (threads is None):
+    if (share_memory is True) and (ctx.threads is None):
         warnings.warn(
             "Using shared memory without multithreading. "
             "This incurs a performance cost to no end."
@@ -82,35 +74,35 @@ def execute_photonpipe(
     # download raw6 if local file is not passed
     if raw6file is None:
         print(f"downloading raw6file")
-        raw6file = retrieve_raw6(eclipse, band, outpath)
+        raw6file = retrieve_raw6(ctx.eclipse, ctx.band, ctx.eclipse_path())
     # get / check eclipse # from raw6 header --
-    eclipse = get_eclipse_from_header(raw6file, eclipse)
+    eclipse = get_eclipse_from_header(raw6file, ctx.eclipse)
     print(f"Processing eclipse {eclipse}")
-    if band == "FUV":
+    if ctx.band == "FUV":
         xoffset, yoffset = find_fuv_offset(eclipse)
     else:
         xoffset, yoffset = 0.0, 0.0
 
-    aspect = load_aspect_solution(eclipse, verbose)
+    aspect = load_aspect_solution(eclipse, ctx.verbose)
 
-    data, nphots = load_raw6(raw6file, verbose)
+    data, nphots = load_raw6(raw6file, ctx.verbose)
     # the stims are only actually used for post-CSP corrections, but we
     # temporarily retain them in both cases for brevity.
     # the use of a 90.001 separation angle and fixed stim coefficients
     # post-CSP is per original mission execute_pipeline; see rtaph.c #1391
     if eclipse > 37460:
         stims, _ = create_ssd_from_decoded_data(
-            data, band, eclipse, verbose, margin=90.001
+            data, ctx.band, eclipse, ctx.verbose, margin=90.001
         )
         stim_coefficients = (5105.48, 0.0)
     else:
         stims, stim_coefficients = create_ssd_from_decoded_data(
-            data, band, eclipse, verbose, margin=20
+            data, ctx.band, eclipse, ctx.verbose, margin=20
         )
     # Post-CSP 'yac' corrections.
     if eclipse > 37460:
-        data = perform_yac_correction(band, eclipse, stims, data)
-    cal_data = load_cal_data(stims, band, eclipse)
+        data = perform_yac_correction(ctx.band, eclipse, stims, data)
+    cal_data = load_cal_data(stims, ctx.band, eclipse)
     if share_memory is True:
         cal_data = send_mapping_to_shared_memory(cal_data)
     legs = chunk_by_legs(aspect, chunksz, data, share_memory)
@@ -121,7 +113,7 @@ def execute_photonpipe(
         chunk_function = process_chunk_in_shared_memory
     else:
         chunk_function = process_chunk_in_unshared_memory
-    pool = None if threads is None else Pool(threads)
+    pool = None if ctx.threads is None else Pool(ctx.threads)
     results, addresses = {}, []
     for leg_ix in legs.keys():
         addresses += [(leg_ix, chunk_ix) for chunk_ix in legs[leg_ix].keys()]
@@ -131,7 +123,7 @@ def execute_photonpipe(
         chunk = legs[leg_ix].pop(chunk_ix)
         process_args = (
             aspect,
-            band,
+            ctx.band,
             cal_data,
             chunk,
             title,
@@ -164,32 +156,28 @@ def execute_photonpipe(
         unlink_nested_block_dict(cal_data)
     proc_count = 0
     outfiles = []
-    for leg_ix in legs.keys():
+    for leg_ix, leg_ctx in enumerate(ctx.explode_legs()):
         leg_results = {}
         leg_addresses = tuple(filter(lambda k: k[0] == leg_ix, results.keys()))
         for address in leg_addresses:
             leg_results[address[1]] = results.pop(address)
         array_dict = retrieve_leg_results(leg_results, share_memory)
         proc_count += len(array_dict["t"])
-        filename = Path(
-            eclipse_to_paths(eclipse)[band]["photonfiles"][leg_ix]
-        ).name
-        outfile = Path(outpath, filename)
         # noinspection PyArgumentList
-        print(f"writing table to {outfile}")
+        print(f"writing table to {leg_ctx['photonfile']}")
         parquet.write_table(
             pyarrow.Table.from_arrays(
                 list(array_dict.values()), names=list(array_dict.keys())
             ),
-            outfile,
+            leg_ctx['photonfile'],
             use_dictionary=FIELDS_FOR_WHICH_DICTIONARY_COMPRESSION_IS_USEFUL,
             version="2.6",
         )
-        outfiles.append(outfile)
+        outfiles.append(leg_ctx['photonfile'])
     stopt = time.time()
     print_inline("")
     print("")
-    if verbose:
+    if ctx.verbose:
         seconds = stopt - startt
         rate = nphots / seconds
         print("Runtime statistics:")
