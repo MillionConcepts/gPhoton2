@@ -312,7 +312,8 @@ def dao_finder_1(cnt_image: np.ndarray, exposure_time):
        less information called LocalHIGHSlocal.
     """
     pm("dao finder 1 (1)")
-    threshold = np.multiply(np.power(exposure_time, -0.86026), 3)
+    #threshold = np.multiply(np.power(exposure_time, -0.86026), 3)
+    threshold = 0.01
     daofind = LocalHIGHSlocal(
         fwhm=5, sigma_radius=1.5, threshold=threshold, ratio=1, theta=0
     )
@@ -334,7 +335,8 @@ def dao_finder_2(cnt_image: np.ndarray, exposure_time):
        less information called LocalHIGHSlocal.
     """
     pm("dao finder 2 (1)")
-    threshold = np.multiply(np.power(exposure_time, -0.86026), 3)
+    #threshold = np.multiply(np.power(exposure_time, -0.86026), 3)
+    threshold = 0.02
     daofind2 = LocalHIGHSlocal(
         fwhm=3, sigma_radius=1.5, threshold=threshold, ratio=1, theta=0
     )
@@ -361,8 +363,8 @@ def get_extended(dao_sources: pd.DataFrame, image_size, band: str):
 
     starlist['x_0'] = x_0
     starlist['y_0'] = y_0
-
-    epsilon = 40 if band == "NUV" else 50
+    print(len(starlist))
+    epsilon = 40 if band == "NUV" else 50 # nuv was 40
     pm("get_extended (2)")
     dbscan_group = DBSCANGroup(crit_separation=epsilon)
     dbsc_star_groups = dbscan_group(starlist)
@@ -375,10 +377,9 @@ def get_extended(dao_sources: pd.DataFrame, image_size, band: str):
     masks = {}
     gID = 1
     pm("get_extended (4)")
-    # TODO: is the counter variable i supposed to be doing something here
     # this way of adding hull masks needs work because sometimes convex hulls overlap
     for i, group in enumerate(dbsc_star_groups.groups):
-        if len(group) > 65:
+        if len(group) > 100:
             path, extended_hull_data = get_hull_path(group, gID, image_size, 10)
             extended_source_cat = pd.concat([extended_source_cat, extended_hull_data])
             masks[gID] = path
@@ -397,7 +398,7 @@ def get_hull_path(group, groupID: int, imageSize: tuple, critSep):
 
     ny, nx = imageSize  # imageSize is a tuple of width, height
 
-    xypos = np.transpose([group['x_0'], group['y_0']])
+    xypos = np.transpose([group['y_0'], group['x_0']]) # switched x and y
     hull = ConvexHull(xypos)
     hull_verts = tuple(zip(xypos[hull.vertices, 0], xypos[hull.vertices, 1]))
 

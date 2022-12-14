@@ -44,10 +44,13 @@ def make_lightcurves(
     )
     print("saving segment map and extended source mask to files")
     from gPhoton.lightcurve._plot import make_source_figs
+    from gPhoton.coadd import zero_flag_and_edge
+    masked = zero_flag_and_edge(sky_arrays["image_dict"]["cnt"], sky_arrays["image_dict"]["flag"],
+                                sky_arrays["image_dict"]["edge"])
     make_source_figs(
         source_table,
         segment_map,
-        sky_arrays["image_dict"]["cnt"],
+        masked,
         eclipse,
         band,
         leg,
