@@ -180,3 +180,10 @@ please email the repository maintainers and let us know what you might be
 interested in fixing, tweaking, or implementing.
 
 ## citations
+If you use this software to support your research, please cite:
+M. St. Clair, C. Million, R. Albach, S.W. Fleming (2022) _gPhoton2_. DOI:10.5281/zenodo.7472061
+
+[![DOI](https://zenodo.org/badge/383023797.svg)](https://zenodo.org/badge/latestdoi/383023797)
+
+## acknowledgements
+This project has been supported by NASA Grants 80NSSC21K1421 and 80NSSC21K1421.
