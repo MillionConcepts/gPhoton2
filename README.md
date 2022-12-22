@@ -186,4 +186,4 @@ M. St. Clair, C. Million, R. Albach, S.W. Fleming (2022) _gPhoton2_. DOI:10.5281
 [![DOI](https://zenodo.org/badge/383023797.svg)](https://zenodo.org/badge/latestdoi/383023797)
 
 ## acknowledgements
-This project has been supported by NASA Grants 80NSSC21K1421 and 80NSSC21K1421.
+This project has been supported by NASA Grants 80NSSC18K0084 and 80NSSC21K1421.
