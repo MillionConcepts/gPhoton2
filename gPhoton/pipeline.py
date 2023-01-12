@@ -130,7 +130,10 @@ def execute_pipeline(
     hdu_constructor_kwargs: Mapping = MappingProxyType({}),
     min_exptime: Optional[float] = None,
     photometry_only: bool = False,
-    burst: bool = False
+    burst: bool = False,
+    chunksz: int = 1000000,
+    share_memory: Optional[bool] = None,
+    extended_photonlist: bool = False
 ) -> str:
     """
     Args:
@@ -188,6 +191,12 @@ def execute_pipeline(
         photometry_only: attempt to perform photometry on already-existing
             images/movies, doing nothing else
         burst: write movie frames to individual fits files? default is False.
+        chunksz: max photons per chunk in photonpipe. default 1000000
+        share_memory: use shared memory in photonpipe? default None, meaning
+            do if running multithreaded, don't if not. True and False are
+            also valid, and force use or non-use respectively.
+        extended_photonlist: write extended variables to photonlists
+            not used in standard moviemaker/lightcurve pipeline?
 
     Returns:
         str: `"return code: successful"` for fully successful execution;
@@ -217,6 +226,10 @@ def execute_pipeline(
         hdu_constructor_kwargs=hdu_constructor_kwargs,
         min_exptime=min_exptime,
         burst=burst,
+        chunksz=chunksz,
+        share_memory=share_memory,
+        extended_photonlist=extended_photonlist
+
     )
     ctx.watch.start()
     if photometry_only:

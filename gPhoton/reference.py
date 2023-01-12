@@ -21,7 +21,6 @@ from typing import Any, Callable, Sequence, Mapping, Optional, Literal
 from gPhoton.types import Pathlike, GalexBand
 
 
-
 class FakeStopwatch:
     """fake simple timer object"""
 
@@ -224,7 +223,10 @@ class PipeContext:
         burst: bool = False,
         hdu_constructor_kwargs: Mapping = MappingProxyType({}),
         threads: Optional[int] = None,
-        watch: Optional[Stopwatch] = None
+        watch: Optional[Stopwatch] = None,
+        share_memory: Optional[bool] = None,
+        chunksz: Optional[int] = 1000000,
+        extended_photonlist: bool = False
     ):
         self.eclipse = eclipse
         self.band = band
@@ -250,6 +252,9 @@ class PipeContext:
         self.hdu_constructor_kwargs = hdu_constructor_kwargs
         self.threads = threads
         self.watch = watch if watch is not None else Stopwatch()
+        self.extended_photonlist = extended_photonlist
+        self.chunksz = chunksz
+        self.share_memory = share_memory
 
     def __repr__(self):
         return (
@@ -292,7 +297,6 @@ class PipeContext:
             "download": self.download,
             "recreate": self.recreate,
             "verbose": self.verbose,
-            "maxsize": self.maxsize,
             "source_catalog_file": self.source_catalog_file,
             "write": self.write,
             "lil": self.lil,
@@ -304,6 +308,9 @@ class PipeContext:
             "hdu_constructor_kwargs": self.hdu_constructor_kwargs,
             "threads": self.threads,
             "watch": self.watch,
+            "chunksz": self.chunksz,
+            "share_memory": self.share_memory,
+            "extended_photonlist": self.extended_photonlist
         }
 
     def eclipse_path(self, remote=False):

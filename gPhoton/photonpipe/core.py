@@ -34,38 +34,22 @@ from gPhoton.sharing import (
 from gPhoton.types import Pathlike
 
 
-def execute_photonpipe(
-    ctx: PipeContext,
-    raw6file: Optional[str] = None,
-    chunksz: int = 1000000,
-    share_memory: Optional[bool] = None,
-    write_intermediate_variables: bool = False
-):
+def execute_photonpipe(ctx: PipeContext, raw6file: Optional[str] = None):
     """
     Apply static and sky calibrations to -raw6 GALEX data, producing fully
         aspect_data-corrected and time-tagged photon list files.
+    :param ctx: PipeContext object containing pipeline parameters
+
+    :type ctx: PipeContext
 
     :param raw6file: Name of the raw6 file to use.
 
     :type raw6file: str
-
-    :param scstfile: Spacecraft state file to use.
-
-    :type scstfile: str
-
-    :param outpath: output directory.
-
-    :type outpath: str, pathlib.Path
-
-    :param verbose: Verbosity level, to be detailed later.
-
-    :type verbose: int
-
     """
-    if share_memory is None:
+    if ctx.share_memory is None:
         share_memory = ctx.threads is not None
 
-    if (share_memory is True) and (ctx.threads is None):
+    if (ctx.share_memory is True) and (ctx.threads is None):
         warnings.warn(
             "Using shared memory without multithreading. "
             "This incurs a performance cost to no end."
@@ -105,7 +89,7 @@ def execute_photonpipe(
     cal_data = load_cal_data(stims, ctx.band, eclipse)
     if share_memory is True:
         cal_data = send_mapping_to_shared_memory(cal_data)
-    legs = chunk_by_legs(aspect, chunksz, data, share_memory)
+    legs = chunk_by_legs(aspect, ctx.chunksz, data, share_memory)
     del data
     # explode to dict of arrays for numba etc.
     aspect = {col: aspect[col].to_numpy() for col in aspect.columns}
@@ -130,7 +114,7 @@ def execute_photonpipe(
             stim_coefficients,
             xoffset,
             yoffset,
-            write_intermediate_variables
+            ctx.extended_photonlist
         )
         if pool is None:
             results[(leg_ix, chunk_ix)] = chunk_function(*process_args)

@@ -106,7 +106,7 @@ def make_movies(
 
 
 def make_full_depth_image(
-    exposure_array, map_ix_dict, total_trange, imsz, maxsize=None, band="NUV"
+    exposure_array, map_ix_dict, total_trange, imsz, band="NUV"
 ) -> tuple[str, dict]:
     # TODO: this weird arithmetic cartwheel doesn't seem _wrong_, but it can't
     #  be _necessary_, right?
