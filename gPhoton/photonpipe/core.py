@@ -48,8 +48,10 @@ def execute_photonpipe(ctx: PipeContext, raw6file: Optional[str] = None):
     """
     if ctx.share_memory is None:
         share_memory = ctx.threads is not None
+    else:
+        share_memory = ctx.share_memory
 
-    if (ctx.share_memory is True) and (ctx.threads is None):
+    if (share_memory is True) and (ctx.threads is None):
         warnings.warn(
             "Using shared memory without multithreading. "
             "This incurs a performance cost to no end."
