@@ -20,6 +20,8 @@ from typing import Optional, Sequence, Mapping, Literal
 from cytoolz import identity, keyfilter
 from more_itertools import chunked
 
+import gPhoton.reference
+from gPhoton.aspect import aspect_tables
 from gPhoton.reference import Stopwatch, PipeContext
 from gPhoton.types import GalexBand
 
@@ -108,6 +110,27 @@ def execute_photometry_only(ctx: PipeContext):
     return "return code: successful"
 
 
+def check_eclipse(eclipse, verbose=1):
+    e_warn, e_error = [], []
+    if eclipse > 47000:
+        e_error.append("CAUSE data w/eclipse>47000 are not yet supported.")
+    meta = aspect_tables(eclipse, ("metadata",))[0]
+    if len(meta) == 0:
+        e_error.append(f"No metadata found for e{eclipse}.")
+    if verbose < 1:
+        return e_warn, e_error
+    if len(meta) > 0:
+        actual, nominal = gPhoton.reference.titular_legs(eclipse)
+
+        if actual != nominal:
+            e_warn.append(
+                f"Note: e{eclipse} observation-level metadata specifies "
+                f"{nominal} legs, but only {actual} appear(s) to have "
+                f"been completed."
+            )
+    return e_warn, e_error
+
+
 # TODO, maybe: add a check somewhere for: do we have information regarding
 #  this eclipse at all?
 def execute_pipeline(
@@ -133,7 +156,8 @@ def execute_pipeline(
     burst: bool = False,
     chunksz: int = 1000000,
     share_memory: Optional[bool] = None,
-    extended_photonlist: bool = False
+    extended_photonlist: bool = False,
+    override_eclipse_limits: bool = False
 ) -> str:
     """
     Args:
@@ -183,9 +207,8 @@ def execute_pipeline(
         compression: what sort of compression should we apply to movies and
             images? "gzip" is monolithic gzip; "rice" is RICE_1 (for the
             cntmap, lossy) tile compression; "none" is no compression at all.
-        hdu_constructor_kwargs: optional mapping of kwargs to pass to the
-            astropy.io.fits HDU constructor (for instance, tile compression
-            parameters)
+        hdu_constructor_kwargs: optional mapping of kwargs to pass to
+            `fitsio.FITS.write` (for instance, tile compression parameters)
         min_exptime: minimum effective exposure time to run image/movie
             and lightcurve generation. None means no lower bound.
         photometry_only: attempt to perform photometry on already-existing
@@ -195,17 +218,26 @@ def execute_pipeline(
         share_memory: use shared memory in photonpipe? default None, meaning
             do if running multithreaded, don't if not. True and False are
             also valid, and force use or non-use respectively.
-        extended_photonlist: write extended variables to photonlists
-            not used in standard moviemaker/lightcurve pipeline?
-
+        extended_photonlist: write extended variables to photonlists?
+            these are not used in standard moviemaker/lightcurve pipelines.
+            they are principally useful for diagnostics and ancillary products.
+        override_eclipse_limits: attempt to execute pipeline even if metadata
+            and/or support for this eclipse appear to be limited or absent?
+            note that the pipeline will most likely still fail in these cases.
     Returns:
         str: `"return code: successful"` for fully successful execution;
             `"return code: {other_thing}"` for various known failure states
             (many of which produce a subset of valid output products)
     """
-    if eclipse > 47000:
-        print("CAUSE data w/eclipse>47000 are not yet supported.")
-        return "return code: CAUSE data w/eclipse>47000 are not yet supported."
+    e_warn, e_error = check_eclipse(eclipse)
+    if (verbose > 0) and len(e_warn) > 0:
+        print("\n".join(e_warn))
+    if len(e_error) > 0:
+        print("\n".join(e_error))
+        if override_eclipse_limits is False:
+            print("Bailing out.")
+            return f"return code: {';'.join(e_error)}"
+        print("override_eclipse_limits=True, continuing anyway")
     ctx = PipeContext(
         eclipse,
         band,
@@ -229,7 +261,6 @@ def execute_pipeline(
         chunksz=chunksz,
         share_memory=share_memory,
         extended_photonlist=extended_photonlist
-
     )
     ctx.watch.start()
     if photometry_only:
@@ -243,11 +274,15 @@ def execute_full_pipeline(ctx):
         from gPhoton.aspect import aspect_tables
 
         metadata = aspect_tables(ctx.eclipse, ("metadata",))[0]
-        print(
+        actual, nominal = gPhoton.reference.titular_legs(ctx.eclipse)
+        headline = (
             f"eclipse {ctx.eclipse} {ctx.band}  -- "
             f"{metadata['obstype'][0].as_py()}; "
-            f"{metadata['legs'][0].as_py()} leg(s)"
+            f"{actual} leg(s)"
         )
+        if actual != nominal:
+            headline = headline + f" ({nominal} specified)"
+        print(headline)
     if ctx.photometry_only is True:
         return execute_photometry_only(ctx)
 

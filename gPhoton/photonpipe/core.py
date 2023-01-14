@@ -167,11 +167,12 @@ def execute_photonpipe(ctx: PipeContext, raw6file: Optional[str] = None):
         seconds = stopt - startt
         rate = nphots / seconds
         print("Runtime statistics:")
-        print(f" runtime		=	{seconds} sec. = ({seconds/60} min.)")
-        print(f"	processed	=	{str(proc_count)} of {str(nphots)} events.")
-        if proc_count < nphots:
-            print("		WARNING: MISSING EVENTS! ")
-        print(f"rate		=	{rate} photons/sec.\n")
+        print(
+            f" runtime		=	{round(seconds, 2)} sec. "
+            f"= ({round(seconds/60, 2)} min.)"
+        )
+        print(f"  processed	   =   {str(proc_count)} of {str(nphots)} events.")
+        print(f"rate		=	{round(rate, 2)} photons/sec.\n")
     return outfiles
 
 

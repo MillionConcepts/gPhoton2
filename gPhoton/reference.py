@@ -137,8 +137,18 @@ def crudely_find_library(obj: Any) -> str:
 def get_legs(eclipse):
     from gPhoton.aspect import aspect_tables
 
-    leg_count = aspect_tables(eclipse, ("metadata",))[0]["legs"][0].as_py()
-    return (0,) if leg_count == 0 else tuple(range(leg_count))
+    return tuple(range(len(aspect_tables(eclipse, ("boresight",))[0]["time"])))
+
+
+@cache
+def titular_legs(eclipse):
+    from gPhoton.aspect import aspect_tables
+
+    actual = len(get_legs(eclipse))
+    nominal = aspect_tables(eclipse, ("metadata",))[0]["legs"][0].as_py()
+    if (actual == 1) and (nominal == 0):
+        return 0, 0
+    return actual, nominal
 
 
 def eclipse_to_paths(

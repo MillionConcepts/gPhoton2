@@ -1,13 +1,14 @@
 # gPhoton 2
 
 ## overview
-The gPhoton project aims to produce derived data products that are both quantitatively 
-more correct and qualitatively more capable than 
-original GALEX mission products, with a special emphasis on enabling high-precision 
-short-time-domain science. 
 
-gPhoton 2 is a substantial rewrite of the original gPhoton library intended to 
-improve deployment flexibility and help support complex, full-catalog
+The gPhoton project aims to produce derived data products that are both 
+quantitatively more correct and qualitatively more capable than 
+original GALEX mission products, with a special emphasis on enabling 
+high-precision short-time-domain science. 
+
+gPhoton 2 is a substantial rewrite of the original gPhoton library intended 
+to improve deployment flexibility and help support complex, full-catalog
 surveys on short timelines. It is 1-3 orders of magnitude faster than
 original gPhoton and features several significant calibration improvements. 
 It is currently in early beta.
@@ -74,42 +75,49 @@ gPhoton 2 does not have hard-and-fast system requirements. It is highly
 configurable and not all of the portions of its pipelines are equally 
 expensive. Also, the GALEX raw data archive is extremely diverse, and some
 visits / eclipses are much cheaper to process than others -- processing a 
-brief visit on a sparse field without multiple 'legs' (boresight positions) 
-could easily take less than 5% as many resources as a long visit on a dense 
-field with multiple legs. However, here are some general notes:
+brief visit on a sparse field could easily take less than 20% as many 
+resources as processing a long visit on a dense field.
 
-It should be possible to process any single-pointing eclipse to 30-second 
-depth (bin size) in 10 GB of free working memory.
-We do not recommend executing the full gPhoton pipeline in an environment 
-with much less free memory than this, although some features of the pipeline 
-may function well with considerably less, particularly on smaller raw data files 
+However, here are some general notes:
 
-The most memory-expensive portion of the pipeline tends to be writing 
-video files; if you are not writing video files to disk, you can generally
-get away with less memory. Decreasing the depth / increasing temporal 
-resolution will tend to sharply increase the required memory for both 
-producing and writing movies. If you only want to produce 
-full-depth images with gPhoton 2 and neither want to write movies or generate 
-photometry, time and memory requirements will tend to go sharply down.
-
-There is no particular minimum CPU requirement; gPhoton 2 will run on
-quite slow processors, but can use all the processing power you can throw
-at it. Integrating video tends to be the most CPU-bound portion of the
-pipeline (especially at very high temporal resolution), followed by counting
+* It should be possible to process any MIS-like eclipse to 30-second depth 
+  (bin size) in ~6 GB of free memory. 
+* gPhoton 2 processes each "leg" (nominal boresight position) of an eclipse 
+  separately, so eclipses with many "legs", like much of the All-Sky 
+  Imaging Survey (AIS) will often be very memory-cheap to process relative 
+  to overall visit time. 
+* We do not recommend executing the full gPhoton pipeline in an environment 
+  with less than ~8 GB of free memory, although some features of the pipeline 
+  may function well with considerably less, particularly on smaller raw data 
+  files. 
+* The most memory-expensive portion of the pipeline tends to be writing
+  video files; if you are not writing video files to disk, you can generally
+  get away with less memory. 
+* Decreasing the depth / increasing temporal 
+  resolution will tend to sharply increase the required memory for both 
+  producing and writing movies. If you only want to produce 
+  full-depth images with gPhoton 2 and neither want to write movies or generate 
+  photometry, time and memory requirements will tend to go sharply down.
+* If you pass the `--burst=True` parameter, gPhoton 2 will write each 
+  frame of a movie as a separate file, which reduces memory pressure 
+  significantly but is somewhat slower.
+* There is no particular minimum CPU requirement; gPhoton 2 will run on
+  quite slow processors, but can use all the processing power you can throw
+  at it. Integrating video tends to be the most CPU-bound portion of the
+  pipeline (especially at very high temporal resolution), followed by counting
 photometry on video frames, followed by producing photonlists.
-
-Running gPhoton 2 in multithreaded mode will tend to increase average 
-(although not necessarily peak) working memory. Even in multithreaded mode, 
-some portions of gPhoton 2 are thread-bound, and single-thread performance 
-remains important. More than 8 parallel processes do not tend to be
-useful, except for high-resolution photometry on very dense fields. 
-
-An x86_64 processor architecture is recommended but not required.
-
-If you are downloading raw6 files, a fast network connection will of course
-be useful. Also, some output files may be large enough that portions of the 
-pipeline become I/O bound, and we do not recommend using a HDD or networked
-storage as working space for gPhoton 2.
+* Running gPhoton 2 in multithreaded mode will tend to increase average
+  (although not necessarily peak) working memory. Even in multithreaded mode, 
+  some portions of gPhoton 2 are thread-bound, and single-thread performance 
+  remains important. 
+* More than 8 parallel processes do not tend to be
+  useful, except for high-resolution photometry on very dense fields.
+* An x86_64 processor architecture is recommended but not required.
+* If you are downloading raw6 files, a fast network connection will of course
+    be useful. 
+* Some output files may be large enough that portions of the pipeline become 
+  I/O bound, and we do not recommend using a HDD or networked storage as 
+  working space for gPhoton 2.
 
 ### storage
 
@@ -134,8 +142,10 @@ array sparsity.
 
 ### dependencies
 
-gPhoton 2 requires Python >= 3.9. 3.9 is recommended. It also depends 
-on the following Python libraries:
+gPhoton 2 requires Python 3.9 or 3.10. 3.10 is recommended. (3.11 support 
+pends upstream changes in `numba` and is anticipated sometime in Q1 2023.)
+
+It also depends on the following Python libraries:
 * astropy
 * dustgoggles
 * fast-histogram
