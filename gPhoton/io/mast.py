@@ -19,8 +19,7 @@ import requests
 from gPhoton import TIME_ID
 from gPhoton.io.netutils import chunked_download
 from gPhoton.pretty import print_inline
-from gPhoton.types import GalexBand
-
+from gPhoton.types import GalexBand, Pathlike
 
 # The following global variables are used to construct properly-formatted
 # queries to the MAST database. Don't change them unless you know what you're
@@ -124,7 +123,7 @@ def raw_data_paths(eclipse):
     return mast_url(f"spGetRawUrls {eclipse}")
 
 
-def retrieve_raw6(eclipse: int, band: GalexBand, outbase: str) -> str:
+def retrieve_raw6(eclipse: int, band: GalexBand, outbase: Pathlike) -> str:
     """retrieve raw6 (L0 telemetry) file from MAST and save it to outbase."""
     raw6file = download_data(
         eclipse, "raw6", band, datadir=os.path.dirname(outbase),

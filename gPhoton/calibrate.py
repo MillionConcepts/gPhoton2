@@ -8,6 +8,7 @@
 """
 from typing import Sequence
 
+import numba
 from numba import njit
 import numpy as np
 
@@ -35,16 +36,16 @@ def clk_cen_scl_slp(band: GalexBand, eclipse: int) -> tuple:
 
     band = band.upper()
     if band == "FUV":
-        xclk, yclk = 1997.0, 1993.0
-        xcen, ycen = 7200.0, 6670.0
+        xclk, yclk = 1997, 1993
+        xcen, ycen = 7200, 6670
         xscl, yscl = 7.78, 10.73
         xslp, yslp = 0.0, 0.0
     elif band == "NUV":
-        xclk, yclk = 2007.0, 1992.0
+        xclk, yclk = 2007, 1992
         # Special value for post-CSP event.
         if eclipse >= 38150:
-            yclk = 2016.0
-        xcen, ycen = 7400.0, 6070.0
+            yclk = 2016
+        xcen, ycen = 7400, 6070
         xscl, yscl = 8.79, 14.01
         xslp, yslp = 0.53, 0.0
     else:
@@ -510,7 +511,10 @@ def plus7_mod32_minus16(array):
     return ((array + 7) % 32) - 16
 
 
-@njit(cache=True)
+@njit(
+    (numba.int16[:], numba.int16[:], numba.int16[:], numba.int16, numba.int16, numba.int16[:], numba.int16[:]),
+    cache=True
+)
 def center_scale_step_1(xa, yb, xb, xclk, yclk, xamc, yamc):
     """
     perform an expensive component of the center-and-scale pipeline
@@ -518,7 +522,7 @@ def center_scale_step_1(xa, yb, xb, xclk, yclk, xamc, yamc):
     xraw0 = xb * xclk + xamc
     yraw0 = yb * yclk + yamc
     ya = (((yraw0 / (2 * yclk) - xraw0 / (2 * xclk)) + 10) * 32) + xa
-    return xraw0, ya, yraw0
+    return xraw0, ya.astype(numba.int64), yraw0
 
 
 def center_and_scale(band, data, eclipse):
@@ -538,15 +542,15 @@ def center_and_scale(band, data, eclipse):
         data["xamc"],
         data["yamc"],
     )
-    data["ya"] = np.array(ya, dtype="int64") % 32
+    data["ya"] = (ya % 32).astype("int16")
     xraw = (
         xraw0 + np.array(plus7_mod32_minus16(data["xa"]), dtype="int64") * xslp
-    )
-    data["x"] = (xraw - xcen) * xscl
+    ).astype(np.float32)
+    data["x"] = ((xraw - xcen) * xscl).astype(np.float32)
     yraw = (
         yraw0 + np.array(plus7_mod32_minus16(data["ya"]), dtype="int64") * yslp
-    )
-    data["y"] = (yraw - ycen) * yscl
+    ).astype(np.float32)
+    data["y"] = ((yraw - ycen) * yscl).astype(np.float32)
     return data
 
 

@@ -26,7 +26,7 @@ def load_raw6(raw6file: Pathlike, verbose: int):
     :return:
     """
     if verbose > 0:
-        print_inline("Loading raw6 file...")
+        print_inline("Loading raw6 file...      ")
     raw6hdulist = fitsio.FITS(raw6file)
     raw6header = raw6hdulist[0].read_header()
     raw6htab = raw6hdulist[1].read_header()
@@ -34,7 +34,7 @@ def load_raw6(raw6file: Pathlike, verbose: int):
     eclipse = raw6header["ECLIPSE"]
     nphots = raw6htab["NAXIS2"]
     if verbose > 1:
-        print("		" + str(nphots) + " events")
+        print(f"\n{nphots} events")
     data = decode_telemetry(band, eclipse, raw6hdulist)
     raw6hdulist.close()
     return data, nphots
@@ -61,9 +61,9 @@ def decode_telemetry(
     band: GalexBand, eclipse: int, raw6hdulist: fitsio.FITS
 ):
     """"""
-    data = bitwise_decode_photonbytes(band, unpack_raw6(raw6hdulist))
+    data = bitwise_decode_photonbytes(unpack_raw6(raw6hdulist))
     data = center_and_scale(band, data, eclipse)
-    data["t"] = data["t"].byteswap().newbyteorder()
+    data["t"] = data["t"].astype("f8")
     return data
 
 
@@ -92,7 +92,6 @@ def unpack_raw6(raw6hdulist: fitsio.FITS) -> dict[
 
 
 def bitwise_decode_photonbytes(
-    band: GalexBand,
     photonbytes: Mapping[Literal['t', 1, 2, 3, 4, 5], np.ndarray]
 ) -> dict[Literal["t", "xb", "xamc", "yb", "yamc", "q", "xa"], np.ndarray]:
     """
@@ -101,7 +100,6 @@ def bitwise_decode_photonbytes(
     this function 'decodes' these packed bytes into physically meaningful
     values.
     """
-    print_inline(f"Band is {band}.")
     data = {"t": photonbytes["t"]}
     data["xb"] = photonbytes[1] >> 5
     data["xamc"] = (

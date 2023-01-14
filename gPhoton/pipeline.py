@@ -10,142 +10,101 @@ modules. This module is intended to perform them with optimized transitions
 and endpoints / output suitable for remote automation.
 """
 import re
-from pathlib import Path
 import shutil
+import warnings
+from pathlib import Path
 from time import time
 from types import MappingProxyType
 from typing import Optional, Sequence, Mapping, Literal
-import warnings
 
 from cytoolz import identity, keyfilter
-from gPhoton.reference import eclipse_to_paths, Stopwatch
-from gPhoton.types import GalexBand, Pathlike
 from more_itertools import chunked
+
+from gPhoton.reference import Stopwatch, PipeContext
+from gPhoton.types import GalexBand
 
 # oh no! divide by zero! i am very distracting!
 warnings.filterwarnings(action="ignore", category=RuntimeWarning)
 
 
-def get_photonlist(
-    eclipse: int,
-    band: GalexBand,
-    local_root: str = "test_data",
-    remote_root: Optional[str] = None,
-    download: bool = True,
-    recreate: bool = False,
-    verbose: int = 1,
-    threads: Optional[int] = None,
-    raise_errors: bool = True,
-):
+def get_photonlists(ctx: PipeContext, raise_errors: bool = True):
     """
     Args:
-        eclipse: GALEX eclipse number to process
-        band: GALEX band to process: 'FUV' or 'NUV'?
-        local_root: Root of directory tree (on the local system, or at least
-            somewhere with write permissions), to write and/or look for files
-        remote_root: Root of another directory tree (perhaps a mounted S3
-            bucket or something) to check for input files.
-            Unlike local_root, there is no assumption that write access is
-            available to these paths.
-        download: If raw6 (L0 telemetry) files cannot be found in the expected
-            paths from local_root or remote_root, shall we try to download
-            them from MAST?
-        recreate: If a photonlist already exists at the expected path from
-            local_root or remote_root, shall we recreate it (overwriting it if
-            it's in local_root)?
-        verbose: How chatty shall photonpipe be, 0-2? Higher is chattier. Full
-            documentation forthcoming.
-        threads: how many threads shall the multithreaded portions of
-          photonpipe use? Passing None turns multithreading off entirely.
+        ctx: pipeline context management object
         raise_errors: if we encounter errors during pipeline execution,
             shall we raise an exception (True) or return structured text
             describing that error and its context (False)? Typically this
             should be True for ad-hoc local execution (and especially for
             debugging), and False for managed remote execution.
     """
-    local_files, photonpath, remote_files, temp_directory = _set_up_paths(
-        eclipse, band, local_root, remote_root
-    )
-    if (remote_root is not None) and (recreate is False):
-        if Path(remote_files["photonfile"]).exists():
+    # TODO, maybe: parameter to run only certain legs
+    create_local_paths(ctx)
+    if ctx.recreate is False:
+        photonpaths = find_photonfiles(ctx)
+        if all([path.exists() for path in photonpaths]):
             print(
-                f"making temp local copy of photon file from remote: "
-                f"{remote_files['photonfile']}"
+                f"using existing photon list(s): "
+                f"{[str(path) for path in photonpaths]}"
             )
-            photonpath = Path(
-                shutil.copy(Path(remote_files["photonfile"]), temp_directory)
+            return photonpaths
+    raw6path = _look_for_raw6(ctx)
+    if not raw6path.exists():
+        print("couldn't find raw6 file.")
+        if raise_errors is True:
+            raise OSError("couldn't find raw6 file.")
+        return "return code: couldn't find raw6 file."
+    from gPhoton.photonpipe import execute_photonpipe
+
+    try:
+        return execute_photonpipe(ctx, str(raw6path))
+    except ValueError as value_error:
+        if raise_errors:
+            raise value_error
+        return parse_photonpipe_error(value_error)
+
+
+def find_photonfiles(context: PipeContext):
+    photonpaths = []
+    if context.remote is not None:
+        r_photpaths = [
+            Path(leg(remote=True)['photonfile'])
+            for leg in context.explode_legs()
+        ]
+        if all([path.exists() for path in r_photpaths]):
+            print(
+                f"making temp local copies of photon file(s) from remote: "
+                f"{[p.name for p in r_photpaths]}"
             )
-    if recreate or not photonpath.exists():
-        if not photonpath.parent.exists():
-            photonpath.parent.mkdir(parents=True)
-        raw6path = _look_for_raw6(
-            eclipse, band, download, local_files, remote_files, temp_directory
-        )
-        if not raw6path.exists():
-            print("couldn't find raw6 file.")
-            if raise_errors is True:
-                raise OSError("couldn't find raw6 file.")
-            return "return code: couldn't find raw6 file."
-        from gPhoton.photonpipe import execute_photonpipe
-
-        try:
-            execute_photonpipe(
-                photonpath,
-                band,
-                raw6file=str(raw6path),
-                verbose=verbose,
-                chunksz=1000000,
-                threads=threads,
-            )
-        except ValueError as value_error:
-            if raise_errors:
-                raise value_error
-            return parse_photonpipe_error(value_error)
-    else:
-        print(f"using existing photon list {photonpath}")
-    return photonpath
+            photonpaths = [
+                Path(shutil.copy(path, context.temp_path()))
+                for path in r_photpaths
+            ]
+    if len(photonpaths) == 0:
+        photonpaths = [
+            Path(leg()["photonfile"]) for leg in context.explode_legs()
+        ]
+    return photonpaths
 
 
-def execute_photometry_only(
-    eclipse,
-    band,
-    local_root,
-    remote_root,
-    depth,
-    compression,
-    lil,
-    aperture_sizes,
-    source_catalog_file,
-    threads,
-    stopwatch
-):
-    if stopwatch is None:
-        stopwatch = Stopwatch()
-        stopwatch.start()
-    loaded_results = load_moviemaker_results(
-        eclipse, band, local_root, remote_root, depth, compression, lil
-    )
-    # this is an error code
-    if isinstance(loaded_results, str):
-        return loaded_results
-    local_files, results = loaded_results
-    from gPhoton.lightcurve import make_lightcurves
+def execute_photometry_only(ctx: PipeContext):
+    errors = []
+    for leg_step in ctx.explode_legs():
+        loaded_results = load_moviemaker_results(leg_step, ctx.lil)
+        # this is an error code
+        if isinstance(loaded_results, str):
+            errors.append(loaded_results)
+            continue
+        output_filenames, results = loaded_results
+        from gPhoton.lightcurve import make_lightcurves
 
-    photometry_result = make_lightcurves(
-        results,
-        eclipse,
-        band,
-        aperture_sizes,
-        local_files,
-        source_catalog_file,
-        threads,
-        stopwatch,
-    )
+        result = make_lightcurves(results, leg_step)
+        if result != "successful":
+            errors.append(result)
     print(
-        f"{round(time() - stopwatch.start_time, 2)} seconds for execution"
+        f"{round(time() - ctx.watch.start_time, 2)} seconds for execution"
     )
-    if not photometry_result.startswith("successful"):
-        return f"return code: {photometry_result}"
+    if len(errors) > 0:
+        return "return code: " + ";".join(errors)
     return "return code: successful"
 
 
@@ -161,17 +120,20 @@ def execute_pipeline(
     download: bool = True,
     recreate: bool = False,
     verbose: int = 2,
-    maxsize: Optional[int] = None,
     source_catalog_file: Optional[str] = None,
     write: Mapping = MappingProxyType({"image": True, "movie": True}),
-    aperture_sizes: Sequence[float] = tuple([12.8]),
+    aperture_sizes: Sequence[float] = (12.8,),
     lil: bool = True,
     coregister_lightcurves: bool = False,
     stop_after: Optional[Literal["photonpipe", "moviemaker"]] = None,
     compression: Literal["none", "gzip", "rice"] = "gzip",
-    hdu_constructor_kwargs: Optional[Mapping] = None,
+    hdu_constructor_kwargs: Mapping = MappingProxyType({}),
     min_exptime: Optional[float] = None,
     photometry_only: bool = False,
+    burst: bool = False,
+    chunksz: int = 1000000,
+    share_memory: Optional[bool] = None,
+    extended_photonlist: bool = False
 ) -> str:
     """
     Args:
@@ -199,10 +161,6 @@ def execute_pipeline(
             (and possibly overwrite) it?
         verbose: how many messages do you want to see? 0 turns almost all
             output off; levels up to 4 are meaningful.
-        maxsize: maximum working memory size in bytes. None deactivates
-            estimated size checking. if estimated memory cost of generating
-            image or movie frames exceeds this threshold, the pipeline will
-            stop. Note that estimates are not 100% reliable!
         source_catalog_file: by default, the pipeline performs photometry on
             automatically-detected sources. passing the path to a CSV file as
             source_catalog_file specifies positions, preempting automated
@@ -232,270 +190,206 @@ def execute_pipeline(
             and lightcurve generation. None means no lower bound.
         photometry_only: attempt to perform photometry on already-existing
             images/movies, doing nothing else
+        burst: write movie frames to individual fits files? default is False.
+        chunksz: max photons per chunk in photonpipe. default 1000000
+        share_memory: use shared memory in photonpipe? default None, meaning
+            do if running multithreaded, don't if not. True and False are
+            also valid, and force use or non-use respectively.
+        extended_photonlist: write extended variables to photonlists
+            not used in standard moviemaker/lightcurve pipeline?
 
     Returns:
         str: `"return code: successful"` for fully successful execution;
             `"return code: {other_thing}"` for various known failure states
             (many of which produce a subset of valid output products)
     """
-
-    # SETUP AND FILE RETRIEVAL
-    stopwatch = Stopwatch()
-    stopwatch.click()
     if eclipse > 47000:
         print("CAUSE data w/eclipse>47000 are not yet supported.")
         return "return code: CAUSE data w/eclipse>47000 are not yet supported."
-    if photometry_only is True:
-        return execute_photometry_only(
-            eclipse,
-            band,
-            local_root,
-            remote_root,
-            depth,
-            compression,
-            lil,
-            aperture_sizes,
-            source_catalog_file,
-            threads,
-            stopwatch
-        )
-
-    # fetch, locate, or create photonlist, as requested
-    get_photonlist_result = get_photonlist(
+    ctx = PipeContext(
         eclipse,
         band,
+        depth,
+        compression,
         local_root,
         remote_root,
-        download,
-        recreate,
-        verbose,
-        threads,
-        raise_errors=False,
+        aperture_sizes,
+        threads=threads,
+        download=download,
+        recreate=recreate,
+        verbose=verbose,
+        source_catalog_file=source_catalog_file,
+        write=write,
+        lil=lil,
+        coregister_lightcurves=coregister_lightcurves,
+        stop_after=stop_after,
+        hdu_constructor_kwargs=hdu_constructor_kwargs,
+        min_exptime=min_exptime,
+        burst=burst,
+        chunksz=chunksz,
+        share_memory=share_memory,
+        extended_photonlist=extended_photonlist
+
     )
+    ctx.watch.start()
+    if photometry_only:
+        return execute_photometry_only(ctx)
+    return execute_full_pipeline(ctx)
+
+
+def execute_full_pipeline(ctx):
+    # SETUP AND FILE RETRIEVAL
+    if ctx.verbose > 1:
+        from gPhoton.aspect import aspect_tables
+
+        metadata = aspect_tables(ctx.eclipse, ("metadata",))[0]
+        print(
+            f"eclipse {ctx.eclipse} {ctx.band}  -- "
+            f"{metadata['obstype'][0].as_py()}; "
+            f"{metadata['legs'][0].as_py()} leg(s)"
+        )
+    if ctx.photometry_only is True:
+        return execute_photometry_only(ctx)
+
+    # fetch, locate, or create photonlist, as requested
+    get_photonlist_result = get_photonlists(ctx, raise_errors=False)
     # we received an error return code
     if isinstance(get_photonlist_result, str):
         return get_photonlist_result  # this is an error return code
     else:
-        photonpath = get_photonlist_result  # strictly explanatory renaming
-    if stop_after == "photonpipe":
+        photonpaths = get_photonlist_result  # strictly explanatory renaming
+    if ctx.stop_after == "photonpipe":
         print(
             f"stop_after='photonpipe' passed, halting; "
-            f"{round(time() - stopwatch.start_time, 2)} seconds for execution"
+            f"{round(time() - ctx.watch.start_time, 2)} "
+            f"seconds for execution"
         )
         return "return code: successful (planned stop after photonpipe)"
-    local_files, _, remote_files, _ = _set_up_paths(
-        eclipse, band, local_root, remote_root, depth, compression
-    )
-    stopwatch.click()
+    ctx.watch.click()
     from gPhoton.parquet_utils import get_parquet_stats
 
-    file_stats = get_parquet_stats(str(photonpath), ["flags", "ra"])
-    if (file_stats["flags"]["min"] > 6) or (file_stats["ra"]["max"] is None):
-        print(f"no unflagged data in {photonpath}. bailing out.")
+    ok_paths = []
+    for path in photonpaths:
+        p_stats = get_parquet_stats(str(path), ["flags", "ra"])
+        if (p_stats["flags"]["min"] > 6) or (p_stats["ra"]["max"] is None):
+            print(f"no unflagged data in {path}, not processing")
+        ok_paths.append(path)
+    if len(ok_paths) == 0:
+        print("no usable legs, bailing out.")
         return "return code: no unflagged data (stopped after photon list)"
     # MOVIE-RENDERING SECTION
     from gPhoton.moviemaker import (
-        create_images_and_movies,
-        write_moviemaker_results,
+        create_images_and_movies, write_moviemaker_results,
     )
-
-    # check to see if we're pinning our frame / lightcurve time series to
-    # the time series of existing analysis for the other band
-    fixed_start_time = check_fixed_start_time(
-        eclipse, depth, local_root, remote_root, band, coregister_lightcurves
-    )
-    # TODO: whatever led me to cast the photonlist path to str here is bad
-    results = create_images_and_movies(
-        str(photonpath),
-        depth,
-        band,
-        lil,
-        threads,
-        maxsize,
-        fixed_start_time,
-        min_exptime=min_exptime,
-    )
-    stopwatch.click()
-    if not (results["status"].startswith("successful")):
-        print(
-            f"Moviemaker pipeline unsuccessful {(results['status'])}; halting."
+    errors = []
+    for leg_step, path in zip(ctx.explode_legs(), photonpaths):
+        # for brevity:
+        # check to see if we're pinning our frame / lightcurve time series to
+        # the time series of existing analysis for the other band
+        fixed_start_time = check_fixed_start_time(leg_step)
+        if len(photonpaths) > 0:
+            print(f"processing leg {leg_step.leg + 1} of {len(photonpaths)}")
+        results = create_images_and_movies(
+            ctx, path, fixed_start_time=fixed_start_time
         )
-        return "return code: " + results["status"]
-    if stop_after == "moviemaker":
-        write_moviemaker_results(
-            results,
-            local_files,
-            depth,
-            band,
-            write,
-            maxsize,
-            stopwatch,
-            compression,
-            hdu_constructor_kwargs,
-        )
-        print(
-            f"stop_after='moviemaker' passed, halting; "
-            f"{round(time() - stopwatch.start_time, 2)} seconds for "
-            f"execution"
-        )
-        return "return code: successful (planned stop after moviemaker)"
+        ctx.watch.click()
+        if not (results["status"].startswith("successful")):
+            message = (
+                f"Moviemaker pipeline unsuccessful on leg {leg_step.leg} "
+                f"{(results['status'])}"
+            )
+            print(message)
+            errors.append(message)
+            continue
+        if not ctx.stop_after == "moviemaker":
+            from gPhoton.lightcurve import make_lightcurves
 
-    from gPhoton.lightcurve import make_lightcurves
-    photometry_result = make_lightcurves(
-        results,
-        eclipse,
-        band,
-        aperture_sizes,
-        local_files,
-        source_catalog_file,
-        threads,
-        stopwatch,
+            photometry_result = make_lightcurves(results, leg_step)
+        else:
+            photometry_result = 'successful'
+        write_result = write_moviemaker_results(results, leg_step)
+        if photometry_result != 'successful':
+            errors.append(photometry_result)
+        if write_result != 'successful':
+            errors.append(write_result)
+    print(
+        f"{round(time() - ctx.watch.start_time, 2)} seconds for execution"
     )
-
-    # CLEANUP & CLOSEOUT SECTION
-    write_result = write_moviemaker_results(
-        results,
-        local_files,
-        depth,
-        band,
-        write,
-        maxsize,
-        stopwatch,
-        compression,
-        hdu_constructor_kwargs,
-    )
-    print(f"{round(time() - stopwatch.start_time, 2)} seconds for execution")
-    failures = [
-        result
-        for result in (photometry_result, write_result)
-        if result != "successful"
-    ]
-    if len(failures) > 0:
-        return "return code: " + ";".join(failures)
+    if len(errors) > 0:
+        return "return code: " + ";".join(errors)
     return "return code: successful"
 
 
-def _look_for_raw6(
-    eclipse: int,
-    band: GalexBand,
-    download: bool,
-    names: Mapping,
-    remote_files: Optional[Mapping],
-    temp_directory: Path,
-) -> Path:
+def _look_for_raw6(ctx) -> Path:
     """
-    :param eclipse: GALEX eclipse number to run
-    :param band: "NUV" or "FUV" -- near or far ultraviolet
-    :param remote_files: mapping of paths to remote_files generated in
-    _set_up_paths(); none if there is no remote_root
-    :param temp_directory: path to scratch directory for temp copy of raw6
-    from remote_root
+    :param ctx: pipeline context object
     :return: tuple of primary filename dict, path to photon list we'll be
     using, remote filename dict, name of temp/scratch directory
     :return: path to raw6 file
     """
-
-    raw6path = Path(names["raw6"])
-    if not raw6path.exists() and (remote_files is not None):
-        if Path(remote_files["raw6"]).exists():
+    if (raw6path := Path(ctx["raw6"])).exists():
+        return raw6path
+    if ctx.remote is not None:
+        if (remoteraw6 := Path(ctx(remote=True)['raw6'])).exists():
             print(
                 f"making temp local copy of raw6 file from remote: "
-                f"{remote_files['raw6']}"
+                f"{remoteraw6}"
             )
-            raw6path = Path(shutil.copy(remote_files["raw6"], temp_directory))
-    if not raw6path.exists() and (download is True):
+            raw6path = Path(shutil.copy(remoteraw6, ctx.temp_path()))
+    if not raw6path.exists() and (ctx.download is True):
         from gPhoton.io.mast import retrieve_raw6
 
         print("downloading raw6file")
-        raw6file = retrieve_raw6(eclipse, band, raw6path)
+        raw6file = retrieve_raw6(ctx.eclipse, ctx.band, raw6path)
         if raw6file is not None:
             raw6path = Path(raw6file)
     return raw6path
 
 
-def load_moviemaker_results(
-    eclipse, band, local_root, remote_root, depth, compression, lil=True
-):
-    local_files, _, remote_files, temp_directory = _set_up_paths(
-        eclipse, band, local_root, remote_root, depth, compression
-    )
-    image = pick_and_copy_array(
-        local_files, remote_files, temp_directory, "image"
-    )
+def load_moviemaker_results(context, lil):
+    create_local_paths(context)
+    image = pick_and_copy_array(context, "image")
     if image is None:
-        print("Photometry-only run, but image not found. Bailing out.")
-        return "return code: image not found"
-    if depth is not None:
-        movie = pick_and_copy_array(
-            local_files, remote_files, temp_directory, "movie"
-        )
+        print("Photometry-only run, but image not found. Skipping.")
+        return f"leg {context.leg}: image not found"
+    if context.depth is not None:
+        movie = pick_and_copy_array(context, "movie")
         if movie is None:
-            print("Photometry-only run, but movie not found. Bailing out.")
-            return "return code: movie not found"
-    image_result = unpack_image(image, compression)
+            print("Photometry-only run, but movie not found. Skipping.")
+            return f"leg {context.leg}: movie not found"
+    image_result = unpack_image(image, context.compression)
     results = {'wcs': image_result['wcs'], 'image_dict': image_result}
-    if depth is not None:
-        results |= {'movie_dict': unpack_movie(movie, compression, lil)}
+    if context.depth is not None:
+        # noinspection PyUnboundLocalVariable
+        results |= {
+            'movie_dict': unpack_movie(movie, context.compression, lil)
+        }
     else:
         results['movie_dict'] = {}
-    return local_files, results
+    return results
 
 
-def pick_and_copy_array(
-    local_files, remote_files, temp_directory, which="image"
-):
-    if Path(local_files[which]).exists():
-        return local_files[which]
-    if remote_files is None:
+def pick_and_copy_array(context, which="image"):
+    if (array_path := Path(context[which])).exists():
+        return array_path
+    if context.remote is None:
         return None
-    if not Path(remote_files[which]).exists():
+    if not Path(context(remote=True)[which]).exists():
         return None
     print(f"making temp copy of {which} from remote")
-    shutil.copy(remote_files[which], temp_directory)
-    return Path(temp_directory, Path(local_files[which]).name)
+    shutil.copy(context(remote=True)[which], context.temp_path())
+    return Path(context.temp_path(), Path(context[which]).name)
 
 
-def _set_up_paths(
-    eclipse: int,
-    band: GalexBand,
-    data_root: str,
-    remote_root: Optional[str],
-    depth: Optional[int] = None,
-    compression: Literal["none", "rice", "gzip"] = "gzip",
-) -> tuple[dict, Path, Optional[dict], Path]:
+def create_local_paths(context: PipeContext) -> None:
     """
-    initial path setup & file retrieval step for execute_pipeline.
-    :param eclipse: GALEX eclipse number to run
-    :param band: "NUV" or "FUV" -- near or far ultraviolet
-    :param depth: how many seconds of events to use when integrating each
-    movie frame. in a sense: inverse FPS.
-    :param data_root: path to write pipeline results to
-    :param remote_root: additional path to check for preexisting raw6 and
-    photonlist files (intended primarily for multiple servers referencing a
-    shared set of remote resources)
-    :param compression: planned type of compression for movie/image files
-
-    :return: tuple of: primary filename dict, path to photon list we'll be
-    using, remote filename dict, name of temp/scratch directory
+    path initialization step for execute_pipeline.
+    :param context: PipeContext object containing pipeline options
     """
-    local_files = eclipse_to_paths(eclipse, data_root, depth, compression)[
-        band
-    ]
-    eclipse_dir = Path(list(local_files.values())[0]).parent
-    if not eclipse_dir.exists():
-        eclipse_dir.mkdir(parents=True)
-    if remote_root is not None:
-        # we're only ever looking for raw6 & photonlist, don't need depth etc.
-        remote_files = eclipse_to_paths(
-            eclipse, remote_root, depth, compression
-        )[band]
-    else:
-        remote_files = None
-    temp_directory = Path(data_root, "temp", str(eclipse).zfill(5))
-    if not temp_directory.exists():
-        temp_directory.mkdir(parents=True)
-    photonpath = Path(local_files["photonfile"])
-    return local_files, photonpath, remote_files, temp_directory
+    if not context.eclipse_path().exists():
+        context.eclipse_path().mkdir(parents=True)
+    if not context.temp_path().exists():
+        context.temp_path().mkdir(parents=True)
 
 
 def parse_photonpipe_error(value_error: ValueError) -> str:
@@ -511,22 +405,13 @@ def parse_photonpipe_error(value_error: ValueError) -> str:
     raise value_error
 
 
-def check_fixed_start_time(
-    eclipse,
-    depth,
-    local: Pathlike,
-    remote: Optional[Pathlike],
-    band: GalexBand,
-    coregister: bool,
-) -> Optional[str]:
-    if (coregister is not True) or (depth is None):
+def check_fixed_start_time(ctx: PipeContext) -> Optional[str]:
+    if (ctx.coregister_lightcurves is not True) or (ctx.depth is None):
         return None
-    other = "NUV" if band == "FUV" else "FUV"
+    other = "NUV" if ctx.band == "FUV" else "FUV"
     expfile = None
-    for location in (remote, local):
-        if location is None:
-            continue
-        exp_fn = eclipse_to_paths(eclipse, location, depth)[other]["expfile"]
+    for root in filter(None, (ctx.remote, ctx.local)):
+        exp_fn = ctx(root=root, band=other)["expfile"]
         if Path(exp_fn).exists():
             expfile = exp_fn
             break
@@ -548,17 +433,19 @@ def check_fixed_start_time(
 def load_array_file(array_file, compression):
     import astropy.wcs
     import fitsio
-
-    hdul = fitsio.FITS(array_file)
-    offset = 0 if compression != "rice" else 1
-    cnt_hdu, flag_hdu, edge_hdu = (hdul[i + offset] for i in range(3))
-    header = dict(cnt_hdu.read_header())
-    tranges = keyfilter(lambda k: re.match(r"T[01]", k), header)
+    from gPhoton.io.fits_utils import AgnosticHDUL, pyfits_open_igzip
+    if compression == 'gzip':
+        hdul = AgnosticHDUL(pyfits_open_igzip(array_file))
+    else:
+        hdul = AgnosticHDUL(fitsio.FITS(array_file))
+    cnt_hdu, flag_hdu, edge_hdu = (hdul[i + 1] for i in range(3))
+    headerdict = dict(cnt_hdu.header)
+    tranges = keyfilter(lambda k: re.match(r"T[01]", k), headerdict)
     tranges = tuple(chunked(tranges.values(), 2))
     exptimes = tuple(
-        keyfilter(lambda k: re.match(r"EXPT_", k), header).values()
+        keyfilter(lambda k: re.match(r"EXPT_", k), headerdict).values()
     )
-    wcs = astropy.wcs.WCS(header)
+    wcs = astropy.wcs.WCS(cnt_hdu.header)
     results = {"exptimes": exptimes, "tranges": tranges, "wcs": wcs}
     return (cnt_hdu, edge_hdu, flag_hdu), results
 
@@ -569,18 +456,23 @@ def unpack_movie(movie_file, compression, lil):
     if lil is True:
         import scipy.sparse
 
+        # noinspection PyUnresolvedReferences
         constructor = scipy.sparse.coo_matrix
     else:
         constructor = identity
     for hdu, plane in zip(hdus, planes):
         for frame_ix in range(len(results['exptimes'])):
-            plane.append(constructor(hdu[frame_ix, :, :][0]))
+            # deal with array slice difference between fitsio and astropy
+            cut = hdu[frame_ix, :, :]
+            if len(cut.shape) == 3:
+                cut = cut[0]
+            plane.append(constructor(cut))
     return results | {"cnt": planes[0], "flag": planes[1], "edge": planes[2]}
 
 
 def unpack_image(image_file, compression):
     hdus, results = load_array_file(image_file, compression)
     planes = {
-        "cnt": hdus[0].read(), "flag": hdus[1].read(), "edge": hdus[2].read()
+        "cnt": hdus[0].data, "flag": hdus[1].data, "edge": hdus[2].data
     }
     return results | planes

@@ -1,4 +1,4 @@
-from numba import jit_module
+import numba as nb
 import numpy as np
 
 import gPhoton.constants as c
@@ -49,39 +49,33 @@ def find_null_indices(
 def unfancy_detector_coordinates(
     band, dx, dy, flags, xp_as, xshift, yp_as, yshift
 ):
-    flip = {"NUV": 1.0, "FUV": -1.0}[band]
+    flip = {"NUV": 1, "FUV": -1}[band]
     # TODO: is xi always 0? so can half of this be removed?
     #  probably? go look at the C code
     # The detectors aren't oriented the same way.
     y_component = (yp_as + dy + yshift) * flip * 10
     x_component = (xp_as + dx + xshift) * flip * 10
-    xi = c.XI_XSC * y_component + c.XI_YSC * x_component
+    xi = nb.f4(c.XI_XSC) * y_component + nb.f4(c.XI_YSC) * x_component
     # TODO, similarly with eta_ysc?
-    eta = c.ETA_XSC * y_component + c.ETA_YSC * x_component
+    eta = nb.f4(c.ETA_XSC) * y_component + nb.f4(c.ETA_YSC) * x_component
     col, row = xi_eta_to_col_row(xi, eta)
     cut = (
-        (col > 0.0)
-        & (col < 799.0)
-        & (row > 0.0)
-        & (row < 799.0)
+        (col > 0)
+        & (col < 799)
+        & (row > 0)
+        & (row < 799)
         & (flags == 0)
     )
     flags[~cut] = 6
-    ok_indices = np.nonzero(cut)[0]
-    return col, row, xi, eta, cut, ok_indices
+    return xi, eta, col, row, flags
 
 
 def xi_eta_to_col_row(xi, eta):
-    col = (
-        ((xi / 36000.0) / (c.DETSIZE / 2.0) * c.FILL_VALUE + 1.0)
-        * c.PIXELS_PER_AXIS
-        / 2
-    )
-    row = (
-        ((eta / 36000.0) / (c.DETSIZE / 2.0) * c.FILL_VALUE + 1.0)
-        * c.PIXELS_PER_AXIS
-        / 2
-    )
+    half_det = nb.f4(c.DETSIZE / 2)
+    fill = nb.f4(c.FILL_VALUE)
+    half_pix = nb.f4(c.PIXELS_PER_AXIS / 2)
+    col = ((xi / 36000) / half_det * fill + 1) * half_pix
+    row = ((eta / 36000) / half_det * fill + 1) * half_pix
     return col, row
 
 
@@ -189,4 +183,4 @@ def float_between_wiggled_points(blt_u, floor_xy, wig_xy, xya_ix):
     return np.array(wigix) * (1 - blt_u) + np.array(wigix1) * blt_u
 
 
-jit_module(nopython=True, cache=True)
+nb.jit_module(nopython=True, cache=True)

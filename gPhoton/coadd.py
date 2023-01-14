@@ -98,6 +98,7 @@ def zero_flag_and_edge(cnt, flag, edge):
 
 # TODO: this version is compatible with RICE compression, but is relatively
 #  inefficient. needs to be juiced up.
+# TODO: update for everything-has-four-HDUs
 def project_to_shared_wcs(
     fits_path: Union[str, Path],
     shared_wcs: astropy.wcs.WCS,

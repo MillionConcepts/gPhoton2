@@ -22,6 +22,7 @@ from gPhoton.calibrate import compute_exptime
 from gPhoton.coords.wcs import make_bounding_wcs
 from gPhoton.parquet_utils import parquet_to_ndarray
 from gPhoton.pretty import print_inline
+from gPhoton.reference import PipeContext
 from gPhoton.sharing import (
     reference_shared_memory_arrays,
     slice_into_memory,
@@ -67,7 +68,7 @@ def make_frame(
     )
     if booleanize:
         return booleanize_for_fits(frame)
-    return frame
+    return frame.astype("f4")
 
 
 def shared_compute_exptime(
@@ -295,90 +296,114 @@ def populate_fits_header(band, wcs, tranges, exptimes):
     return header
 
 
+def initialize_fits_file(array_path):
+    if Path(array_path).exists():
+        Path(array_path).unlink()
+    stream = fitsio.FITS(array_path, "rw")
+    stream.write_image(None)
+    stream.close()
+
+
 def write_fits_array(
-    band,
-    depth,
-    moviefile,
-    movie_dict,
-    wcs,
-    compression: Literal["gzip", "rice", "none"] = "gzip",
-    clean_up=False,
-    fitsio_write_kwargs = None
+    ctx: PipeContext, arraymap, wcs, is_movie=True, clean_up=True
 ):
     """
     convert an intermediate movie or image dictionary, perhaps previously
     used for photometry, into a FITS object; write it to disk; compress it
     using the best available gzip-compatible compression binary
     """
-    if fitsio_write_kwargs is None:
-        fitsio_write_kwargs = {}
-    # TODO, maybe: rewrite this to have to not assemble the primary hdu in
-    #  order to make the header
-    header = populate_fits_header(
-        band, wcs, movie_dict["tranges"], movie_dict["exptimes"]
-    )
-    if depth is None:
-        movie_name = "full-depth image"
+    if is_movie is False:
+        array_name = "full-depth image"
     else:
-        movie_name = f"{depth}-second depth movie"
-    movie_path = Path(moviefile)
-    if movie_path.exists():
-        print(f"overwriting {movie_path} with {movie_name}")
-        movie_path.unlink()
-    else:
-        print(f"writing {movie_name} to {movie_path}")
+        array_name = f"{ctx.depth}-second depth movie"
+    outpaths = []
     # TODO: write names / descriptions into the headers
-    for key in ["cnt", "flag", "edge"]:
-        print(f"writing {key} map")
-        add_movie_to_fits_file(
-            movie_path,
-            movie_dict[key],
-            header,
-            compression,
-            **fitsio_write_kwargs
-        )
-        if clean_up:
-            del movie_dict[key]
+    if (ctx.burst is True) and (is_movie is True):
+        # burst mode writes each frame as a separate file w/cnt, flag, and edge
+        for frame in range(len(arraymap["cnt"])):
+            array_path = ctx(frame=frame)["movie"].replace(".gz", "")
+            print(f"writing {array_name} frame {frame} to {array_path}")
+            initialize_fits_file(array_path)
+            for key in ["cnt", "flag", "edge"]:
+                print(f"writing frame {frame} {key} map")
+                header = populate_fits_header(
+                    ctx.band, wcs, arraymap["tranges"], arraymap["exptimes"]
+                )
+                add_array_to_fits_file(
+                    array_path,
+                    arraymap[key][frame],
+                    header,
+                    ctx.compression,
+                    **ctx.hdu_constructor_kwargs
+                )
+            outpaths.append(array_path)
+    else:
+        array_file = ctx["movie"] if is_movie is True else ctx["image"]
+        array_path = Path(array_file.replace(".gz", ""))
+        print(f"writing {array_name} to {array_path}")
+        initialize_fits_file(array_path)
+        for key in ["cnt", "flag", "edge"]:
+            print(f"writing {key} map")
+            header = populate_fits_header(
+                ctx.band, wcs, arraymap["tranges"], arraymap["exptimes"]
+            )
+            add_array_to_fits_file(
+                array_path,
+                arraymap[key],
+                header,
+                ctx.compression,
+                **ctx.hdu_constructor_kwargs
+            )
+            if clean_up:
+                del arraymap[key]
+        outpaths = [array_path]
     if clean_up:
-        del movie_dict
-    if compression != "gzip":
+        del arraymap
+    if ctx.compression != "gzip":
         return
-    gzip_path = Path(f"{movie_path}.gz")
-    if gzip_path.exists():
-        print(f"overwriting {gzip_path}")
-        gzip_path.unlink()
-    print(f"gzipping {movie_path}")
-    # try various gzip commands in order of perceived goodness
-    for gzipper, gzip_command in (
-        ("igzip", [movie_path, "-T 4", "--rm"]),
-        ("libdeflate_gzip", [movie_path]),
-        ("gzip", [movie_path]),
-    ):
-        try:
-            getattr(sh, gzipper)(*gzip_command)
-            break
-        except sh.CommandNotFound:
-            continue
+    for path in outpaths:
+        gzip_path = Path(f"{path}.gz")
+        if gzip_path.exists():
+            print(f"overwriting {gzip_path}")
+            gzip_path.unlink()
+        print(f"gzipping {path}")
+        # try various gzip commands in order of perceived goodness
+        for gzipper, gzip_command in (
+            ("igzip", [path, "-T 4", "--rm"]),
+            ("libdeflate_gzip", [path]),
+            ("gzip", [path]),
+        ):
+            try:
+                getattr(sh, gzipper)(*gzip_command)
+                break
+            except sh.CommandNotFound:
+                continue
 
 
-def add_movie_to_fits_file(
+def add_array_to_fits_file(
     fits_path,
-    movie,
+    array,
     header,
     compression_type: Literal["none", "gzip", "rice"] = "none",
     **fitsio_write_kwargs
 ):
-    if isinstance(movie[0], scipy.sparse.spmatrix):
-        data = np.stack([frame.toarray() for frame in movie])
+    if compression_type not in ('none', 'gzip', 'rice'):
+        raise ValueError(f"{compression_type} is not supported.")
+    if isinstance(array, np.ndarray):
+        data = array
+    elif array.__class__.__module__.startswith('scipy.sparse'):
+        data = array.toarray()
+    elif array[0].__class__.__module__.startswith('scipy.sparse'):
+        data = np.stack([frame.toarray() for frame in array])
     else:
-        data = np.stack(movie)
-    fits_stream = fitsio.FITS(fits_path, "rw")
-
+        raise ValueError("I don't understand this so-called 'array'.")
     # this pipeline supports monolithic gzipping after file construction,
-    # not gzipping of individual HDUs.
-    if compression_type in ("none", "gzip"):
-        fits_stream.write(data, header=dict(header), **fitsio_write_kwargs)
-    elif compression_type == "rice":
+    # not gzipping individual HDUs.
+    fits_stream = fitsio.FITS(fits_path, "rw")
+    try:
+        if compression_type in ("none", "gzip"):
+            fits_stream.write(data, header=dict(header), **fitsio_write_kwargs)
+            return
         if 'tile_size' in fitsio_write_kwargs:
             tile_size = fitsio_write_kwargs.pop('tile_size')
         else:
@@ -393,47 +418,14 @@ def add_movie_to_fits_file(
             qlevel = fitsio_write_kwargs.pop('qlevel')
         else:
             qlevel = 10
-
         fits_stream.write(
             data,
             header=dict(header),
             compress='RICE',
             tile_dims=tile_size,
             qlevel=qlevel,
-            qmethod=2
-            # **fitsio_write_kwargs
+            qmethod=2,
+            **fitsio_write_kwargs
         )
-    else:
+    finally:
         fits_stream.close()
-        raise ValueError(f"unsupported compression type {compression_type}")
-    fits_stream.close()
-
-
-def predict_movie_memory(imsz, n_frames, nbytes=8):
-    """
-    predict memory size in bytes of movie during write. nbytes is equal to the
-    per-element size of _only_ the largest plane, which should be the cntmap
-    with the current execute_pipeline configuration. this will be something of
-    an undercount due to handling costs.
-    """
-    return imsz[0] * imsz[1] * n_frames * nbytes
-
-
-def predict_sparse_movie_memory(imsz, n_frames, threads, nbytes=17):
-    """
-    nbytes here is equal to the sum of the per-element sizes of all movie
-    planes -- cnt / flag / edge, in the worst-case where one has not yet
-    been reduced to uint8.
-    sparsification means that, for large arrays, the process will usually
-    get cheaper as it goes on unless there are a truly huge number of frames,
-    so we're sort of ignoring framesize in that calculation for now.
-    """
-    if threads is None:
-        threads = 1
-    threads = min(threads, n_frames)
-    framesize = imsz[0] * imsz[1] * nbytes
-    # we need to be able to hold one full frame in memory for each thread
-    base_cost = framesize * threads
-    # and also there's some small amount of overhead from frames
-    slice_cost = n_frames * (15 * 1024 ** 2)
-    return base_cost + slice_cost
