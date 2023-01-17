@@ -27,7 +27,7 @@ def boundaries_of_a_square(x: float, y: float, size: float):
     return x - size / 2, x + size / 2, y - size / 2, y + size / 2
 
 
-def galex_sky_box(ra: float, dec: float, arcseconds: float = 3937.5):
+def galex_sky_box(ra: float, dec: float, arcseconds: float = 1968.75):
     """
     return eclipse numbers of all GALEX visits such that ra, dec is within
     `arcseconds` of a box bounding their recorded boresight positions
@@ -55,7 +55,7 @@ def switchcount(seq, comparator=eq):
     return output
 
 
-def galex_cone_search(ra: float, dec: float, arcseconds=3937.5, legs=False):
+def galex_cone_search(ra: float, dec: float, arcseconds=1968.75, legs=False):
     ra, dec, cut = map(np.deg2rad, (ra, dec, arcseconds/3600))
     bore = parquet.read_table(
         TABLE_PATHS['boresight'], columns=['eclipse', 'ra0', 'dec0']
@@ -67,13 +67,17 @@ def galex_cone_search(ra: float, dec: float, arcseconds=3937.5, legs=False):
     bore_match = bore.loc[offsets < cut]
     meta = parquet.read_table(TABLE_PATHS['metadata']).to_pandas()
     meta_match = meta.loc[meta['eclipse'].isin(bore_match['eclipse'])]
+    bore_match = bore_match.copy()
+    bore_match['ra0'] = np.rad2deg(bore_match['ra0'])
+    bore_match['dec0'] = np.rad2deg(bore_match['dec0'])
+    bore_match['distance'] = np.rad2deg(offsets)
     if legs is False:
-        return meta_match
+        return meta_match, bore_match
     legs, meta_match = [], meta_match.copy()
     for eclipse in meta_match['eclipse']:
         legs.append(bore_match.loc[bore_match['eclipse'] == eclipse]['leg'].tolist())
     meta_match['in_legs'] = legs
-    return meta_match
+    return meta_match, bore_match
 
 
 def eclipses_near_object(object_name: str, arcseconds: float, verbose=True):
