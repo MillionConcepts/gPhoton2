@@ -8,6 +8,7 @@ import warnings
 from operator import eq
 
 import numpy as np
+import pandas as pd
 from astropy.coordinates import angular_separation
 from pyarrow import parquet
 
@@ -55,29 +56,29 @@ def switchcount(seq, comparator=eq):
     return output
 
 
-def galex_cone_search(ra: float, dec: float, arcseconds=1968.75, legs=False):
-    ra, dec, cut = map(np.deg2rad, (ra, dec, arcseconds/3600))
+def galex_cone_search(ra: float, dec: float, arcseconds=2250, legs=False):
     bore = parquet.read_table(
         TABLE_PATHS['boresight'], columns=['eclipse', 'ra0', 'dec0']
     ).to_pandas()
-    bore['ra0'], bore['dec0'] = map(np.deg2rad, (bore['ra0'], bore['dec0']))
-    offsets = angular_separation(bore['ra0'], bore['dec0'], ra, dec)
+    offsets = angular_separation(
+        *tuple(map(np.deg2rad, (bore['ra0'], bore['dec0'], ra, dec)))
+    )
     if legs is True:
         bore['leg'] = switchcount(bore['eclipse'])
-    bore_match = bore.loc[offsets < cut]
+    bore_match = bore.loc[np.rad2deg(offsets) * 3600 < arcseconds]
     meta = parquet.read_table(TABLE_PATHS['metadata']).to_pandas()
     meta_match = meta.loc[meta['eclipse'].isin(bore_match['eclipse'])]
-    bore_match = bore_match.copy()
-    bore_match['ra0'] = np.rad2deg(bore_match['ra0'])
-    bore_match['dec0'] = np.rad2deg(bore_match['dec0'])
-    bore_match['distance'] = np.rad2deg(offsets)
     if legs is False:
-        return meta_match, bore_match
+        return meta_match
     legs, meta_match = [], meta_match.copy()
     for eclipse in meta_match['eclipse']:
-        legs.append(bore_match.loc[bore_match['eclipse'] == eclipse]['leg'].tolist())
+        legs.append(
+            bore_match.loc[
+                bore_match['eclipse'] == eclipse
+            ]['leg'].tolist()
+        )
     meta_match['in_legs'] = legs
-    return meta_match, bore_match
+    return meta_match
 
 
 def eclipses_near_object(object_name: str, arcseconds: float, verbose=True):
