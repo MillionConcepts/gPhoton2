@@ -21,8 +21,8 @@ its requirements by feeding the provided [environment.yml](environment.yml)
 file to `conda` or `mamba`. If you have `git` and `mamba` 
 installed, this might be as easy as (modulo environment differences):
 ```
-git clone https://github.com/MillionConcepts/gphoton_working.git
-cd gphoton_working
+git clone https://github.com/MillionConcepts/gPhoton2.git
+cd gphoton2
 mamba env create -f environment.yml
 ```
 
