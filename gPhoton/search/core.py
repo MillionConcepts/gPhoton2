@@ -5,7 +5,11 @@ meet specific criteria.
 from inspect import getmembers
 import sys
 import warnings
+from operator import eq
 
+import numpy as np
+import pandas as pd
+from astropy.coordinates import angular_separation
 from pyarrow import parquet
 
 from gPhoton.aspect import TABLE_PATHS
@@ -24,7 +28,7 @@ def boundaries_of_a_square(x: float, y: float, size: float):
     return x - size / 2, x + size / 2, y - size / 2, y + size / 2
 
 
-def galex_sky_box(ra: float, dec: float, arcseconds: float):
+def galex_sky_box(ra: float, dec: float, arcseconds: float = 1968.75):
     """
     return eclipse numbers of all GALEX visits such that ra, dec is within
     `arcseconds` of a box bounding their recorded boresight positions
@@ -41,6 +45,40 @@ def galex_sky_box(ra: float, dec: float, arcseconds: float):
         ((abs(ra_dmin) < deg) | (abs(ra_dmax) < deg))
         & ((abs(dec_dmin) < deg) | (abs(dec_dmax) < deg))
     ]
+
+
+def switchcount(seq, comparator=eq):
+    output, count, last = [0], 0, seq[0]
+    for val in seq[1:]:
+        count = count + 1 if comparator(val, last) else 0
+        output.append(count)
+        last = val
+    return output
+
+
+def galex_cone_search(ra: float, dec: float, arcseconds=2250, legs=False):
+    bore = parquet.read_table(
+        TABLE_PATHS['boresight'], columns=['eclipse', 'ra0', 'dec0']
+    ).to_pandas()
+    offsets = angular_separation(
+        *tuple(map(np.deg2rad, (bore['ra0'], bore['dec0'], ra, dec)))
+    )
+    if legs is True:
+        bore['leg'] = switchcount(bore['eclipse'])
+    bore_match = bore.loc[np.rad2deg(offsets) * 3600 < arcseconds]
+    meta = parquet.read_table(TABLE_PATHS['metadata']).to_pandas()
+    meta_match = meta.loc[meta['eclipse'].isin(bore_match['eclipse'])]
+    if legs is False:
+        return meta_match
+    legs, meta_match = [], meta_match.copy()
+    for eclipse in meta_match['eclipse']:
+        legs.append(
+            bore_match.loc[
+                bore_match['eclipse'] == eclipse
+            ]['leg'].tolist()
+        )
+    meta_match['in_legs'] = legs
+    return meta_match
 
 
 def eclipses_near_object(object_name: str, arcseconds: float, verbose=True):
