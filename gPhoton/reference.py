@@ -352,3 +352,27 @@ class PipeContext:
         kdict = self.asdict()
         del kdict['leg']
         return [PipeContext(leg=leg, **kdict) for leg in legs]
+
+
+def check_eclipse(eclipse):
+    from gPhoton.aspect import aspect_tables
+    e_warn, e_error = [], []
+    if eclipse > 47000:
+        e_error.append("CAUSE data w/eclipse>47000 are not yet supported.")
+    meta = aspect_tables(eclipse, ("metadata",))[0]
+    if len(meta) == 0:
+        e_error.append(f"No metadata found for e{eclipse}.")
+        return e_warn, e_error
+    obstype = meta['obstype'].to_pylist()[0]
+    actual, nominal = titular_legs(eclipse)
+    if obstype == 'CAI':
+        e_error.append('CAI mode is not yet supported.')
+    elif (obstype in ("MIS", "GII")) and (actual == 1) and (nominal > 0):
+        e_error.append('petal pattern is not yet supported.')
+    elif actual != nominal:
+        e_warn.append(
+            f"Note: e{eclipse} observation-level metadata specifies "
+            f"{nominal} legs, but only {actual} appear(s) to have "
+            f"been completed."
+        )
+    return e_warn, e_error

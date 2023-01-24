@@ -21,8 +21,7 @@ from cytoolz import identity, keyfilter
 from more_itertools import chunked
 
 import gPhoton.reference
-from gPhoton.aspect import aspect_tables
-from gPhoton.reference import Stopwatch, PipeContext
+from gPhoton.reference import PipeContext, check_eclipse
 from gPhoton.types import GalexBand
 
 # oh no! divide by zero! i am very distracting!
@@ -91,15 +90,14 @@ def find_photonfiles(context: PipeContext):
 def execute_photometry_only(ctx: PipeContext):
     errors = []
     for leg_step in ctx.explode_legs():
-        loaded_results = load_moviemaker_results(leg_step, ctx.lil)
+        loaded_arrays = load_moviemaker_results(leg_step, ctx.lil)
         # this is an error code
-        if isinstance(loaded_results, str):
-            errors.append(loaded_results)
+        if isinstance(loaded_arrays, str):
+            errors.append(loaded_arrays)
             continue
-        output_filenames, results = loaded_results
         from gPhoton.lightcurve import make_lightcurves
 
-        result = make_lightcurves(results, leg_step)
+        result = make_lightcurves(loaded_arrays, leg_step)
         if result != "successful":
             errors.append(result)
     print(
@@ -108,27 +106,6 @@ def execute_photometry_only(ctx: PipeContext):
     if len(errors) > 0:
         return "return code: " + ";".join(errors)
     return "return code: successful"
-
-
-def check_eclipse(eclipse, verbose=1):
-    e_warn, e_error = [], []
-    if eclipse > 47000:
-        e_error.append("CAUSE data w/eclipse>47000 are not yet supported.")
-    meta = aspect_tables(eclipse, ("metadata",))[0]
-    if len(meta) == 0:
-        e_error.append(f"No metadata found for e{eclipse}.")
-    if verbose < 1:
-        return e_warn, e_error
-    if len(meta) > 0:
-        actual, nominal = gPhoton.reference.titular_legs(eclipse)
-
-        if actual != nominal:
-            e_warn.append(
-                f"Note: e{eclipse} observation-level metadata specifies "
-                f"{nominal} legs, but only {actual} appear(s) to have "
-                f"been completed."
-            )
-    return e_warn, e_error
 
 
 # TODO, maybe: add a check somewhere for: do we have information regarding
