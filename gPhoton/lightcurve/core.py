@@ -21,14 +21,20 @@ def make_lightcurves(sky_arrays: Mapping, ctx: PipeContext):
     else:
         sources = None
     source_table = find_sources(
-        ctx.eclipse,
-        ctx.band,
-        str(ctx.eclipse_path()),
-        sky_arrays["image_dict"],
-        sky_arrays["wcs"],
-        source_table=sources,
+        ctx, sky_arrays["image_dict"], sky_arrays["wcs"], source_table=sources,
     )
     ctx.watch.click()
+    if ctx.do_background is True:
+        from gPhoton.background import make_background_mask
+
+        print("making background mask")
+        sky_arrays['image_dict']["bg_mask"] = make_background_mask(
+            source_table,
+            sky_arrays['image_dict']['cnt'].shape,
+            **ctx.bg_params,
+            threads=ctx.threads
+        )
+        ctx.watch.click()
     # failure messages due to low exptime or no data
     if isinstance(source_table, str):
         return source_table

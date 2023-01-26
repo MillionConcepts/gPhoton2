@@ -13,11 +13,13 @@ dependencies:
   - numpy
   - pandas
   - photutils
+  - pillow
   - pip
   - pyarrow
   - requests
   - rich
   - scipy
+  - sympy
   - sh
   # optional, used in pipeline CLI
   - fire

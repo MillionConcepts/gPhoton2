@@ -21,8 +21,7 @@ from cytoolz import identity, keyfilter
 from more_itertools import chunked
 
 import gPhoton.reference
-from gPhoton.aspect import aspect_tables
-from gPhoton.reference import Stopwatch, PipeContext
+from gPhoton.reference import PipeContext, check_eclipse
 from gPhoton.types import GalexBand
 
 # oh no! divide by zero! i am very distracting!
@@ -91,15 +90,14 @@ def find_photonfiles(context: PipeContext):
 def execute_photometry_only(ctx: PipeContext):
     errors = []
     for leg_step in ctx.explode_legs():
-        loaded_results = load_moviemaker_results(leg_step, ctx.lil)
+        loaded_arrays = load_moviemaker_results(leg_step, ctx.lil)
         # this is an error code
-        if isinstance(loaded_results, str):
-            errors.append(loaded_results)
+        if isinstance(loaded_arrays, str):
+            errors.append(loaded_arrays)
             continue
-        output_filenames, results = loaded_results
         from gPhoton.lightcurve import make_lightcurves
 
-        result = make_lightcurves(results, leg_step)
+        result = make_lightcurves(loaded_arrays, leg_step)
         if result != "successful":
             errors.append(result)
     print(
@@ -108,27 +106,6 @@ def execute_photometry_only(ctx: PipeContext):
     if len(errors) > 0:
         return "return code: " + ";".join(errors)
     return "return code: successful"
-
-
-def check_eclipse(eclipse, verbose=1):
-    e_warn, e_error = [], []
-    if eclipse > 47000:
-        e_error.append("CAUSE data w/eclipse>47000 are not yet supported.")
-    meta = aspect_tables(eclipse, ("metadata",))[0]
-    if len(meta) == 0:
-        e_error.append(f"No metadata found for e{eclipse}.")
-    if verbose < 1:
-        return e_warn, e_error
-    if len(meta) > 0:
-        actual, nominal = gPhoton.reference.titular_legs(eclipse)
-
-        if actual != nominal:
-            e_warn.append(
-                f"Note: e{eclipse} observation-level metadata specifies "
-                f"{nominal} legs, but only {actual} appear(s) to have "
-                f"been completed."
-            )
-    return e_warn, e_error
 
 
 # TODO, maybe: add a check somewhere for: do we have information regarding
@@ -150,14 +127,17 @@ def execute_pipeline(
     coregister_lightcurves: bool = False,
     stop_after: Optional[Literal["photonpipe", "moviemaker"]] = None,
     compression: Literal["none", "gzip", "rice"] = "gzip",
-    hdu_constructor_kwargs: Mapping = MappingProxyType({}),
+    write_kwargs: Mapping = MappingProxyType({}),
     min_exptime: Optional[float] = None,
     photometry_only: bool = False,
     burst: bool = False,
     chunksz: int = 1000000,
     share_memory: Optional[bool] = None,
     extended_photonlist: bool = False,
-    override_eclipse_limits: bool = False
+    override_eclipse_limits: bool = False,
+    daophot_params: Optional[Mapping] = None,
+    bg_params: Optional[Mapping] = None,
+    do_background: bool = False
 ) -> str:
     """
     Args:
@@ -207,7 +187,7 @@ def execute_pipeline(
         compression: what sort of compression should we apply to movies and
             images? "gzip" is monolithic gzip; "rice" is RICE_1 (for the
             cntmap, lossy) tile compression; "none" is no compression at all.
-        hdu_constructor_kwargs: optional mapping of kwargs to pass to
+        write_kwargs: optional mapping of kwargs to pass to
             `fitsio.FITS.write` (for instance, tile compression parameters)
         min_exptime: minimum effective exposure time to run image/movie
             and lightcurve generation. None means no lower bound.
@@ -238,6 +218,7 @@ def execute_pipeline(
             print("Bailing out.")
             return f"return code: {';'.join(e_error)}"
         print("override_eclipse_limits=True, continuing anyway")
+    # note: i wrote this in this tedious way to make the CLI hook more coherent
     ctx = PipeContext(
         eclipse,
         band,
@@ -255,12 +236,15 @@ def execute_pipeline(
         lil=lil,
         coregister_lightcurves=coregister_lightcurves,
         stop_after=stop_after,
-        hdu_constructor_kwargs=hdu_constructor_kwargs,
+        write_kwargs=write_kwargs,
         min_exptime=min_exptime,
         burst=burst,
         chunksz=chunksz,
         share_memory=share_memory,
-        extended_photonlist=extended_photonlist
+        extended_photonlist=extended_photonlist,
+        daophot_params=daophot_params,
+        bg_params=bg_params,
+        do_background=do_background
     )
     ctx.watch.start()
     if photometry_only:

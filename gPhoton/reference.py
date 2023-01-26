@@ -186,6 +186,7 @@ def eclipse_to_paths(
         "raw6": f"{prefix}-raw6.fits.gz",
         "photonfile": f"{prefix}-b{leg}.parquet",
         "image": f"{prefix}-tfull-b{leg}-image-{comp}{ext}",
+        "bg_mask": f"{prefix}-tfull-b{leg}-bmask-{comp}{ext}",
         # TODO: frames, etc. -- decide exactly how once we are using
         #  extended source detection on movies
         "extended_catalog": f"{prefix}-b{leg}-extended-sources.csv",
@@ -201,6 +202,15 @@ def eclipse_to_paths(
             "photomfile"
         ] = f"{prefix}-tfull-b{leg}-image-photom-{aper}.csv"
     return file_dict
+
+
+def maybe_default(val, param):
+    defaults = {
+        'write': {'image': True, 'movie': True},
+        'daophot_params': {'threshold': 0.004, 'fwhm': 6, 'sharplo': 0.05},
+        'bg_params': {'threshold': 0.004, 'fwhm': 16, 'min_radius': 2}
+    }
+    return val if val is not None else defaults[param]
 
 
 class PipeContext:
@@ -224,20 +234,25 @@ class PipeContext:
         recreate: bool = False,
         verbose: int = 2,
         source_catalog_file: Optional[str] = None,
-        write: Mapping = MappingProxyType({"image": True, "movie": True}),
+        write: Optional[Mapping] = None,
         lil: bool = True,
         coregister_lightcurves: bool = False,
         stop_after: Optional[Literal["photonpipe", "moviemaker"]] = None,
         min_exptime: Optional[float] = None,
         photometry_only: bool = False,
         burst: bool = False,
-        hdu_constructor_kwargs: Mapping = MappingProxyType({}),
+        write_kwargs: Optional[Mapping] = None,
         threads: Optional[int] = None,
         watch: Optional[Stopwatch] = None,
         share_memory: Optional[bool] = None,
         chunksz: Optional[int] = 1000000,
-        extended_photonlist: bool = False
+        extended_photonlist: bool = False,
+        daophot_params: Optional[Mapping] = None,
+        bg_params: Optional[Mapping] = None,
+        do_background: bool = False
     ):
+        # note: i expressed this in a tedious, explicit fashion to make
+        # introspection easier
         self.eclipse = eclipse
         self.band = band
         self.depth = depth
@@ -252,19 +267,24 @@ class PipeContext:
         self.recreate = recreate
         self.verbose = verbose
         self.source_catalog_file = source_catalog_file
-        self.write = write
+        self.write = maybe_default(write, 'write')
         self.lil = lil
         self.coregister_lightcurves = coregister_lightcurves
         self.stop_after = stop_after
         self.min_exptime = min_exptime
         self.photometry_only = photometry_only
         self.burst = burst
-        self.hdu_constructor_kwargs = hdu_constructor_kwargs
+        self.write_kwargs = maybe_default(
+            write_kwargs, 'write_kwargs'
+        )
         self.threads = threads
         self.watch = watch if watch is not None else Stopwatch()
         self.extended_photonlist = extended_photonlist
         self.chunksz = chunksz
         self.share_memory = share_memory
+        self.daophot_params = maybe_default(daophot_params, 'daophot_params')
+        self.bg_params = maybe_default(bg_params, 'bg_params')
+        self.do_background = do_background
 
     def __repr__(self):
         return (
@@ -315,12 +335,15 @@ class PipeContext:
             "min_exptime": self.min_exptime,
             "photometry_only": self.photometry_only,
             "burst": self.burst,
-            "hdu_constructor_kwargs": self.hdu_constructor_kwargs,
+            "write_kwargs": self.write_kwargs,
             "threads": self.threads,
             "watch": self.watch,
             "chunksz": self.chunksz,
             "share_memory": self.share_memory,
-            "extended_photonlist": self.extended_photonlist
+            "extended_photonlist": self.extended_photonlist,
+            "daophot_params": self.daophot_params,
+            "bg_params": self.bg_params,
+            "do_background": self.do_background
         }
 
     def eclipse_path(self, remote=False):
@@ -352,3 +375,27 @@ class PipeContext:
         kdict = self.asdict()
         del kdict['leg']
         return [PipeContext(leg=leg, **kdict) for leg in legs]
+
+
+def check_eclipse(eclipse):
+    from gPhoton.aspect import aspect_tables
+    e_warn, e_error = [], []
+    if eclipse > 47000:
+        e_error.append("CAUSE data w/eclipse>47000 are not yet supported.")
+    meta = aspect_tables(eclipse, ("metadata",))[0]
+    if len(meta) == 0:
+        e_error.append(f"No metadata found for e{eclipse}.")
+        return e_warn, e_error
+    obstype = meta['obstype'].to_pylist()[0]
+    actual, nominal = titular_legs(eclipse)
+    if obstype == 'CAI':
+        e_error.append('CAI mode is not yet supported.')
+    elif (obstype in ("MIS", "GII")) and (actual == 1) and (nominal > 0):
+        e_error.append('petal pattern is not yet supported.')
+    elif actual != nominal:
+        e_warn.append(
+            f"Note: e{eclipse} observation-level metadata specifies "
+            f"{nominal} legs, but only {actual} appear(s) to have "
+            f"been completed."
+        )
+    return e_warn, e_error

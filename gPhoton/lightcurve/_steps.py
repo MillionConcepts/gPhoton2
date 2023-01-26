@@ -18,7 +18,21 @@ from photutils import DAOStarFinder, CircularAperture, aperture_photometry
 import scipy.sparse
 
 from gPhoton.pretty import print_inline
+from gPhoton.reference import PipeContext
 from gPhoton.types import Pathlike
+
+
+DAOPHOT_COLS = (
+    'id',
+    'xcentroid',
+    'ycentroid',
+    'sharpness',
+    'roundness1',
+    'roundness2',
+    'npix',
+    'data_peak',
+    'convdata_peak'
+)
 
 
 def count_full_depth_image(
@@ -54,32 +68,25 @@ def count_full_depth_image(
 
 
 def find_sources(
-    eclipse: int,
-    band,
-    datapath: Union[str, Path],
+    ctx,
     image_dict,
     wcs,
     source_table: Optional[pd.DataFrame] = None
 ):
     # TODO, maybe: pop these into a handler function
     if not image_dict["cnt"].max():
-        print(f"{eclipse} appears to contain nothing in {band}.")
-        Path(datapath, f"No{band}").touch()
-        return f"{eclipse} appears to contain nothing in {band}."
+        print(f"{ctx.eclipse} appears to contain nothing in {ctx.band}.")
+        Path(ctx.eclipse_path(), f"No{ctx.band}").touch()
+        return f"{ctx.eclipse} appears to contain nothing in {ctx.band}."
     exptime = image_dict["exptimes"][0]
     if source_table is None:
         print("Extracting sources with DAOFIND.")
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            threshold = 0.01
-            # threshold = 0.004 if band == 'NUV' else 0.002
-            daofind = DAOStarFinder(fwhm=6, threshold=threshold, sharplo=0.05)
-            source_table = daofind(image_dict["cnt"] / exptime).to_pandas()
+        source_table = make_source_table(ctx, exptime, image_dict)
         try:
             print(f"Located {len(source_table)} sources.")
         except TypeError:
-            print(f"{eclipse} {band} contains no sources.")
-            Path(datapath, f"No{band}").touch()
+            print(f"{ctx.eclipse} {ctx.band} contains no sources.")
+            Path(ctx.datapath, f"No{ctx.band}").touch()
             return None, None
     else:
         print(f"Using specified catalog of {len(source_table)} sources.")
@@ -90,6 +97,23 @@ def find_sources(
             ]
         )
         source_table[["xcentroid", "ycentroid"]] = positions
+    return source_table
+
+
+def make_source_table(ctx, exptime, image_dict):
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        daofind = DAOStarFinder(**ctx.daophot_params)
+        with warnings.catch_warnings():
+            # noinspection PyProtectedMember
+            daocat = daofind._get_raw_catalog(image_dict['cnt'] / exptime)
+            daocat = daocat.apply_all_filters()
+            source_table = pd.DataFrame(
+                {col: getattr(daocat, col) for col in DAOPHOT_COLS}
+            )
+            source_table = source_table.rename(
+                {'data_peak': 'peak', 'convdata_peak': 'conv_peak'}, axis=1
+            )
     return source_table
 
 

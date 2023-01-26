@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Mapping, Sequence, Literal
 import warnings
 
+import PIL.Image
 import fitsio
 import pyarrow
 from astropy.io import fits as pyfits
@@ -304,12 +305,26 @@ def initialize_fits_file(array_path):
     stream.close()
 
 
+def write_bg_browse(arraymap: Mapping[str, np.ndarray], ctx: PipeContext):
+    print("writing background mask browse image")
+    zeromask = np.ma.masked_array(
+        arraymap['cnt'] / arraymap['exptimes'][0], mask=arraymap['bg_mask']
+    ).filled(0)
+    zeromask[(arraymap['edge'] == 1) | (arraymap['flag'] == 1)] = 0
+    zeromask = np.clip(
+        zeromask, 0, arraymap['exptimes'][0] * ctx.bg_params['threshold']
+    )
+    zeromask = (zeromask / zeromask.max() * 255).astype(np.uint8)
+    zeromask = PIL.Image.fromarray(zeromask)
+    zeromask.save(ctx()['bg_mask'].replace('.fits', ".png").replace('.gz', ''))
+
+
 def write_fits_array(
     ctx: PipeContext, arraymap, wcs, is_movie=True, clean_up=True
 ):
     """
     convert an intermediate movie or image dictionary, perhaps previously
-    used for photometry, into a FITS object; write it to disk; compress it
+    used for photometry, iswisscheesento a FITS object; write it to disk; compress it
     using the best available gzip-compatible compression binary
     """
     if is_movie is False:
@@ -324,17 +339,14 @@ def write_fits_array(
             array_path = ctx(frame=frame)["movie"].replace(".gz", "")
             print(f"writing {array_name} frame {frame} to {array_path}")
             initialize_fits_file(array_path)
+            header = populate_fits_header(
+                ctx.band, wcs, arraymap["tranges"], arraymap["exptimes"]
+            )
+            args = (array_path, header, ctx.compression)
             for key in ["cnt", "flag", "edge"]:
                 print(f"writing frame {frame} {key} map")
-                header = populate_fits_header(
-                    ctx.band, wcs, arraymap["tranges"], arraymap["exptimes"]
-                )
                 add_array_to_fits_file(
-                    array_path,
-                    arraymap[key][frame],
-                    header,
-                    ctx.compression,
-                    **ctx.hdu_constructor_kwargs
+                    arraymap[key][frame], *args, **ctx.write_kwargs
                 )
             outpaths.append(array_path)
     else:
@@ -342,21 +354,28 @@ def write_fits_array(
         array_path = Path(array_file.replace(".gz", ""))
         print(f"writing {array_name} to {array_path}")
         initialize_fits_file(array_path)
+        header = populate_fits_header(
+            ctx.band, wcs, arraymap["tranges"], arraymap["exptimes"]
+        )
+        args = (array_path, header, ctx.compression)
         for key in ["cnt", "flag", "edge"]:
             print(f"writing {key} map")
-            header = populate_fits_header(
-                ctx.band, wcs, arraymap["tranges"], arraymap["exptimes"]
-            )
-            add_array_to_fits_file(
-                array_path,
-                arraymap[key],
-                header,
-                ctx.compression,
-                **ctx.hdu_constructor_kwargs
-            )
-            if clean_up:
-                del arraymap[key]
+            add_array_to_fits_file(arraymap[key], *args, **ctx.write_kwargs)
         outpaths = [array_path]
+        if 'bg_mask' in arraymap.keys():
+            bg_path = Path(ctx()['bg_mask'].replace(".gz", ""))
+            print(f"writing background mask to {bg_path}")
+            initialize_fits_file(bg_path)
+            add_array_to_fits_file(
+                arraymap['bg_mask'], bg_path, *args[1:], **ctx.write_kwargs
+            )
+            if ctx.bg_params.get('browse') is True:
+                write_bg_browse(arraymap, ctx)
+            del arraymap['bg_mask']
+            outpaths.append(bg_path)
+        # NOTE: moving this down here temporarily to enable bg browse write
+        for key in ["cnt", "flag", "edge"]:
+            del arraymap[key]
     if clean_up:
         del arraymap
     if ctx.compression != "gzip":
@@ -380,13 +399,8 @@ def write_fits_array(
                 continue
 
 
-def add_array_to_fits_file(
-    fits_path,
-    array,
-    header,
-    compression_type: Literal["none", "gzip", "rice"] = "none",
-    **fitsio_write_kwargs
-):
+def add_array_to_fits_file(array, fits_path, header, compression_type: Literal[
+    "none", "gzip", "rice"] = "none", **fitsio_write_kwargs):
     if compression_type not in ('none', 'gzip', 'rice'):
         raise ValueError(f"{compression_type} is not supported.")
     if isinstance(array, np.ndarray):
