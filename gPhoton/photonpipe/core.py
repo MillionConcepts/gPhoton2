@@ -69,7 +69,7 @@ def execute_photonpipe(ctx: PipeContext, raw6file: Optional[str] = None):
     else:
         xoffset, yoffset = 0.0, 0.0
 
-    aspect = load_aspect_solution(eclipse, ctx.verbose)
+    aspect = load_aspect_solution(eclipse, ctx.aspect, ctx.verbose)
 
     data, nphots = load_raw6(raw6file, ctx.verbose)
     # the stims are only actually used for post-CSP corrections, but we

@@ -134,6 +134,7 @@ def execute_pipeline(
     chunksz: int = 1000000,
     share_memory: Optional[bool] = None,
     extended_photonlist: bool = False,
+    aspect: str = 'aspect',
     override_eclipse_limits: bool = False
 ) -> str:
     """
@@ -198,6 +199,9 @@ def execute_pipeline(
         extended_photonlist: write extended variables to photonlists?
             these are not used in standard moviemaker/lightcurve pipelines.
             they are principally useful for diagnostics and ancillary products.
+        aspect: default is standard aspect table, aspect.parquet ('aspect') but
+            can designate to use alt aspect table, 'aspect2', which should be in the
+            aspect directory and be named 'aspect2.parquet'
         override_eclipse_limits: attempt to execute pipeline even if metadata
             and/or support for this eclipse appear to be limited or absent?
             note that the pipeline will most likely still fail in these cases.
@@ -237,7 +241,8 @@ def execute_pipeline(
         burst=burst,
         chunksz=chunksz,
         share_memory=share_memory,
-        extended_photonlist=extended_photonlist
+        extended_photonlist=extended_photonlist,
+        aspect=aspect
     )
     ctx.watch.start()
     if photometry_only:

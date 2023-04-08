@@ -17,8 +17,10 @@ from gPhoton.parquet_utils import parquet_to_ndarrays
 from gPhoton.pretty import print_inline
 
 # fully-qualified paths to aspect table files
+# aspect2 for alternative aspect solution files
 TABLE_PATHS = {
     "aspect": Path(ASPECT_DIR, "aspect.parquet"),
+    "aspect2": Path(ASPECT_DIR, "aspect2.parquet"),
     "boresight": Path(ASPECT_DIR, "boresight.parquet"),
     "metadata": Path(ASPECT_DIR, "metadata.parquet"),
 }
@@ -75,13 +77,14 @@ def distribute_legs(
 
 
 def load_aspect_solution(
-    eclipse: int, verbose: int = 0
+    eclipse: int, aspect, verbose: int = 0
 ) -> pd.DataFrame:
     """
     loads full-resolution aspect solution + per-leg boresight solution for
     a given eclipse and projects aspect solution to detector coordinates.
 
     :param eclipse: eclipse for which to load aspect solution
+    :param aspect: can designate 2nd aspect table to use, default is aspect
     :param verbose: higher values return more feedback about solution
     :return: dataframe of aspect solution + sky coordinates
     """
@@ -89,7 +92,7 @@ def load_aspect_solution(
         print_inline("Loading aspect solution from disk...")
     aspect, boresight = [
         tab.to_pandas()
-        for tab in aspect_tables(eclipse, ("aspect", "boresight"))
+        for tab in aspect_tables(eclipse, (aspect, "boresight"))
     ]
     # This projects the aspect_data solutions onto the MPS field centers.
     if verbose > 0:

@@ -2,9 +2,9 @@ from gPhoton.pipeline import execute_pipeline
 
 if __name__ == "__main__":
     execute_pipeline(
-        23456,
+        30738,
         "NUV",
-        depth=60,
+        depth=120,
         # integer; None to deactivate (default None)
         threads=4,
         # where to both write output data and look for input data
@@ -16,16 +16,19 @@ if __name__ == "__main__":
         aperture_sizes=[12.8],
         # actually write image/movie products? otherwise hold in memory but
         # discard (possibly after performing photometry).
-        write={"movie": True, "image": True},
+        write={"movie": False, "image": True},
         coregister_lightcurves=False,
         # photonpipe, moviemaker, None (default None)
-        stop_after=None,
+        stop_after='photonpipe',
         photometry_only=False,
         # None, "gzip", "rice"
         compression="rice",
         # use array sparsification on movie frames?
         lil=True,
         # write movie frames as separate files
-        burst=True,
-        extended_photonlist=False
+        burst=False,
+        extended_photonlist=True,
+        # aspect file, don't need to set unless need to use alt
+        # file, 'aspect2.parquet'
+        aspect="aspect2"
     )

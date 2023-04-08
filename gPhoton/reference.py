@@ -236,7 +236,8 @@ class PipeContext:
         watch: Optional[Stopwatch] = None,
         share_memory: Optional[bool] = None,
         chunksz: Optional[int] = 1000000,
-        extended_photonlist: bool = False
+        extended_photonlist: bool = False,
+        aspect: str = "aspect"
     ):
         self.eclipse = eclipse
         self.band = band
@@ -265,6 +266,7 @@ class PipeContext:
         self.extended_photonlist = extended_photonlist
         self.chunksz = chunksz
         self.share_memory = share_memory
+        self.aspect = aspect
 
     def __repr__(self):
         return (
