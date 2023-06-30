@@ -57,6 +57,15 @@ def switchcount(seq, comparator=eq):
 
 
 def galex_cone_search(ra: float, dec: float, arcseconds=2250, legs=False):
+    """ This search function provides information on _possible_ observational coverage
+    of the provided source position (RA and Dec in decimal degrees) by looking for time
+    ranges in which the spacecraft boresight position as defined in the refine aspect
+    table falls within 0.625 degrees (or 2250 arcsecs) of the source position.
+    
+    The returned values (in a pandas DataFrame) include eclipse number, object type,
+    the min/max RA/Dec of the boresight during the eclipse, and the FUV detector
+    temperature (used in calibration).
+    """
     bore = parquet.read_table(
         TABLE_PATHS['boresight'], columns=['eclipse', 'ra0', 'dec0']
     ).to_pandas()
