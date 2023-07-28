@@ -14,6 +14,7 @@ import subprocess
 import time
 from functools import cache
 from inspect import getmodule
+from math import floor
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Callable, Sequence, Mapping, Optional, Literal
@@ -151,13 +152,22 @@ def titular_legs(eclipse):
     return actual, nominal
 
 
+def intfill(obj, zfill=4):
+    obj = float(obj)
+    integer = str(floor(obj)).zfill(zfill)
+    if (decimal := obj - floor(obj)) > 0:
+        # round for floating-point error
+        return integer + str(round(decimal, 4))[2:]
+    return integer
+
+
 def eclipse_to_paths(
     eclipse: int,
     band: GalexBand = "NUV",
     depth: Optional[int] = None,
     compression: Literal["none", "gzip", "rice"] = "gzip",
     root: Pathlike = "data",
-    frame: Optional[int] = None,
+    start: Optional[float] = None,
     mode: str = "direct",
     leg: int = 0,
     aperture: Optional[float] = None,
@@ -174,32 +184,32 @@ def eclipse_to_paths(
     if kwargs.get("emoji") is True:
         from gPhoton.__emoji import emojified
 
-        return emojified(compression, depth, leg, eclipse_base, frame)
+        return emojified(compression, depth, leg, band, eclipse_base, start)
     ext = {"gzip": ".fits.gz", "none": ".fits", "rice": ".fits"}[compression]
     comp = {"gzip": "g", "none": "u", "rice": "r"}[compression]
     mode = {"direct": "d", "grism": "g", "opaque": "o"}[mode]
-    frame = "movie" if frame is None else f"f{str(frame).zfill(4)}"
-    depth = None if depth is None else f"t{str(depth).zfill(4)}"
+    start = "movie" if start is None else f"t{intfill(start)}"
+    depth = None if depth is None else f"f{intfill(depth)}"
     prefix = f"{eclipse_base}-{band[0].lower()}{mode}"
     aper = "" if aperture is None else str(aperture).replace(".", "_")
     file_dict = {
         "raw6": f"{prefix}-raw6.fits.gz",
         "photonfile": f"{prefix}-b{leg}.parquet",
-        "image": f"{prefix}-tfull-b{leg}-image-{comp}{ext}",
+        "image": f"{prefix}-b{leg}-ffull-image-{comp}{ext}",
         # TODO: frames, etc. -- decide exactly how once we are using
         #  extended source detection on movies
         "extended_catalog": f"{prefix}-b{leg}-extended-sources.csv",
     }
     if depth is not None:
         file_dict |= {
-            "movie": f"{prefix}-{depth}-b{leg}-{frame}-{comp}{ext}",
-            "photomfile": f"{prefix}-{depth}-b{leg}-{frame}-photom-{aper}.csv",
-            "expfile": f"{prefix}-{depth}-b{leg}-{frame}-exptime.csv",
+            "movie": f"{prefix}-b{leg}-{depth}-{start}-{comp}{ext}",
+            "photomfile": f"{prefix}-{depth}-b{leg}-{start}-photom-{aper}.csv",
+            "expfile": f"{prefix}-{depth}-b{leg}-{start}-exptime.csv",
         }
     else:
         file_dict[
             "photomfile"
-        ] = f"{prefix}-tfull-b{leg}-image-photom-{aper}.csv"
+        ] = f"{prefix}-b{leg}-ffull-image-photom-{aper}.csv"
     return file_dict
 
 
@@ -237,7 +247,8 @@ class PipeContext:
         share_memory: Optional[bool] = None,
         chunksz: Optional[int] = 1000000,
         extended_photonlist: bool = False,
-        aspect: str = "aspect"
+        aspect: str = "aspect",
+        start_time: Optional[float] = None
     ):
         self.eclipse = eclipse
         self.band = band
@@ -267,6 +278,7 @@ class PipeContext:
         self.chunksz = chunksz
         self.share_memory = share_memory
         self.aspect = aspect
+        self.start_time = start_time
 
     def __repr__(self):
         return (
@@ -322,7 +334,8 @@ class PipeContext:
             "watch": self.watch,
             "chunksz": self.chunksz,
             "share_memory": self.share_memory,
-            "extended_photonlist": self.extended_photonlist
+            "extended_photonlist": self.extended_photonlist,
+            "start_time": self.start_time
         }
 
     def eclipse_path(self, remote=False):

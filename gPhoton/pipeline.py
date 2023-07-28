@@ -113,7 +113,7 @@ def execute_photometry_only(ctx: PipeContext):
 def execute_pipeline(
     eclipse: int,
     band: GalexBand,
-    depth: Optional[int] = None,
+    depth: Optional[float] = None,
     threads: Optional[int] = None,
     local_root: str = "test_data",
     remote_root: Optional[str] = None,
@@ -285,6 +285,7 @@ def execute_full_pipeline(ctx):
     ctx.watch.click()
     from gPhoton.parquet_utils import get_parquet_stats
 
+    ctx.start_time = get_parquet_stats(photonpaths[0], ['t'])['t']['min']
     ok_paths = []
     for path in photonpaths:
         p_stats = get_parquet_stats(str(path), ["flags", "ra"])

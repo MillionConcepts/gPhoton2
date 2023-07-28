@@ -321,7 +321,8 @@ def write_fits_array(
     if (ctx.burst is True) and (is_movie is True):
         # burst mode writes each frame as a separate file w/cnt, flag, and edge
         for frame in range(len(arraymap["cnt"])):
-            array_path = ctx(frame=frame)["movie"].replace(".gz", "")
+            start = arraymap['tranges'][frame][0] - ctx.start_time
+            array_path = ctx(start=start)["movie"].replace(".gz", "")
             print(f"writing {array_name} frame {frame} to {array_path}")
             initialize_fits_file(array_path)
             for key in ["cnt", "flag", "edge"]:
@@ -329,6 +330,7 @@ def write_fits_array(
                 header = populate_fits_header(
                     ctx.band, wcs, arraymap["tranges"], arraymap["exptimes"]
                 )
+                header['EXTNAME'] = key.upper()
                 add_array_to_fits_file(
                     array_path,
                     arraymap[key][frame],
@@ -347,6 +349,7 @@ def write_fits_array(
             header = populate_fits_header(
                 ctx.band, wcs, arraymap["tranges"], arraymap["exptimes"]
             )
+            header['EXTNAME'] = key.upper()
             add_array_to_fits_file(
                 array_path,
                 arraymap[key],
@@ -402,7 +405,12 @@ def add_array_to_fits_file(
     fits_stream = fitsio.FITS(fits_path, "rw")
     try:
         if compression_type in ("none", "gzip"):
-            fits_stream.write(data, header=dict(header), **fitsio_write_kwargs)
+            fits_stream.write(
+                data,
+                extname=header['EXTNAME'],
+                header=dict(header),
+                **fitsio_write_kwargs
+            )
             return
         if 'tile_size' in fitsio_write_kwargs:
             tile_size = fitsio_write_kwargs.pop('tile_size')
@@ -421,6 +429,7 @@ def add_array_to_fits_file(
         fits_stream.write(
             data,
             header=dict(header),
+            extname=header['EXTNAME'],
             compress='RICE',
             tile_dims=tile_size,
             qlevel=qlevel,

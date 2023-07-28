@@ -3,7 +3,6 @@
 import time
 import warnings
 from multiprocessing import Pool
-from pathlib import Path
 from sys import stdout
 from typing import Optional
 
@@ -24,14 +23,13 @@ from gPhoton.photonpipe._steps import (
     process_chunk_in_unshared_memory,
 )
 from gPhoton.pretty import print_inline
-from gPhoton.reference import eclipse_to_paths, PipeContext
+from gPhoton.reference import PipeContext
 from gPhoton.sharing import (
     unlink_nested_block_dict,
     slice_into_shared_chunks,
     send_mapping_to_shared_memory,
     get_column_from_shared_memory,
 )
-from gPhoton.types import Pathlike
 
 
 def execute_photonpipe(ctx: PipeContext, raw6file: Optional[str] = None):
