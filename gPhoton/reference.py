@@ -248,7 +248,8 @@ class PipeContext:
         chunksz: Optional[int] = 1000000,
         extended_photonlist: bool = False,
         aspect: str = "aspect",
-        start_time: Optional[float] = None
+        start_time: Optional[float] = None,
+        snippet: Optional[tuple] = None
     ):
         self.eclipse = eclipse
         self.band = band
@@ -279,6 +280,8 @@ class PipeContext:
         self.share_memory = share_memory
         self.aspect = aspect
         self.start_time = start_time
+        self.snippet = snippet
+
 
     def __repr__(self):
         return (
