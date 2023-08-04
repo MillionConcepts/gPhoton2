@@ -242,7 +242,8 @@ def execute_pipeline(
         chunksz=chunksz,
         share_memory=share_memory,
         extended_photonlist=extended_photonlist,
-        aspect=aspect
+        aspect=aspect,
+        start_time=1000
     )
     ctx.watch.start()
     if photometry_only:

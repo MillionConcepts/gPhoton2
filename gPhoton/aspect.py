@@ -94,6 +94,10 @@ def load_aspect_solution(
         tab.to_pandas()
         for tab in aspect_tables(eclipse, (aspect, "boresight"))
     ]
+    if "ra" not in aspect.columns:
+        print("Using aspect2.parquet")
+        aspect = aspect.rename(columns={"pktime": "time", "ra_acs": "ra",
+                                        "dec_acs": "dec", "roll_acs": "roll"})
     # This projects the aspect_data solutions onto the MPS field centers.
     if verbose > 0:
         print_inline("Computing aspect_data vectors...")

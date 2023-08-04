@@ -2,7 +2,7 @@ from gPhoton.pipeline import execute_pipeline
 
 if __name__ == "__main__":
     execute_pipeline(
-        30738,
+        10982,
         "NUV",
         depth=120,
         # integer; None to deactivate (default None)
@@ -16,7 +16,7 @@ if __name__ == "__main__":
         aperture_sizes=[12.8],
         # actually write image/movie products? otherwise hold in memory but
         # discard (possibly after performing photometry).
-        write={"movie": False, "image": True},
+        write={"movie": False, "image": False},
         coregister_lightcurves=False,
         # photonpipe, moviemaker, None (default None)
         stop_after='photonpipe',
@@ -30,5 +30,5 @@ if __name__ == "__main__":
         extended_photonlist=True,
         # aspect file, don't need to set unless need to use alt
         # file, 'aspect2.parquet'
-        aspect="aspect"
+        aspect="aspect2"
     )
