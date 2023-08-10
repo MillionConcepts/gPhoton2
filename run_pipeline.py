@@ -2,7 +2,7 @@ from gPhoton.pipeline import execute_pipeline
 
 if __name__ == "__main__":
     execute_pipeline(
-        10982,
+        580,
         "NUV",
         depth=120,
         # integer; None to deactivate (default None)
@@ -30,5 +30,5 @@ if __name__ == "__main__":
         extended_photonlist=True,
         # aspect file, don't need to set unless need to use alt
         # file, 'aspect2.parquet'
-        aspect="aspect2"
+        aspect="aspect"
     )
