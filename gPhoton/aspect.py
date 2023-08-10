@@ -98,7 +98,7 @@ def load_aspect_solution(
         print("Using aspect2.parquet")
         aspect = aspect.rename(columns={"pktime": "time", "ra_acs": "ra",
                                         "dec_acs": "dec", "roll_acs": "roll"})
-        aspect = aspect.loc[(aspect['hvnom_fuv'] == 1) or (aspect['hvnom_nuv'] == 1)]
+        aspect = aspect.loc[(aspect['hvnom_fuv'] == 1) | (aspect['hvnom_nuv'] == 1)]
 
     # This projects the aspect_data solutions onto the MPS field centers.
     if verbose > 0:
