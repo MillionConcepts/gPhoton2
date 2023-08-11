@@ -96,14 +96,17 @@ def load_aspect_solution(
     ]
     if "ra" not in aspect.columns:
         print("Using aspect2.parquet")
+        aspect = aspect[(aspect['hvnom_nuv'] == 1) | (aspect['hvnom_nuv'] == 1)]\
+            .reset_index(drop=True)
         aspect = aspect.rename(columns={"pktime": "time", "ra_acs": "ra",
                                         "dec_acs": "dec", "roll_acs": "roll"})
-        aspect = aspect.loc[(aspect['hvnom_fuv'] == 1) | (aspect['hvnom_nuv'] == 1)]
+
 
     # This projects the aspect_data solutions onto the MPS field centers.
     if verbose > 0:
         print_inline("Computing aspect_data vectors...")
     aspect = distribute_legs(aspect, boresight)
+
     aspect['xi'], aspect['eta'] = gnomfwd_simple(
         aspect["ra"].to_numpy(),
         aspect["dec"].to_numpy(),
