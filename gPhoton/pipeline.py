@@ -287,13 +287,14 @@ def execute_full_pipeline(ctx):
     from gPhoton.parquet_utils import get_parquet_stats
 
     ctx.start_time = get_parquet_stats(photonpaths[0], ['t'])['t']['min']
-    ok_paths = []
+    leg_paths = []
     for path in photonpaths:
         p_stats = get_parquet_stats(str(path), ["flags", "ra"])
         if (p_stats["flags"]["min"] > 6) or (p_stats["ra"]["max"] is None):
             print(f"no unflagged data in {path}, not processing")
-        ok_paths.append(path)
-    if len(ok_paths) == 0:
+            leg_paths.append(False)
+        leg_paths.append(path)
+    if all(l is False for l in leg_paths):
         print("no usable legs, bailing out.")
         return "return code: no unflagged data (stopped after photon list)"
     # MOVIE-RENDERING SECTION
@@ -301,12 +302,15 @@ def execute_full_pipeline(ctx):
         create_images_and_movies, write_moviemaker_results,
     )
     errors = []
-    for leg_step, path in zip(ctx.explode_legs(), photonpaths):
+    for leg_step, path in zip(ctx.explode_legs(), leg_paths):
+        if path is False:
+            print(f"skipping bad leg {leg_step.leg + 1}")
+            continue
         # for brevity:
         # check to see if we're pinning our frame / lightcurve time series to
         # the time series of existing analysis for the other band
         fixed_start_time = check_fixed_start_time(leg_step)
-        if len(photonpaths) > 0:
+        if len(photonpaths) > 1:
             print(f"processing leg {leg_step.leg + 1} of {len(photonpaths)}")
         results = create_images_and_movies(
             ctx, path, fixed_start_time=fixed_start_time
