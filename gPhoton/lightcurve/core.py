@@ -18,6 +18,9 @@ def make_lightcurves(sky_arrays: Mapping, ctx: PipeContext):
     """
     if ctx.source_catalog_file is not None:
         sources = load_source_catalog(ctx.source_catalog_file, ctx.eclipse)
+        if not len(sources):
+            print(f"skipped photometry because no sources were found {ctx.source_catalog_file}")
+            return f"skipped photometry because no sources were found {ctx.source_catalog_file}"
     else:
         sources = None
     source_table = find_sources(
