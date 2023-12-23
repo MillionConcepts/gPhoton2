@@ -29,11 +29,8 @@ def count_full_depth_image(
 ):
     positions = source_table[["xcentroid", "ycentroid"]].values
     apertures = CircularAperture(positions, r=aperture_size)
-    print("Performing aperture photometry on primary image.")
     phot_table = aperture_photometry(image_dict["cnt"], apertures).to_pandas()
-    print("Performing aperture photometry on flag maps.")
     flag_table = aperture_photometry(image_dict["flag"], apertures).to_pandas()
-    print("Performing aperture photometry on edge maps.")
     edge_table = aperture_photometry(image_dict["edge"], apertures).to_pandas()
     source_table = pd.concat(
         [source_table, phot_table[["xcenter", "ycenter", "aperture_sum"]]],

@@ -312,9 +312,13 @@ def execute_full_pipeline(ctx):
         fixed_start_time = check_fixed_start_time(leg_step)
         if len(photonpaths) > 1:
             print(f"processing leg {leg_step.leg + 1} of {len(photonpaths)}")
-        results = create_images_and_movies(
-            ctx, path, fixed_start_time=fixed_start_time
-        )
+        try:
+            results = create_images_and_movies(
+                ctx, path, fixed_start_time=fixed_start_time
+            )
+        except ValueError:
+            print(f"failed to create images and movies for leg {leg_step.leg}")
+            continue
         ctx.watch.click()
         if not (results["status"].startswith("successful")):
             message = (

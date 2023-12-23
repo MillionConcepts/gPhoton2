@@ -345,7 +345,7 @@ def write_fits_array(
         print(f"writing {array_name} to {array_path}")
         initialize_fits_file(array_path)
         for key in ["cnt", "flag", "edge"]:
-            print(f"writing {key} map")
+            #print(f"writing {key} map")
             header = populate_fits_header(
                 ctx.band, wcs, arraymap["tranges"], arraymap["exptimes"]
             )
