@@ -487,6 +487,7 @@ def find_fuv_offset(eclipse: int) -> tuple[float, float]:
     """
     fodx_coef_0, fody_coef_0, fodx_coef_1, _ = (0.0, 0.0, 0.0, 0.0)
     fuv_temp = get_fuv_temp(eclipse)
+    print(fuv_temp)
     if (fuv_temp is None) or np.isnan(fuv_temp):
         raise ValueError("This is probably not a valid FUV observation.")
     print(f"Offsetting FUV image for eclipse {eclipse} at {fuv_temp} degrees.")
@@ -498,8 +499,13 @@ def find_fuv_offset(eclipse: int) -> tuple[float, float]:
         raise ValueError("FUV temperature out of range.")
     xoffset = fodx_coef_0 - (fodx_coef_1 * (fuv_temp - 29.0))
     yoffset = fody_coef_0 - (fody_coef_1 * (fuv_temp - 29.0))
+    #xoffset = 0
+    #yoffset = 0
+    print(f"fuvtemp: {fuv_temp}")
     print(f"Setting FUV offsets to x={xoffset}, y={yoffset}")
-    return xoffset, yoffset
+    print(f"fodx_coef_0: {fodx_coef_0}, fody_coef_0: {fody_coef_0}")
+    print(f"xoffset: {xoffset}, yoffset: {yoffset}")
+    return fodx_coef_0, fody_coef_0
 
 
 # two components of the expensive center-and-scale step that can be

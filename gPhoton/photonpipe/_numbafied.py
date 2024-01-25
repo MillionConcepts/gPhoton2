@@ -51,7 +51,7 @@ def unfancy_detector_coordinates(
 ):
     flip = {"NUV": 1, "FUV": -1}[band]
     # TODO: is xi always 0? so can half of this be removed?
-    #  probably? go look at the C code
+    #  probably? go look at the C codeunf
     # The detectors aren't oriented the same way.
     y_component = (yp_as + dy + yshift) * flip * 10
     x_component = (xp_as + dx + xshift) * flip * 10
