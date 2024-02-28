@@ -2,8 +2,8 @@ from gPhoton.pipeline import execute_pipeline
 
 if __name__ == "__main__":
     execute_pipeline(
-        781,
-        "NUV",
+        23456,
+        "FUV",
         depth=None,
         threads=4,
         local_root="test_data",

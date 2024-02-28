@@ -170,6 +170,8 @@ def execute_photonpipe(
         for address in leg_addresses:
             leg_results[address[1]] = results.pop(address)
         array_dict = retrieve_leg_results(leg_results, share_memory)
+        print(array_dict.keys)
+        print(array_dict.values)
         proc_count += len(array_dict["t"])
         filename = Path(
             eclipse_to_paths(eclipse)[band]["photonfiles"][leg_ix]

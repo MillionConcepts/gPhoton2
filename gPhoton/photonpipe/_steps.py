@@ -127,6 +127,7 @@ def process_chunk_in_shared_memory(
         xoffset,
         yoffset,
     )
+    print(chunk)
     chunk |= calibrate_photons_inline(band, cal_data, chunk, chunk_title)
     if write_intermediate_variables is not True:
         chunk = keyfilter(lambda key: key in PIPELINE_VARIABLES, chunk)
@@ -237,8 +238,6 @@ def apply_on_detector_corrections(
         chunk["yamc"],
         chunk["yb"],
     )
-    print(t)
-    print(f"t len: {len(t)}")
     flags = np.zeros(len(t), dtype=np.uint8)
     fptrx, fptry = apply_wiggle_correction(chunkid, x, y)
     # This and other lines like it below are to verify that the
@@ -256,6 +255,7 @@ def apply_on_detector_corrections(
         x,
         xa,
         y,
+
         ya,
     )
     floor_x, floor_y = fptrx.astype("i4"), fptry.astype("i4")
@@ -308,7 +308,7 @@ def apply_on_detector_corrections(
         yp_as,
         yshift,
     )
-    print(f"xi leng: {len(xi)}")
+
 
     return {"xi": xi, "eta": eta, "col": col, "row": row, "flags": flags}
 
@@ -678,11 +678,14 @@ def apply_stim_distortion_correction(
     #TODO: calculate xoffset and yoffset using t (array of time stamps)
     # write a new function that accesses scst list for FUV temps and calculates
     # offset which is returned as a 1d array of offsets
-    xoffset_new, yoffset_new = new_fuv_correction(t, fodx_coef_0, fody_coef_0)
-    xoffset_new = xoffset_new.values.byteswap().newbyteorder()
-    yoffset_new = yoffset_new.values.byteswap().newbyteorder()
-    xshift = (xshift * c.ARCSECPERPIXEL) + xoffset_new
-    yshift = (yshift * c.ARCSECPERPIXEL) + yoffset_new
+    # deprecated now tho
+    #xoffset_new, yoffset_new = new_fuv_correction(t, fodx_coef_0, fody_coef_0)
+    #xoffset_new = xoffset_new.values.byteswap().newbyteorder()
+    #yoffset_new = yoffset_new.values.byteswap().newbyteorder()
+
+
+    xshift = (xshift * c.ARCSECPERPIXEL)
+    yshift = (yshift * c.ARCSECPERPIXEL)
     return xshift.astype("f4"), yshift.astype("f4"), flags, ok_indices
 
 
