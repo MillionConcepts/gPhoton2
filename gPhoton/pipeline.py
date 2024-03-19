@@ -384,7 +384,7 @@ def execute_pipeline(
         opt['stopwatch'].click()
         if not (results["status"].startswith("successful")):
             message = (
-                f"Moviemaker pipeline unsuccessful on leg {leg} "
+                f"Moviemaker pipeline unsuccessful on leg {leg:02} "
                 f"{(results['status'])}"
             )
             print(message)
@@ -462,12 +462,12 @@ def load_moviemaker_results(
     image = pick_and_copy_array(files, temp_directory, "images", leg)
     if image is None:
         print("Photometry-only run, but image not found. Skipping.")
-        return f"leg {leg}: image not found"
+        return f"leg {leg:02}: image not found"
     if depth is not None:
         movie = pick_and_copy_array(files, temp_directory, "movies", leg)
         if movie is None:
             print("Photometry-only run, but movie not found. Skipping.")
-            return f"leg {leg}: movie not found"
+            return f"leg {leg:02}: movie not found"
     image_result = unpack_image(image, compression)
     results = {'wcs': image_result['wcs'], 'image_dict': image_result}
     if depth is not None:

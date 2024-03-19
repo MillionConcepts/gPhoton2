@@ -27,7 +27,7 @@ def make_source_figs(
     fig = fig_plot(segment_map, f"e{eclipse}, {band}")
     prefix = f"e{str(eclipse).zfill(5)}-{band[0].lower()}d-"
     fig.savefig(
-        Path(outpath, f"{prefix}segmentation_leg{leg}.jpg"),
+        Path(outpath, f"{prefix}{leg:02}-segmap.jpg"),
         bbox_inches="tight",
         pad_inches=0.1,
         dpi=400
@@ -44,7 +44,7 @@ def make_source_figs(
         cnt_image, source_table, f"e{eclipse}, {band}, sources",
     )
     fig.savefig(
-        Path(outpath, f"{prefix}-leg{leg}-sources-on-image.jpg"),
+        Path(outpath, f"{prefix}{leg:02}-sourcemap.jpg"),
         bbox_inches="tight",
         pad_inches=0.1,
         dpi=400
@@ -54,7 +54,7 @@ def make_source_figs(
         cnt_image, f"e{eclipse}, {band}",
     )
     fig.savefig(
-        Path(outpath, f"{prefix}-leg{leg}-image.jpg"),
+        Path(outpath, f"{prefix}{leg:02}-image.jpg"),
         bbox_inches="tight",
         pad_inches=0.1,
         dpi=400

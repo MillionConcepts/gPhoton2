@@ -127,7 +127,7 @@ def process_chunk_in_shared_memory(
         xoffset,
         yoffset,
     )
-    print(chunk)
+    #print(chunk) TODO: remove this print debugging?
     chunk |= calibrate_photons_inline(band, cal_data, chunk, chunk_title)
     if write_intermediate_variables is not True:
         chunk = keyfilter(lambda key: key in PIPELINE_VARIABLES, chunk)
@@ -675,54 +675,9 @@ def apply_stim_distortion_correction(
     xshift[ok_indices] = distortion["x"].ravel()[raveled_ix]
     yshift[ok_indices] = distortion["y"].ravel()[raveled_ix]
 
-    #TODO: calculate xoffset and yoffset using t (array of time stamps)
-    # write a new function that accesses scst list for FUV temps and calculates
-    # offset which is returned as a 1d array of offsets
-    # deprecated now tho
-    #xoffset_new, yoffset_new = new_fuv_correction(t, fodx_coef_0, fody_coef_0)
-    #xoffset_new = xoffset_new.values.byteswap().newbyteorder()
-    #yoffset_new = yoffset_new.values.byteswap().newbyteorder()
-
-
     xshift = (xshift * c.ARCSECPERPIXEL)
     yshift = (yshift * c.ARCSECPERPIXEL)
     return xshift.astype("f4"), yshift.astype("f4"), flags, ok_indices
-
-
-def new_fuv_correction(t, fodx_coef_0, fody_coef_0):
-    # This gives the index of the fuv time that comes _before_
-    # each photon time. Without the '-1' it will give the index
-    # of the fuv time _after_ the photon time.
-    from astropy.io import fits
-
-    print_inline("loading scst file")
-    scst = fits.open("/home/bekah/glcat/fuv_offset/e19261-scst.fits")
-    scst_df = pd.DataFrame()
-    scst_df['fuv_temp'] = scst[1].data['FDTTDC']
-    scst_df['t'] = scst[1].data['pktime']
-
-    scst_df['t'] =  scst_df['t'].values.byteswap().newbyteorder()
-    scst_df['fuv_temp'] = scst_df['fuv_temp'].values.byteswap().newbyteorder()
-
-    print_inline("Mapping photon times to scst times...")
-    index = np.digitize(t, scst_df['t']) - 1
-
-    fuv_temps = scst_df['fuv_temp'][index]
-
-
-    fodx_coef_1 = 0.0
-    fody_coef_1 = 0.3597
-
-    xoffset = fodx_coef_0 - (fodx_coef_1 * (fuv_temps - 29.0))
-    yoffset = fody_coef_0 - (fody_coef_1 * (fuv_temps - 29.0))
-
-    if len(t) != (len(yoffset)):
-        print("time array length and yoffset length not equal :( ")
-    print_inline("Applying FUV correction...")
-
-    return xoffset, yoffset
-
-
 
 def create_ssd_from_decoded_data(data, band, eclipse, verbose, margin=90.001):
     all_stim_indices = find_stims_index(
