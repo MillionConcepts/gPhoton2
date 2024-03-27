@@ -1,4 +1,4 @@
-name: gphoton
+name: gphoton2
 channels:
   - numba
   - conda-forge

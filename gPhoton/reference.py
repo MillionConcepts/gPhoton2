@@ -198,18 +198,21 @@ def eclipse_to_paths(
         "image": f"{prefix}-b{leg}-ffull-image-{comp}{ext}",
         # TODO: frames, etc. -- decide exactly how once we are using
         #  extended source detection on movies
-        "extended_catalog": f"{prefix}-b{leg}-extended-sources.csv",
+        "extended_catalog": f"{prefix}-b{leg}-extended-sources.csv", # TODO: is this being used?
+        "extended_shapes":f"{prefix}-b{leg}-extended-shapes.csv"
     }
+    # TODO: Make these filenames more internally consistent... and do better f-string formatting
     if depth is not None:
         file_dict |= {
             "movie": f"{prefix}-b{leg}-{depth}-{start}-{comp}{ext}",
-            "photomfile": f"{prefix}-{depth}-b{leg}-{start}-photom-{aper}.csv",
-            "expfile": f"{prefix}-{depth}-b{leg}-{start}-exptime.csv",
+            "photomfile": f"{prefix}-b{leg}-{depth}-{start}-photom-{aper}.csv",
+            "expfile": f"{prefix}-b{leg}-{depth}-{start}-exptime.csv",
         }
     else:
-        file_dict[
-            "photomfile"
-        ] = f"{prefix}-b{leg}-ffull-image-photom-{aper}.csv"
+        file_dict |= {
+            #                      {depth}?
+            "photomfile":f"{prefix}-b{leg}-ffull-image-photom-{aper}.csv",
+        }
     return file_dict
 
 

@@ -14,11 +14,16 @@ import warnings
 import astropy.wcs
 import numpy as np
 import pandas as pd
-from photutils import DAOStarFinder, CircularAperture, aperture_photometry
+from photutils.aperture import CircularAperture, aperture_photometry
+from photutils.detection import DAOStarFinder
 import scipy.sparse
 
 from gPhoton.pretty import print_inline
-from gPhoton.types import Pathlike
+from gPhoton.types import Pathlike, GalexBand
+
+from gPhoton.lightcurve.photometry_utils import (mask_for_extended_sources,
+                                                 image_segmentation,
+                                                 check_point_in_extended)
 
 
 def count_full_depth_image(
@@ -27,7 +32,8 @@ def count_full_depth_image(
     image_dict: Mapping[str, np.ndarray],
     system: astropy.wcs.WCS
 ):
-    positions = source_table[["xcentroid", "ycentroid"]].values
+    source_table = source_table.reset_index(drop=True)
+    positions = source_table[["xcentroid", "ycentroid"]].to_numpy()
     apertures = CircularAperture(positions, r=aperture_size)
     phot_table = aperture_photometry(image_dict["cnt"], apertures).to_pandas()
     flag_table = aperture_photometry(image_dict["flag"], apertures).to_pandas()
@@ -52,12 +58,13 @@ def count_full_depth_image(
 
 def find_sources(
     eclipse: int,
-    band,
+    band: GalexBand,
     datapath: Union[str, Path],
     image_dict,
     wcs,
     source_table: Optional[pd.DataFrame] = None
 ):
+    from gPhoton.coadd import zero_flag_and_edge, flag_and_edge_mask
     # TODO, maybe: pop these into a handler function
     if not image_dict["cnt"].max():
         print(f"{eclipse} appears to contain nothing in {band}.")
@@ -68,10 +75,27 @@ def find_sources(
         print("Extracting sources with DAOFIND.")
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            threshold = 0.01
-            # threshold = 0.004 if band == 'NUV' else 0.002
-            daofind = DAOStarFinder(fwhm=6, threshold=threshold, sharplo=0.05)
-            source_table = daofind(image_dict["cnt"] / exptime).to_pandas()
+            # for some reason image segmentation still finds sources in the
+            # masked cnt image? so we mask twice: once by zeroing and then
+            # again by making a bool mask and feeding it to image segmentation
+            # TODO: reinvestigate the cause of this
+            masked_cnt_image = zero_flag_and_edge(
+                image_dict["cnt"],
+                image_dict["flag"],
+                image_dict["edge"],
+                copy=True
+            ) / exptime
+            masked_cnt_image = masked_cnt_image.astype(np.float32)
+            flag_edge_mask = flag_and_edge_mask(
+                image_dict["cnt"],
+                image_dict["flag"],
+                image_dict["edge"])
+            image_dict["cnt"] = scipy.sparse.coo_matrix(image_dict["cnt"])
+            source_table, segment_map, extended_source_paths, extended_source_cat = \
+                get_point_and_extended_sources(masked_cnt_image, band, flag_edge_mask, exptime)
+            del masked_cnt_image
+            #gc.collect()
+            image_dict["cnt"] = image_dict["cnt"].toarray()
         try:
             print(f"Located {len(source_table)} sources.")
         except TypeError:
@@ -87,9 +111,33 @@ def find_sources(
             ]
         )
         source_table[["xcentroid", "ycentroid"]] = positions
-    return source_table
+    return source_table, segment_map, extended_source_paths, extended_source_cat
 
+def get_point_and_extended_sources(cnt_image: np.ndarray, band: str, f_e_mask, exposure_time):
 
+    """
+    Main function for extracting point and extended sources from an eclipse.
+    Image segmentation and point source extraction occurs in a separate function.
+    The threshold for being a source in NUV is set at 1.5 times the background
+    rms values (2d array), while for FUV it is 3 times. The FUV setting isn't
+    ~perfect~. TODO: improve FUV threshold setting.
+    Extended source extraction occurs in helper functions.
+    """
+    
+    # cnt_image is no longer background subtracted
+    # DAO threshold is now based on power law relationship with exposure time
+    print("Masking for extended sources.")
+    masks, extended_source_cat = mask_for_extended_sources(cnt_image, band, exposure_time)
+
+    deblended_seg_map, outline_seg_map, seg_sources = image_segmentation(cnt_image, band, f_e_mask, exposure_time)
+    print("Checking for extended source overlap with point sources.")
+    # checking for overlap between extended source mask and segmentation image
+    seg_sources = check_point_in_extended(outline_seg_map, masks, seg_sources)
+
+    #seg_sources.dropna() was old setting
+    return seg_sources, deblended_seg_map, masks, extended_source_cat
+
+# TODO: merge discrepancy here that might need to be sorted out
 def extract_frame(frame, apertures):
     if isinstance(frame, scipy.sparse.spmatrix):
         frame = frame.toarray()
