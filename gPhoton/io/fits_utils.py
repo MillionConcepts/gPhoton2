@@ -17,7 +17,6 @@ from dustgoggles.scrape import head_file
 from gPhoton.reference import crudely_find_library
 from gPhoton.types import Pathlike
 
-
 class AgnosticHDU:
     """
     wrapper class to enforce consistency of (some) signatures between
@@ -101,7 +100,7 @@ class AgnosticHDUL:
         return self._hdul.__len__()
 
 
-def get_fits_data(filename, dim=0, verbose=0):
+def get_fits_data(filename: Pathlike, dim: int=0, verbose: int=0):
     """
     Reads FITS data. A wrapper for common astropy.io.fits commands.
 
@@ -134,7 +133,7 @@ def get_fits_data(filename, dim=0, verbose=0):
 # ------------------------------------------------------------------------------
 
 # ------------------------------------------------------------------------------
-def get_fits_header(filename):
+def get_fits_header(filename: Pathlike):
     """
     Reads a FITS header. A wrapper for common astropy.io.fits commands.
 
@@ -155,7 +154,7 @@ def get_fits_header(filename):
 # ------------------------------------------------------------------------------
 
 # ------------------------------------------------------------------------------
-def get_tbl_data(filename, comment='|'):
+def get_tbl_data(filename: Pathlike, comment: str='|'):
     """
     Reads data from a table into a numpy array.
 
@@ -184,7 +183,7 @@ def get_tbl_data(filename, comment='|'):
 
 
 # ------------------------------------------------------------------------------
-def pyfits_open_igzip(fn: str) -> astropy.io.fits.hdu.HDUList:
+def pyfits_open_igzip(filename: Pathlike) -> astropy.io.fits.hdu.HDUList:
     """
     open a gzipped FITS file using astropy.io.fits and the ISA-L igzip
     algorithm rather than the slower libdeflate gzip implementation found
@@ -193,11 +192,11 @@ def pyfits_open_igzip(fn: str) -> astropy.io.fits.hdu.HDUList:
     from isal import igzip
 
     # TODO: does this leak the igzip stream handle?
-    if str(fn).endswith("gz"):
-        stream = igzip.open(fn)
+    if str(filename).endswith("gz"):
+        stream = igzip.open(filename)
         return astropy.io.fits.open(stream)
     else:
-        return astropy.io.fits.open(fn)
+        return astropy.io.fits.open(filename)
 
 
 def first_fits_header(path: Pathlike, header_records: int = 1):
@@ -220,7 +219,7 @@ def first_fits_header(path: Pathlike, header_records: int = 1):
         return astropy.io.fits.open(head)[0].header
 
 
-def read_wcs_from_fits(*fits_paths: Pathlike) -> tuple[
+def read_wcs_from_fits(*fits_paths: Pathlike, dim = None) -> tuple[
     Sequence[astropy.io.fits.header.Header], Sequence[astropy.wcs.WCS]
 ]:
     """
@@ -232,4 +231,3 @@ def read_wcs_from_fits(*fits_paths: Pathlike) -> tuple[
     headers = [first_fits_header(path) for path in fits_paths]
     systems = [astropy.wcs.WCS(header) for header in headers]
     return headers, systems
-
