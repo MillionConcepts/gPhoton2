@@ -31,7 +31,6 @@ def make_lightcurves(sky_arrays: Mapping, ctx: PipeContext):
         sky_arrays["wcs"],
         source_table=sources,
     )
-    raise NotImplementedError("This is not a complete implementation")
     ctx.watch.click()
     # failure messages due to low exptime or no data
     if isinstance(source_table, str):

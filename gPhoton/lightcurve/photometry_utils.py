@@ -331,18 +331,28 @@ def check_point_in_extended(outline_seg_map, masks, seg_sources):
         inside_extended = masks[key].contains_points(seg_outlines_vert)
         segments_in_extended = outline_seg_map[seg_outlines][inside_extended]
         seg_sources.loc[segments_in_extended, "extended_source"] = int(key)
-    seg_sources.to_csv("seg_sources_in_extented.csv")
+    #seg_sources.to_csv("seg_sources_in_extented.csv")
     return seg_sources
 
 
 def dao_handler(cnt_image: np.ndarray, exposure_time):
-    print("DAO 1")
-    dao_sources1 = dao_finder_1(cnt_image, exposure_time)
+    #dao_sources1 = dao_finder_1(cnt_image, exposure_time)
+    dao_sources1 = dao_finder(cnt_image, threshold=0.01, fwhm=5)
     #gc.collect()
-    print("DAO 2")
-    dao_sources2 = dao_finder_2(cnt_image, exposure_time)
+    #dao_sources2 = dao_finder_2(cnt_image, exposure_time)
+    dao_sources2 = dao_finder(cnt_image,threshold=0.02, fwhm=3)
     dao_sources = pd.concat([dao_sources1, dao_sources2])
     #gc.collect()
+    return dao_sources
+
+def dao_finder(cnt_image: np.ndarray, threshold: float = 0.01,
+               fwhm: float = 5, sigma_radius: float = 1.5, ratio: float = 1,
+               theta: float = 0):
+    daofind = LocalHIGHSlocal(
+        fwhm=fwhm, sigma_radius=sigma_radius,
+        threshold=threshold, ratio=ratio, theta=theta
+    )
+    dao_sources = daofind.find_peaks(cnt_image)
     return dao_sources
 
 

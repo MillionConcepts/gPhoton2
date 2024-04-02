@@ -163,14 +163,14 @@ def intfill(obj, zfill=4):
 
 def eclipse_to_paths(
     eclipse: int,
-    band: GalexBand = "NUV",
-    depth: Optional[int] = None,
-    compression: Literal["none", "gzip", "rice"] = "gzip",
-    root: Pathlike = "data",
+    band: GalexBand = "NUV", # must be NUV or FUV
+    depth: Optional[int] = None, # frame depth in seconds
+    compression: Literal["none", "gzip", "rice"] = "gzip", # compression type
+    root: Pathlike = "data", # output directory for data
     start: Optional[float] = None,
-    mode: str = "direct",
-    leg: int = 0,
-    aperture: Optional[float] = None,
+    mode: str = "direct", # imagine mode is direct, grism, or opaque
+    leg: int = 0, # leg number
+    aperture: Optional[float] = None, # aperture size in arcseconds
     **kwargs,
 ) -> dict[str, str]:
     """
@@ -188,7 +188,7 @@ def eclipse_to_paths(
     ext = {"gzip": ".fits.gz", "none": ".fits", "rice": ".fits"}[compression]
     comp = {"gzip": "g", "none": "u", "rice": "r"}[compression]
     mode = {"direct": "d", "grism": "g", "opaque": "o"}[mode]
-    start = "movie" if start is None else f"t{intfill(start)}"
+    start = "movie" if start is None else f"t{intfill(start)}" # TODO: What is this doing?
     depth = None if depth is None else f"f{intfill(depth)}"
     prefix = f"{eclipse_base}-{band[0].lower()}{mode}"
     aper = "" if aperture is None else str(aperture).replace(".", "_")
@@ -210,8 +210,8 @@ def eclipse_to_paths(
         }
     else:
         file_dict |= {
-            #                      {depth}?
             "photomfile":f"{prefix}-b{leg}-ffull-image-photom-{aper}.csv",
+            "expfile": f"{prefix}-b{leg}-ffull-image-exptime.csv"
         }
     return file_dict
 
