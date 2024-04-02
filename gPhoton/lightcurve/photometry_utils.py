@@ -331,7 +331,7 @@ def check_point_in_extended(outline_seg_map, masks, seg_sources):
         inside_extended = masks[key].contains_points(seg_outlines_vert)
         segments_in_extended = outline_seg_map[seg_outlines][inside_extended]
         seg_sources.loc[segments_in_extended, "extended_source"] = int(key)
-    #seg_sources.to_csv("seg_sources_in_extented.csv")
+    #seg_sources.to_csv("seg_sources_in_extented.csv") # for debug only
     return seg_sources
 
 
@@ -354,47 +354,6 @@ def dao_finder(cnt_image: np.ndarray, threshold: float = 0.01,
     )
     dao_sources = daofind.find_peaks(cnt_image)
     return dao_sources
-
-
-def dao_finder_1(cnt_image: np.ndarray, exposure_time):
-    """
-    DAO Star Finder Arguments:
-       fwhm = full width half maximum of gaussian kernel
-       threshold = pixel value below which not to select a source
-       ratio = how round kernel is (1 = circle)
-       theta = angle of kernel wrt to x-axis in degrees
-       Combining two different DAO runs to get more "sources".
-       This uses a modified version of DAOStarFinder that returns
-       less information called LocalHIGHSlocal.
-    """
-    #threshold = np.multiply(np.power(exposure_time, -0.86026), 3)
-    threshold = 0.01
-    daofind = LocalHIGHSlocal(
-        fwhm=5, sigma_radius=1.5, threshold=threshold, ratio=1, theta=0
-    )
-    dao_sources = daofind.find_peaks(cnt_image)
-    return dao_sources
-
-
-def dao_finder_2(cnt_image: np.ndarray, exposure_time):
-    """
-    DAO Star Finder Arguments:
-       fwhm = full width half maximum of gaussian kernel
-       threshold = pixel value below which not to select a source
-       ratio = how round kernel is (1 = circle)
-       theta = angle of kernel wrt to x-axis in degrees
-       Combining two different DAO runs to get more "sources".
-       This uses a modified version of DAOStarFinder that returns
-       less information called LocalHIGHSlocal.
-    """
-    #threshold = np.multiply(np.power(exposure_time, -0.86026), 3)
-    threshold = 0.02
-    daofind2 = LocalHIGHSlocal(
-        fwhm=3, sigma_radius=1.5, threshold=threshold, ratio=1, theta=0
-    )
-    dao_sources2 = daofind2.find_peaks(cnt_image)
-    return dao_sources2
-
 
 def get_extended(dao_sources: pd.DataFrame, image_size, band: str):
     """

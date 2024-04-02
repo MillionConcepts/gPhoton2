@@ -54,6 +54,8 @@ def make_lightcurves(sky_arrays: Mapping, ctx: PipeContext):
                 ctx.threads
             )
             write_exptime_file(ctx["expfile"], sky_arrays["movie_dict"])
+        else:
+            write_exptime_file(ctx["expfile"], sky_arrays["image_dict"])
         #else:
         extended_shapes = ctx(aperture=aperture_size)['extended_shapes']
         print(f"writing extended source table to {extended_shapes}")
