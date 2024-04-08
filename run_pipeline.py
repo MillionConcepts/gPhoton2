@@ -2,9 +2,9 @@ from gPhoton.pipeline import execute_pipeline
 
 if __name__ == "__main__":
     execute_pipeline(
-        35688,
-        "NUV",
-        depth=120,
+        23456,
+        "FUV",
+        #depth=120,
         # integer; None to deactivate (default None)
         threads=4,
         # where to both write output data and look for input data

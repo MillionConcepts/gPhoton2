@@ -133,7 +133,7 @@ def get_fits_data(filename: Pathlike, dim: int=0, verbose: int=0):
 # ------------------------------------------------------------------------------
 
 # ------------------------------------------------------------------------------
-def get_fits_header(filename: Pathlike):
+def get_fits_header(filename: Pathlike, hdu: int = 0):
     """
     Reads a FITS header. A wrapper for common astropy.io.fits commands.
 
@@ -146,7 +146,7 @@ def get_fits_header(filename: Pathlike):
 
     hdulist = astropy.io.fits.open(filename, memmap=1)
 
-    htab = hdulist[0].header
+    htab = hdulist[hdu].header
 
     hdulist.close()
 
@@ -197,37 +197,14 @@ def pyfits_open_igzip(filename: Pathlike) -> astropy.io.fits.hdu.HDUList:
         return astropy.io.fits.open(stream)
     else:
         return astropy.io.fits.open(filename)
-
-
-def first_fits_header(path: Pathlike, header_records: int = 1):
-    """
-    return the first header_records header cards from a FITS file. used for
-    skimming metadata from large groups of FITS files
-    """
-    from isal import igzip
-
-    if str(path).endswith("gz"):
-        stream = igzip.open(path)
-    else:
-        stream = open(path, "rb")
-    if "rice" in str(path):
-        stream.seek(2880)
-    head = head_file(stream, 2880 * header_records)
-    stream.close()
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")  # we know we truncated it, thank you
-        return astropy.io.fits.open(head)[0].header
-
-
-def read_wcs_from_fits(*fits_paths: Pathlike, dim = None) -> tuple[
+    
+    
+def read_wcs_from_fits(*fits_paths: Pathlike, hdu = 1) -> tuple[
     Sequence[astropy.io.fits.header.Header], Sequence[astropy.wcs.WCS]
 ]:
     """
     Construct a WCS object for each FITS file in fits_paths.
-
-    TODO: This function is obsolete and must be rewritten to handle RICE
-     compression.
     """
-    headers = [first_fits_header(path) for path in fits_paths]
+    headers = [get_fits_header(path, hdu) for path in fits_paths]
     systems = [astropy.wcs.WCS(header) for header in headers]
     return headers, systems

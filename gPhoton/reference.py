@@ -171,6 +171,7 @@ def eclipse_to_paths(
     mode: str = "direct", # imagine mode is direct, grism, or opaque
     leg: int = 0, # leg number
     aperture: Optional[float] = None, # aperture size in arcseconds
+    suffix: Optional[str] = None, # suffix for file names
     **kwargs,
 ) -> dict[str, str]:
     """
@@ -191,6 +192,8 @@ def eclipse_to_paths(
     start = "movie" if start is None else f"t{intfill(start)}" # TODO: What is this doing?
     depth = None if depth is None else f"f{intfill(depth)}"
     prefix = f"{eclipse_base}-{band[0].lower()}{mode}"
+    suffix = "" if suffix is None else f"-{suffix}"
+    print(f"{suffix=}")
     aper = "" if aperture is None else str(aperture).replace(".", "_")
     file_dict = {
         "raw6": f"{prefix}-raw6.fits.gz",
@@ -205,12 +208,12 @@ def eclipse_to_paths(
     if depth is not None:
         file_dict |= {
             "movie": f"{prefix}-b{leg}-{depth}-{start}-{comp}{ext}",
-            "photomfile": f"{prefix}-b{leg}-{depth}-{start}-photom-{aper}.csv",
+            "photomfile": f"{prefix}-b{leg}-{depth}-{start}-photom-{aper}{suffix}.csv",
             "expfile": f"{prefix}-b{leg}-{depth}-{start}-exptime.csv",
         }
     else:
         file_dict |= {
-            "photomfile":f"{prefix}-b{leg}-ffull-image-photom-{aper}.csv",
+            "photomfile":f"{prefix}-b{leg}-ffull-image-photom-{aper}{suffix}.csv",
             "expfile": f"{prefix}-b{leg}-ffull-image-exptime.csv"
         }
     return file_dict
@@ -252,7 +255,8 @@ class PipeContext:
         extended_photonlist: bool = False,
         aspect: str = "aspect",
         start_time: Optional[float] = None,
-        snippet: Optional[tuple] = None
+        snippet: Optional[tuple] = None,
+        suffix: Optional[str] = None,
     ):
         self.eclipse = eclipse
         self.band = band
@@ -284,7 +288,7 @@ class PipeContext:
         self.aspect = aspect
         self.start_time = start_time
         self.snippet = snippet
-
+        self.suffix = suffix
 
     def __repr__(self):
         return (
@@ -292,7 +296,7 @@ class PipeContext:
             f"depth={self.depth}, compression={self.compression}, "
             f"frame={self.frame}, mode={self.mode}, leg={self.leg}, "
             f"apertures={self.aperture_sizes}, local={self.local}, "
-            f"remote={self.remote}"
+            f"remote={self.remote}",f"suffix={self.suffix}",
         )
 
     def __str__(self):
@@ -310,6 +314,7 @@ class PipeContext:
             "mode": self.mode,
             "leg": self.leg,
             "aperture_sizes": self.aperture_sizes,
+            "suffix": self.suffix,
         }
 
     def asdict(self) -> dict[str, Any]:
@@ -341,7 +346,8 @@ class PipeContext:
             "chunksz": self.chunksz,
             "share_memory": self.share_memory,
             "extended_photonlist": self.extended_photonlist,
-            "start_time": self.start_time
+            "start_time": self.start_time,
+            "suffix": self.suffix,
         }
 
     def eclipse_path(self, remote=False):

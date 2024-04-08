@@ -216,19 +216,16 @@ def outline_segments(self, mask_background=False):
 
 def image_segmentation(cnt_image: np.ndarray, band: str, f_e_mask, exposure_time):
 
-    from photutils.segmentation import detect_sources
-    from photutils.segmentation import make_2dgaussian_kernel
-    from photutils.segmentation import SourceCatalog
-    from photutils.segmentation import deblend_sources
+    from photutils.segmentation import (detect_sources, make_2dgaussian_kernel,
+                                        SourceCatalog, deblend_sources)
     import sys
-    #import gc
+    from scipy.ndimage import convolve
 
     print("Estimating background and threshold.")
     cnt_image, threshold = estimate_background_and_threshold(
         cnt_image, f_e_mask, band, exposure_time
     )
     kernel = make_2dgaussian_kernel(fwhm=3, size=(3, 3))
-    from scipy.ndimage import convolve
     convolved_data = convolve(cnt_image, kernel)
     # changing "npixels" in detect sources to 3 ID's more small sources
     # but also more spurious looking ones..
@@ -248,9 +245,7 @@ def image_segmentation(cnt_image: np.ndarray, band: str, f_e_mask, exposure_time
                                             progress_bar=False)
 
     del segment_map
-    #gc.collect()
-
-    #outline_seg_map = deblended_segment_map.outline_segments()
+    
     outline_seg_map = outline_segments(deblended_segment_map)
 
     # can add more columns w/ outputs listed in photutils image seg documentation
@@ -336,13 +331,10 @@ def check_point_in_extended(outline_seg_map, masks, seg_sources):
 
 
 def dao_handler(cnt_image: np.ndarray, exposure_time):
-    #dao_sources1 = dao_finder_1(cnt_image, exposure_time)
+    # run DAO twice to get more sources
     dao_sources1 = dao_finder(cnt_image, threshold=0.01, fwhm=5)
-    #gc.collect()
-    #dao_sources2 = dao_finder_2(cnt_image, exposure_time)
     dao_sources2 = dao_finder(cnt_image,threshold=0.02, fwhm=3)
     dao_sources = pd.concat([dao_sources1, dao_sources2])
-    #gc.collect()
     return dao_sources
 
 def dao_finder(cnt_image: np.ndarray, threshold: float = 0.01,

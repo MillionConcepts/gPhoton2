@@ -135,7 +135,8 @@ def execute_pipeline(
     share_memory: Optional[bool] = None,
     extended_photonlist: bool = False,
     aspect: str = 'aspect',
-    override_eclipse_limits: bool = False
+    override_eclipse_limits: bool = False,
+    suffix: Optional[str] = None,
 ) -> str:
     """
     Args:
@@ -243,7 +244,8 @@ def execute_pipeline(
         share_memory=share_memory,
         extended_photonlist=extended_photonlist,
         aspect=aspect,
-        start_time=1000
+        start_time=1000,
+        suffix=suffix,
     )
     ctx.watch.start()
     if photometry_only:

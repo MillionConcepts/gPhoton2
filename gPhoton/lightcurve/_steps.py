@@ -111,8 +111,16 @@ def find_sources(
             ]
         )
         source_table[["xcentroid", "ycentroid"]] = positions
-    return source_table, segment_map, extended_source_paths, extended_source_cat
-
+    # TODO: This breaks if you pass a catalog to `execute_pipeline` because it
+    # doesn't know anything about the segment maps.
+    try:
+        return source_table, segment_map, extended_source_paths, extended_source_cat
+    except UnboundLocalError:
+        # This is the fallback when a catalog is passed to `execute_pipeline`
+        # and therefore no segment map is generated. This is sort of messy and
+        # possibly a future TODO.
+        return source_table, None, None, None
+    
 def get_point_and_extended_sources(cnt_image: np.ndarray, band: str, f_e_mask, exposure_time):
 
     """
@@ -126,6 +134,7 @@ def get_point_and_extended_sources(cnt_image: np.ndarray, band: str, f_e_mask, e
     
     # cnt_image is no longer background subtracted
     # DAO threshold is now based on power law relationship with exposure time
+    # TODO: Document this relationship
     print("Masking for extended sources.")
     masks, extended_source_cat = mask_for_extended_sources(cnt_image, band, exposure_time)
 
@@ -168,7 +177,7 @@ def extract_photometry(movie_dict, source_table, apertures, threads):
     photometry_tables = []
     for key in ["cnt", "flag", "edge"]:
         title = "primary movie" if key == "cnt" else f"{key} map"
-        print(f"extracting photometry from {title}")
+        #print(f"extracting photometry from {title}")
         if threads is None:
             photometry = _extract_photometry_unthreaded(
                 movie_dict[key], apertures
@@ -207,8 +216,12 @@ def _load_csv_catalog(
     source_catalog_file: Pathlike, eclipse: int
 ) -> pd.DataFrame:
     sources = pd.read_csv(source_catalog_file)
-    return sources.loc[sources["eclipse"] == eclipse]
-
+    try:
+        return sources.loc[sources["eclipse"] == eclipse]
+    except KeyError:
+        # If there is not an eclipse column, then just use everything
+        # This lets you feed gPhoton2's outputs back into itself
+        return sources
 
 def _load_parquet_catalog(
     source_catalog_file: Pathlike, eclipse: int
