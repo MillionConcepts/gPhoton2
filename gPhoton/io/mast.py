@@ -138,6 +138,8 @@ def mast_url(sql_string: str) -> str:
     given a string containing a SQL query, construct a URL that will feed
     that query to MAST's GALEX database.
     """
+
+    print (f'{BASE_URL}{sql_string}{FORMAT_URL}')
     return f"{BASE_URL}{sql_string}{FORMAT_URL}"
 
 

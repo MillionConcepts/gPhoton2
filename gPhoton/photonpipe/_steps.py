@@ -185,7 +185,7 @@ def apply_aspect_solution(aspect, chunk, chunkid):
         & (aspix < (len(aspect["time"]) - 1))
         & ((flags == 0) | (flags == 6))
     )
-    flags[~cut] = 7
+    #flags[~cut] = 7
     ok_indices = np.nonzero(cut)[0]
     aspect_slice = aspix[ok_indices]
     print_inline(chunkid + "Interpolating aspect_data solutions...")
@@ -242,7 +242,7 @@ def apply_on_detector_corrections(
     # This and other lines like it below are to verify that the
     # event is still on the detector.
     cut = (fptrx > 0.0) & (fptrx < 479.0) & (fptry > 0.0) & (fptry < 479.0)
-    flags[~cut] = 8
+    #flags[~cut] = 8
     ok_indices = np.nonzero(cut)[0]
     print_inline(chunkid + "Applying walk correction...")
     fptrx, fptry, xdig, ydig = wiggle_and_dig(
@@ -279,7 +279,7 @@ def apply_on_detector_corrections(
         & (fptry < 479.0)
         & (flags == 0)
     )
-    flags[~cut] = 10
+    #flags[~cut] = 10
     ok_indices = np.nonzero(cut)[0]
     dx, dy = compute_detector_orientation(
         fptrx, fptry, cal_data["linearity"], ok_indices
@@ -336,14 +336,14 @@ def post_wiggle_update_indices_and_flags(
         & (fptry < 479.0)
         & (flags == 0)
     )
-    flags[~cut] = 9
+    #flags[~cut] = 9
     ok_indices = np.nonzero(cut)[0]
     walk_indices = make_cal_indices(
         walk["x"].shape, ok_indices, (q, floor_y, floor_x)
     )
     cut[ok_indices] = check_walk_flags(walk_indices, walk["x"], walk["y"])
     # TODO: flag is the same here intentionally?
-    flags[~cut] = 9
+    #flags[~cut] = 9
     ok_indices = np.nonzero(cut)[0]
     return flags, ok_indices
 
@@ -735,6 +735,9 @@ def create_ssd_from_decoded_data(data, band, eclipse, verbose, margin=90.001):
             np.mean(stimx_as[i : i + pinc][ix4]),
             np.mean(stimy_as[i : i + pinc][ix4]),
         )
+        print(f"sx2: {sx2}")
+        print(f"sx2 type: {type(sx2)}")
+
         stim_sep = (
             (sx2 - sx1) + (sx4 - sx3) + (sy1 - sy3) + (sy2 - sy4)
         ) / 4.0
@@ -745,6 +748,8 @@ def create_ssd_from_decoded_data(data, band, eclipse, verbose, margin=90.001):
         num.append(stim_num)
 
     # noinspection PyTupleAssignmentBalance
+    print(avt)
+    print(sep)
     m, C = np.polyfit(avt, sep, 1)
     if verbose > 1:
         print("\nstim_coef0, stim_coef1 = " + str(C) + ", " + str(m))

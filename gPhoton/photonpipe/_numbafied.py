@@ -55,6 +55,7 @@ def unfancy_detector_coordinates(
     # The detectors aren't oriented the same way.
     y_component = (yp_as + dy + yshift) * flip * 10
     x_component = (xp_as + dx + xshift) * flip * 10
+
     xi = nb.f4(c.XI_XSC) * y_component + nb.f4(c.XI_YSC) * x_component
     # TODO, similarly with eta_ysc?
     eta = nb.f4(c.ETA_XSC) * y_component + nb.f4(c.ETA_YSC) * x_component
@@ -66,7 +67,7 @@ def unfancy_detector_coordinates(
         & (row < 799)
         & (flags == 0)
     )
-    flags[~cut] = 6
+    #flags[~cut] = 6
     return xi, eta, col, row, flags
 
 
@@ -164,7 +165,7 @@ def unfancy_distortion_component(
         & (flags == 0)
         & (np.floor(depth) <= 16)
     )
-    flags[~cut] = 11
+    #flags[~cut] = 11
     ok_indices = np.nonzero(cut)[0]
     xshift, yshift = np.zeros(len(t)), np.zeros(len(t))
     return col, depth, ok_indices, row, xshift, yshift
