@@ -43,29 +43,81 @@ def eclipse_to_paths(
         prefix = f"{eclipse_base}-{initial}d"
         band_dict = {
             "raw6": f"{prefix}-raw6.fits.gz",
-            "photonfiles": [f"{prefix}.parquet" for _ in legs],
-            "images": [f"{prefix}-full{comp}" for _ in legs],
+            "photonfiles": [f"{prefix}-{leg}.parquet" for leg in legs],
+            "images": [f"{prefix}-full-{leg}{comp}" for leg in legs],
             "extended_catalogs": [
-                f"{prefix}-extended-sources.csv" for leg in legs
+                f"{prefix}-{leg}-extended-sources.csv" for leg in legs
             ]
         }
         if depth is not None:
             band_dict |= {
-                "movies": [f"{prefix}-{depth}s{comp}" for leg in legs],
+                "movies": [f"{prefix}-{depth}s-{leg}{comp}" for leg in legs],
                 # stem -- multiple aperture sizes possible
                 "photomfiles": [
-                    f"{prefix}-{depth}s-photom-" for leg in legs
+                    f"{prefix}-{depth}s-{leg}-photom-" for leg in legs
                 ],
                 "expfiles": [
-                    f"{prefix}-{depth}s-exptime.csv" for leg in legs
+                    f"{prefix}-{depth}s-{leg}-exptime.csv" for leg in legs
                 ]
             }
         else:
             band_dict |= {
-                "photomfiles": [f"{prefix}-full-photom-" for leg in legs]
+                "photomfiles": [f"{prefix}-full-{leg}-photom-" for leg in legs]
             }
         file_dict[band] = band_dict
     return file_dict
+
+
+# def eclipse_to_paths(
+#     eclipse: int,
+#     data_directory: Pathlike = "data",
+#     depth: Optional[int] = None,
+#     compression: Literal["none", "gzip", "rice"] = "gzip",
+# ) -> dict[str, dict[str, str]]:
+#     """
+#     generate canonical paths for files associated with a given eclipse,
+#     optionally including files at a specific depth
+#     """
+#     data_directory = "data" if data_directory is None else data_directory
+#     from gPhoton.aspect import aspect_tables
+#     zpad = str(eclipse).zfill(5)
+#     eclipse_path = f"{data_directory}/e{zpad}/"
+#     eclipse_base = f"{eclipse_path}e{zpad}"
+#     bands = "NUV", "FUV"
+#     band_initials = "n", "f"
+#     file_dict = {}
+#     comp = {
+#         "gzip": ".fits.gz", "none": ".fits", "rice": "-rice.fits"
+#     }[compression]
+#     leg_number = aspect_tables(eclipse, ("metadata",))[0]['legs'][0].as_py()
+#     legs = (0,) if leg_number == 0 else tuple(range(leg_number))
+#     for band, initial in zip(bands, band_initials):
+#         prefix = f"{eclipse_base}-{initial}d"
+#         band_dict = {
+#             "raw6": f"{prefix}-raw6.fits.gz",
+#             "photonfiles": [f"{prefix}.parquet" for _ in legs],
+#             "images": [f"{prefix}-full{comp}" for _ in legs],
+#             "extended_catalogs": [
+#                 f"{prefix}-extended-sources.csv" for leg in legs
+#             ]
+#         }
+#         if depth is not None:
+#             band_dict |= {
+#                 "movies": [f"{prefix}-{depth}s{comp}" for leg in legs],
+#                 # stem -- multiple aperture sizes possible
+#                 "photomfiles": [
+#                     f"{prefix}-{depth}s-photom-" for leg in legs
+#                 ],
+#                 "expfiles": [
+#                     f"{prefix}-{depth}s-exptime.csv" for leg in legs
+#                 ]
+#             }
+#         else:
+#             band_dict |= {
+#                 "photomfiles": [f"{prefix}-full-photom-" for leg in legs]
+#             }
+#         file_dict[band] = band_dict
+#     return file_dict
 
 
 class FakeStopwatch:

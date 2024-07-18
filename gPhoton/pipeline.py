@@ -67,16 +67,23 @@ def get_photonlist(
     # TODO, maybe: parameter to run only certain legs
     files, photonpaths, temp_directory = _set_up_paths(eclipse, band, roots)
     if (roots.get("remote") is not None) and (recreate is False):
-        if all([Path(file).exists() for file in roots["remote"]["photonfiles"]]):
-            print(
-                f"making temp local copies of photon file(s) from remote: "
-                f"{roots['remote']['photonfiles']}"
-            )
-            photonpaths = []
-            for file in roots['remote']['photonfiles']:
-                photonpaths.append(
-                    Path(shutil.copy(Path(file), temp_directory))
-                )
+        # if all([Path(file).exists() for file in roots["remote"]["photonfiles"]]):
+        #     print(
+        #         f"making temp local copies of photon file(s) from remote: "
+        #         f"{roots['remote']['photonfiles']}"
+        #     )
+        #     photonpaths = []
+        #     for file in roots['remote']['photonfiles']:
+        #         photonpaths.append(
+        #             Path(shutil.copy(Path(file), temp_directory))
+        #         )
+        photonpaths = []
+        for path in r_photpaths:
+            if path.exists():
+                print(f"making temp local copy of photon file from remote: {path.name}")
+                photon_copy = Path(shutil.copy(path, context.temp_path()))
+                photonpaths.append(photon_copy)
+
     if recreate or not all([path.exists() for path in photonpaths]):
         if not photonpaths[0].parent.exists():
             photonpaths[0].parent.mkdir(parents=True)
