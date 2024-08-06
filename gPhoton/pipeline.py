@@ -219,6 +219,8 @@ def execute_pipeline(
             print("Bailing out.")
             return f"return code: {';'.join(e_error)}"
         print("override_eclipse_limits=True, continuing anyway")
+    if lil==False:
+        warnings.warn("lil=False is deprected and will be removed in a future release. Defaulting to lil=True.")
     ctx = PipeContext(
         eclipse,
         band,
@@ -233,7 +235,7 @@ def execute_pipeline(
         verbose=verbose,
         source_catalog_file=source_catalog_file,
         write=write,
-        lil=lil,
+        lil=True,
         coregister_lightcurves=coregister_lightcurves,
         stop_after=stop_after,
         hdu_constructor_kwargs=hdu_constructor_kwargs,
