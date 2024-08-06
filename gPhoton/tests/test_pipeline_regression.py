@@ -165,3 +165,12 @@ class TestPipelineRegression08():
         #aspect="aspect2",
         source_catalog_file=f'regr_test_data/e{gii_eclipse:05}/e{gii_eclipse:05}-fd-cat.csv',
     )
+
+class TestPhotometryRegression00():
+    import pandas as pd
+    regr = pd.read_csv('gPhoton/tests/photometry_regression_stats.csv',index_col=None)
+    for r in regr.iterrows():
+        fn = r[1]['filename']
+        data = pd.read_csv(fn,index_col=None)
+        assert data.shape[0]==r[1]['length']
+        assert data.shape[1]==r[1]['width']
