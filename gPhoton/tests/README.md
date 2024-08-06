@@ -1,0 +1,3 @@
+The `test_pipeline_regression.py` is the more thorough end-to-end test that exercises a lot of combinations of the parameters of `execute_pipeline` and then (cursorily) regression tests the photometry pipeline outputs against the benchmarks in `photometry_regression_stats.csv`. It takes about half an hour to run. **Only run this test rarely, before a big merge.**
+
+The `test_pipeline_regression_quick.py` just runs the pipeline once on the "standard" test eclipse (e23456) and then does a (cursory) regression test of the photometry outputs. It takes about a minute to run. **Run this more frequently during development** using e.g. `pytest gPhoton/tests/test_pipeline_regression_quick.py`.
