@@ -14,7 +14,8 @@ import warnings
 import astropy.wcs
 import numpy as np
 import pandas as pd
-from photutils import DAOStarFinder, CircularAperture, aperture_photometry
+from photutils.detection import DAOStarFinder
+from photutils.aperture import CircularAperture, aperture_photometry
 import scipy.sparse
 
 from gPhoton.pretty import print_inline
