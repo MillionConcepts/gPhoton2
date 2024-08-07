@@ -249,7 +249,8 @@ class PipeContext:
         extended_photonlist: bool = False,
         aspect: str = "aspect",
         start_time: Optional[float] = None,
-        snippet: Optional[tuple] = None
+        snippet: Optional[tuple] = None,
+        extraction_threshold: float = 0.01
     ):
         self.eclipse = eclipse
         self.band = band
@@ -281,6 +282,7 @@ class PipeContext:
         self.aspect = aspect
         self.start_time = start_time
         self.snippet = snippet
+        self.extraction_threshold = extraction_threshold
 
 
     def __repr__(self):
@@ -338,7 +340,7 @@ class PipeContext:
             "chunksz": self.chunksz,
             "share_memory": self.share_memory,
             "extended_photonlist": self.extended_photonlist,
-            "start_time": self.start_time
+            "start_time": self.start_time,
         }
 
     def eclipse_path(self, remote=False):

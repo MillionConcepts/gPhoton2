@@ -135,7 +135,8 @@ def execute_pipeline(
     share_memory: Optional[bool] = None,
     extended_photonlist: bool = False,
     aspect: str = 'aspect',
-    override_eclipse_limits: bool = False
+    override_eclipse_limits: bool = False,
+    extraction_threshold: float = 0.01,
 ) -> str:
     """
     Args:
@@ -205,6 +206,11 @@ def execute_pipeline(
         override_eclipse_limits: attempt to execute pipeline even if metadata
             and/or support for this eclipse appear to be limited or absent?
             note that the pipeline will most likely still fail in these cases.
+        extraction_threshold: floating point number that sets the limit above
+            background at which DAOStarFinder will detect sources. Lower values
+            will detect more sources, but will also produce more false positives.
+            The optimal setting for this parameter is dependent on observation
+            and desired application / analysis / use case.
     Returns:
         str: `"return code: successful"` for fully successful execution;
             `"return code: {other_thing}"` for various known failure states
@@ -245,7 +251,8 @@ def execute_pipeline(
         share_memory=share_memory,
         extended_photonlist=extended_photonlist,
         aspect=aspect,
-        start_time=1000
+        start_time=1000, # this is a no-op
+        extraction_threshold=extraction_threshold,
     )
     ctx.watch.start()
     if photometry_only:
