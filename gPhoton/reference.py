@@ -195,7 +195,7 @@ def eclipse_to_paths(
     file_dict = {
         "raw6": f"{prefix}-raw6.fits.gz",
         "photonfile": f"{prefix}-b{leg}.parquet",
-        "image": f"{prefix}-b{leg}-ffull-image-{comp}{ext}",
+        "image": f"{prefix}-ffull-b{leg}-image-{comp}{ext}",
         # TODO: frames, etc. -- decide exactly how once we are using
         #  extended source detection on movies
         "extended_catalog": f"{prefix}-b{leg}-extended-sources.csv",
@@ -209,7 +209,7 @@ def eclipse_to_paths(
     else:
         file_dict[
             "photomfile"
-        ] = f"{prefix}-b{leg}-ffull-image-photom-{aper}.csv"
+        ] = f"{prefix}-ffull-b{leg}-image-photom-{aper}.csv"
     return file_dict
 
 
