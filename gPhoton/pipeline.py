@@ -137,6 +137,7 @@ def execute_pipeline(
     aspect: str = 'aspect',
     override_eclipse_limits: bool = False,
     extraction_threshold: float = 0.01,
+    suffix: Optional[str] = None,
 ) -> str:
     """
     Args:
@@ -211,6 +212,7 @@ def execute_pipeline(
             will detect more sources, but will also produce more false positives.
             The optimal setting for this parameter is dependent on observation
             and desired application / analysis / use case.
+        suffix: optional string to append to the end of the output filenames
     Returns:
         str: `"return code: successful"` for fully successful execution;
             `"return code: {other_thing}"` for various known failure states
@@ -253,6 +255,7 @@ def execute_pipeline(
         aspect=aspect,
         start_time=1000, # this is a no-op
         extraction_threshold=extraction_threshold,
+        suffix=suffix,
     )
     ctx.watch.start()
     if photometry_only:

@@ -171,6 +171,7 @@ def eclipse_to_paths(
     mode: str = "direct",
     leg: int = 0,
     aperture: Optional[float] = None,
+    suffix: Optional[str] = None, # suffix for file names
     **kwargs,
 ) -> dict[str, str]:
     """
@@ -191,6 +192,7 @@ def eclipse_to_paths(
     start = "movie" if start is None else f"t{intfill(start)}"
     depth = None if depth is None else f"f{intfill(depth)}"
     prefix = f"{eclipse_base}-{band[0].lower()}{mode}"
+    suffix = "" if suffix is None else f"-{suffix}"
     aper = "" if aperture is None else str(aperture).replace(".", "_")
     file_dict = {
         "raw6": f"{prefix}-raw6.fits.gz",
@@ -202,14 +204,14 @@ def eclipse_to_paths(
     }
     if depth is not None:
         file_dict |= {
-            "movie": f"{prefix}-b{leg}-{depth}-{start}-{comp}{ext}",
-            "photomfile": f"{prefix}-{depth}-b{leg}-{start}-photom-{aper}.csv",
+            "movie": f"{prefix}-{depth}-b{leg}-{start}-{comp}{ext}",
+            "photomfile": f"{prefix}-{depth}-b{leg}-{start}-photom-{aper}{suffix}.csv",
             "expfile": f"{prefix}-{depth}-b{leg}-{start}-exptime.csv",
         }
     else:
         file_dict[
             "photomfile"
-        ] = f"{prefix}-ffull-b{leg}-image-photom-{aper}.csv"
+        ] = f"{prefix}-ffull-b{leg}-image-photom-{aper}{suffix}.csv"
     return file_dict
 
 
@@ -250,7 +252,8 @@ class PipeContext:
         aspect: str = "aspect",
         start_time: Optional[float] = None,
         snippet: Optional[tuple] = None,
-        extraction_threshold: float = 0.01
+        extraction_threshold: float = 0.01,
+        suffix: Optional[str] = None,
     ):
         self.eclipse = eclipse
         self.band = band
@@ -283,7 +286,7 @@ class PipeContext:
         self.start_time = start_time
         self.snippet = snippet
         self.extraction_threshold = extraction_threshold
-
+        self.suffix = suffix
 
     def __repr__(self):
         return (
@@ -291,7 +294,7 @@ class PipeContext:
             f"depth={self.depth}, compression={self.compression}, "
             f"frame={self.frame}, mode={self.mode}, leg={self.leg}, "
             f"apertures={self.aperture_sizes}, local={self.local}, "
-            f"remote={self.remote}"
+            f"remote={self.remote}",f"suffix={self.suffix}",
         )
 
     def __str__(self):
@@ -309,6 +312,7 @@ class PipeContext:
             "mode": self.mode,
             "leg": self.leg,
             "aperture_sizes": self.aperture_sizes,
+            "suffix": self.suffix,
         }
 
     def asdict(self) -> dict[str, Any]:
@@ -341,6 +345,7 @@ class PipeContext:
             "share_memory": self.share_memory,
             "extended_photonlist": self.extended_photonlist,
             "start_time": self.start_time,
+            "suffix": self.suffix,
         }
 
     def eclipse_path(self, remote=False):
