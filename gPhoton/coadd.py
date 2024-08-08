@@ -89,12 +89,20 @@ def make_shared_wcs(wcs_sequence):
     return make_bounding_wcs(np.array([[ra_min, dec_min], [ra_max, dec_max]]))
 
 
-def zero_flag_and_edge(cnt, flag, edge):
+def zero_flag_and_edge(cnt, flag, edge, copy=False):
+    if copy is True: # TODO: What is this for?
+        cnt = cnt.copy()
     cnt[~np.isfinite(cnt)] = 0
     cnt[np.nonzero(flag)] = 0
     cnt[np.nonzero(edge)] = 0
     return cnt
 
+def flag_and_edge_mask(cnt, flag, edge):
+    flag_edge_mask = np.full_like(cnt, False, dtype=bool)
+    flag_edge_mask[~np.isfinite(cnt)] = True
+    flag_edge_mask[np.nonzero(flag)] = True
+    flag_edge_mask[np.nonzero(edge)] = True
+    return flag_edge_mask
 
 # TODO: this version is compatible with RICE compression, but is relatively
 #  inefficient. needs to be juiced up.

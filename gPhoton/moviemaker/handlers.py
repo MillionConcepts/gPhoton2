@@ -48,7 +48,6 @@ def make_movies(
     #  needed _is_ an option if rigorous thread safety is practiced, although
     #  this will significantly increase the memory pressure of this portion
     #  of the execute_pipeline.
-    print("slicing exposure array into memory")
     exposure_directory = slice_exposure_into_memory(exposure_array, tranges)
     del exposure_array
     map_directory = NestingDict()
@@ -56,10 +55,6 @@ def make_movies(
         for frame_ix, trange in enumerate(tranges):
             # 0-count exposure times have 'None' entries assigned in
             # slice_exposure_into_memory
-            print(
-                f"slicing {map_name} data {frame_ix + 1} of {len(tranges)} "
-                f"into memory"
-            )
             map_directory[frame_ix][map_name] = slice_frame_into_memory(
                 exposure_directory, map_ix_dict, map_name, frame_ix, trange
             )
@@ -150,7 +145,6 @@ def create_images_and_movies(
     imsz = (
         int((wcs.wcs.crpix[1] - 0.5) * 2), int((wcs.wcs.crpix[0] - 0.5) * 2)
     )
-    print(f"image size: {imsz}")
     render_kwargs = {
         "exposure_array": exposure_array,
         "map_ix_dict": map_ix_dict,

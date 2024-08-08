@@ -200,7 +200,9 @@ def eclipse_to_paths(
         "image": f"{prefix}-ffull-b{leg}-image-{comp}{ext}",
         # TODO: frames, etc. -- decide exactly how once we are using
         #  extended source detection on movies
-        "extended_catalog": f"{prefix}-b{leg}-extended-sources.csv",
+        "extended_catalog": f"{prefix}-b{leg}-extended-sources.csv", # TODO: is this being used?
+        "extended_shapes":f"{prefix}-b{leg}-extended-shapes.csv"
+
     }
     if depth is not None:
         file_dict |= {

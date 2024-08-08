@@ -23,14 +23,18 @@ def make_lightcurves(sky_arrays: Mapping, ctx: PipeContext):
             return f"skipped photometry because no sources were found {ctx.source_catalog_file}"
     else:
         sources = None
-    source_table = find_sources(
-        ctx.eclipse,
-        ctx.band,
-        str(ctx.eclipse_path()),
-        sky_arrays["image_dict"],
-        sky_arrays["wcs"],
-        source_table=sources,
-        extraction_threshold=ctx.extraction_threshold,
+    (source_table, 
+     segment_map, 
+     extended_source_paths, 
+     extended_shapes_cat
+     ) = find_sources(
+         ctx.eclipse,
+         ctx.band,
+         str(ctx.eclipse_path()),
+         sky_arrays["image_dict"],
+         sky_arrays["wcs"],
+         source_table=sources,
+         extraction_threshold=ctx.extraction_threshold,
     )
     ctx.watch.click()
     # failure messages due to low exptime or no data
@@ -55,6 +59,13 @@ def make_lightcurves(sky_arrays: Mapping, ctx: PipeContext):
                 ctx.threads
             )
             write_exptime_file(ctx["expfile"], sky_arrays["movie_dict"])
+        else:
+            write_exptime_file(ctx["expfile"], sky_arrays["image_dict"])
+        extended_shapes = ctx(aperture=aperture_size)['extended_shapes']
+        print(f"writing extended source table to {extended_shapes}")
+        extended_shapes_cat.to_csv(
+            extended_shapes, index=False  # added s and [leg]??
+        )
         photomfile = ctx(aperture=aperture_size)['photomfile']
         print(f"writing source table to {photomfile}")
         photometry_table.to_csv(photomfile, index=False)
