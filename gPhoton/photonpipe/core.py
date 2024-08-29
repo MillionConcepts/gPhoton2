@@ -70,6 +70,7 @@ def execute_photonpipe(ctx: PipeContext, raw6file: Optional[str] = None):
     aspect = load_aspect_solution(eclipse, ctx.aspect, ctx.verbose)
 
     data, nphots = load_raw6(raw6file, ctx.verbose)
+
     # the stims are only actually used for post-CSP corrections, but we
     # temporarily retain them in both cases for brevity.
     # the use of a 90.001 separation angle and fixed stim coefficients
@@ -154,6 +155,7 @@ def execute_photonpipe(ctx: PipeContext, raw6file: Optional[str] = None):
                 list(array_dict.values()), names=list(array_dict.keys())
             ),
             leg_ctx['photonfile'],
+            row_group_size=5000000,
             use_dictionary=FIELDS_FOR_WHICH_DICTIONARY_COMPRESSION_IS_USEFUL,
             version="2.6",
         )

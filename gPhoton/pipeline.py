@@ -23,7 +23,6 @@ from more_itertools import chunked
 import gPhoton.reference
 from gPhoton.reference import PipeContext, check_eclipse
 from gPhoton.types import GalexBand
-
 # oh no! divide by zero! i am very distracting!
 warnings.filterwarnings(action="ignore", category=RuntimeWarning)
 
@@ -276,6 +275,13 @@ def execute_full_pipeline(ctx):
         return get_photonlist_result  # this is an error return code
     else:
         photonpaths = get_photonlist_result  # strictly explanatory renaming
+
+    # mask making
+    from gPhoton.mask import make_masks_per_eclipse, make_mask_savepaths
+    print("masking photonlist")
+    savepaths = make_mask_savepaths(ctx)
+    make_masks_per_eclipse(photonpath[0], nbins, savepaths)
+
     if ctx.stop_after == "photonpipe":
         print(
             f"stop_after='photonpipe' passed, halting; "
