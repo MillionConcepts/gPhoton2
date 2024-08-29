@@ -280,7 +280,8 @@ def execute_full_pipeline(ctx):
     from gPhoton.mask import make_masks_per_eclipse, make_mask_savepaths
     print("masking photonlist")
     savepaths = make_mask_savepaths(ctx)
-    make_masks_per_eclipse(photonpath[0], nbins, savepaths)
+    nbins = 800
+    make_masks_per_eclipse(photonpaths[0], nbins, savepaths)
 
     if ctx.stop_after == "photonpipe":
         print(

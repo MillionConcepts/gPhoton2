@@ -2,7 +2,7 @@ from gPhoton.pipeline import execute_pipeline
 
 if __name__ == "__main__":
     execute_pipeline(
-        580,
+        23456,
         "NUV",
         depth=120,
         # integer; None to deactivate (default None)
@@ -27,8 +27,5 @@ if __name__ == "__main__":
         lil=True,
         # write movie frames as separate files
         burst=False,
-        extended_photonlist=True,
-        # aspect file, don't need to set unless need to use alt
-        # file, 'aspect2.parquet'
-        aspect="aspect2"
+        extended_photonlist=True
     )

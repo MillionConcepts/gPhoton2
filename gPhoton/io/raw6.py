@@ -42,7 +42,7 @@ def load_raw6(raw6file: Pathlike, verbose: int):
     max_photons = 30000000
     if nphots > max_photons:
         nphots = max_photons
-    data = data(list(data.items())[:nphots])
+    data = dict(list(data.items())[:nphots])
 
     return data, nphots
 

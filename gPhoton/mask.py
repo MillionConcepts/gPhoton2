@@ -10,7 +10,8 @@ import pyarrow.parquet as parquet
 def make_mask_savepaths(ctx):
     e = str(ctx.eclipse).zfill(5)
     b = 'n' if ctx.band == "NUV" else 'f'
-    savepaths = {'cmask': f"e{e}-{b}d-cmask.bin", 'hmask': f"e{e}-{b}d-hmask.bin" }
+    savepaths = {'cmask': f"{ctx.local}/e{e}-{b}d-cmask.bin",
+                 'hmask': f"{ctx.local}/e{e}-{b}d-hmask.bin" }
     return savepaths
 
 def make_masks_per_eclipse(photon_file, nbins, savepaths):
@@ -20,7 +21,7 @@ def make_masks_per_eclipse(photon_file, nbins, savepaths):
     if os.path.exists(photon_file):
         try:
             print("reading photonlist")
-            nf = photonlist.read_table(photon_file, columns=['col', 'row', 'ra', 'dec', 't']).to_pandas()
+            nf = parquet.read_table(photon_file, columns=['col', 'row', 'ra', 'dec', 't']).to_pandas()
             # for reading row groups
             #photonlist = parquet.ParquetFile(photon_file)
             #nf = photonlist.read_row_groups([0],columns=['col', 'row', 'ra', 'dec', 't']).to_pandas()
@@ -51,8 +52,8 @@ def make_masks_per_eclipse(photon_file, nbins, savepaths):
             nf = pd.concat([nf, edge_points], ignore_index=True)
 
             print("quickbinning")
-            ra_dict = bin2d(nf['col'], nf['row'], nf['ra'], nbins, op=['std', 'count'])
-            dec_stdev = bin2d(nf['col'], nf['row'], nf['dec'], 'std', nbins)
+            ra_dict = bin2d(x_arr=nf['col'], y_arr=nf['row'], val_arr=nf['ra'], n_bins=nbins, op=('std', 'count'))
+            dec_stdev = bin2d(x_arr=nf['col'], y_arr=nf['row'], val_arr=nf['dec'], op='std', n_bins=nbins)
             count = ra_dict['count'] / expt
 
             print("masking binned data")
@@ -71,7 +72,7 @@ def make_masks_per_eclipse(photon_file, nbins, savepaths):
             raise
         except Exception as ex:
             print(ex)
-            print(f"failed {eclipse}")
+            print(f"failed")
     else:
         print("fail!")
 
