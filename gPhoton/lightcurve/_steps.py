@@ -90,7 +90,7 @@ def find_sources(
                 image_dict["cnt"],
                 image_dict["flag"],
                 image_dict["edge"])
-            image_dict["cnt"] = scipy.sparse.coo_matrix(image_dict["cnt"])
+            image_dict["cnt"] = scipy.sparse.coo_matrix(image_dict["cnt"]) # why is it doing this?
             source_table, segment_map, extended_source_paths, extended_source_cat = \
                 get_point_and_extended_sources(masked_cnt_image, band, flag_edge_mask, exptime)
             del masked_cnt_image
