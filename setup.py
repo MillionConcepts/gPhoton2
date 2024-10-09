@@ -1,2 +1,6 @@
-from setuptools import setup, find_packages
-setup(name="gPhoton", version="0.1.0", packages=find_packages())
+# Package configuration is now in pyproject.toml.  This file exists
+# solely for backward compatibility, e.g. allowing people to continue
+# to run "python3 setup.py develop" instead of "pip install -e ."
+
+import setuptools
+setuptools.setup()

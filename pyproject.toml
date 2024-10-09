@@ -1,0 +1,64 @@
+[project]
+name        = "gPhoton"
+version     = "0.1.0"
+description = "Data processing pipeline for the GALEX ultraviolet telescope"
+readme      = "README.md"
+license     = { file = "LICENSE" }
+
+authors     =  [
+    { name = "Chase Million",     email = "chase@millionconcepts.com"    },
+    { name = "Michael St. Clair", email = "mstclair@millionconcepts.com" },
+    { name = "Beka Albach",       email = "ralbach@millionconcepts.com"  },
+]
+
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "License :: OSI Approved :: BSD License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+]
+
+requires-python = ">=3.10"
+dependencies = [
+    "astropy",
+    "dustgoggles",
+    "fast-histogram",
+    "fitsio",
+    "more-itertools",
+    "numba",
+    "numpy < 2.0.0",
+    "pandas",
+    "photutils",
+    "pip",
+    "pyarrow",
+    "requests",
+    "rich",
+    "scikit-image>=0.20",
+    "scipy",
+    "sh",
+]
+
+[project.optional-dependencies]
+cli    = ["fire"]
+gzip   = ["isal"]
+x86_64 = ["icc_rt"]
+search = ["astroquery"]
+tests  = ["pytest"]
+
+[project.urls]
+Repository = "https://github.com/MillionConcepts/gphoton2"
+
+[build-system]
+requires = ["setuptools >= 64"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["gPhoton"]
+namespaces = false
+
+# Recommended for new projects by pytest manual.
+[tool.pytest.ini_options]
+addopts = [
+    "--import-mode=importlib"
+]

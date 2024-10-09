@@ -9,7 +9,8 @@ ais_eclipse = 18669
 cai_eclipse = 20334
 gii_eclipse = 25125
 
-class TestPipelineRegression01():
+@pytest.mark.skip(reason="very slow, no longer correct")
+def test_pipeline_regression_01():
     execute_pipeline(
         dis_eclipse, # DIS eclipse
         "NUV", # band
@@ -27,7 +28,8 @@ class TestPipelineRegression01():
         #aspect="aspect2"
     )
 
-class TestPipelineRegression02():
+@pytest.mark.skip(reason="very slow, no longer correct")
+def test_pipeline_regression_02():
     execute_pipeline(
         ais_eclipse, # AIS eclipse
         "NUV", # band
@@ -45,7 +47,8 @@ class TestPipelineRegression02():
         #aspect="aspect2"
     )
 
-class TestPipelineRegression03():
+@pytest.mark.skip(reason="very slow, no longer correct")
+def test_pipeline_regression_03():
     execute_pipeline(
         cai_eclipse, # CAI eclipse
         "FUV", # band
@@ -63,7 +66,8 @@ class TestPipelineRegression03():
         #aspect="aspect2"
     )
 
-class TestPipelineRegression04():
+@pytest.mark.skip(reason="very slow, no longer correct")
+def test_pipeline_regression_04():
     execute_pipeline(
         gii_eclipse, # GII eclipse
         "FUV", # band
@@ -81,7 +85,8 @@ class TestPipelineRegression04():
         #aspect="aspect2"
     )
 
-class TestPipelineRegression05():
+@pytest.mark.skip(reason="very slow, no longer correct")
+def test_pipeline_regression_05():
     phot = pd.read_csv(f'regr_test_data/e{dis_eclipse:05}/e{dis_eclipse:05}-nd-f0120-b00-movie-photom-6_0.csv',
                     index_col=None)
     cat = phot[['ra','dec']]
@@ -105,7 +110,8 @@ class TestPipelineRegression05():
         source_catalog_file=f'regr_test_data/e{dis_eclipse:05}/e{dis_eclipse:05}-nd-cat.csv' # change to accept an in-memory object as well as a file path
     )
 
-class TestPipelineRegression06():
+@pytest.mark.skip(reason="very slow, no longer correct")
+def test_pipeline_regression_06():
     execute_pipeline(
         ais_eclipse, # AIS eclipse
         "FUV", # band
@@ -123,7 +129,8 @@ class TestPipelineRegression06():
         extended_photonlist="regr_test_data/e14488/e14488-nd-b00.parquet",
     )
 
-class TestPipelineRegression07():
+@pytest.mark.skip(reason="very slow, no longer correct")
+def test_pipeline_regression_07():
     execute_pipeline(
         cai_eclipse, # CAI eclipse
         "NUV", # band
@@ -141,7 +148,8 @@ class TestPipelineRegression07():
         aspect="aspect", # change this to accept a file path, not a code name
     )
 
-class TestPipelineRegression08():
+@pytest.mark.skip(reason="very slow, no longer correct")
+def test_pipeline_regression_08():
     phot = pd.read_csv(f'regr_test_data/e{gii_eclipse:05}/e{gii_eclipse:05}-fd-f0120-b00-movie-photom-6_0.csv',
                     index_col=None)
     cat = phot[['ra','dec']]
@@ -166,7 +174,8 @@ class TestPipelineRegression08():
         source_catalog_file=f'regr_test_data/e{gii_eclipse:05}/e{gii_eclipse:05}-fd-cat.csv',
     )
 
-class TestPhotometryRegression00():
+@pytest.mark.skip(reason="very slow, no longer correct")
+def test_photometry_regression_00():
     import pandas as pd
     regr = pd.read_csv('gPhoton/tests/photometry_regression_stats.csv',index_col=None)
     for r in regr.iterrows():

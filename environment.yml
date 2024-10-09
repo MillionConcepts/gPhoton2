@@ -3,20 +3,21 @@ channels:
   - numba
   - conda-forge
 dependencies:
-  - python=3.10
+  - python>=3.10
   - astropy
   - dustgoggles
   - fast-histogram
   - fitsio
   - more-itertools
   - numba
-  - numpy
+  - numpy<2.0.0
   - pandas
   - photutils
   - pip
   - pyarrow
   - requests
   - rich
+  - scikit-image>=0.20
   - scipy
   - sh
   # optional, used in pipeline CLI
