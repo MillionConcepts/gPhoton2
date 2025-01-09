@@ -226,7 +226,7 @@ def image_segmentation(cnt_image: np.ndarray, band: str, f_e_mask, exposure_time
 
     print("Estimating background and threshold.")
     cnt_image, threshold = estimate_background_and_threshold(
-        cnt_image, f_e_mask, band, exposure_time
+        cnt_image, band, exposure_time
     )
     kernel = make_2dgaussian_kernel(fwhm=3, size=(3, 3))
     convolved_data = convolve(cnt_image, kernel)
@@ -274,31 +274,36 @@ def estimate_threshold(bkg_rms, band, exposure_time):
         threshold = np.multiply(3, bkg_rms)
     else:
         threshold = np.multiply(3, bkg_rms)
+        # new minimum threshold for FUV to avoid ID'ing background
+        filtered_thresh = threshold[threshold > 0.0005]
+        upper_quartile = np.percentile(filtered_thresh, 75)
+        threshold[threshold < upper_quartile] = upper_quartile
 
     return threshold
 
 
-def estimate_background_and_threshold(cnt_image: np.ndarray, f_e_mask, band, exposure_time):
+def estimate_background_and_threshold(cnt_image: np.ndarray, band, exposure_time):
 
-    cnt_image, bkg_rms = estimate_background(cnt_image, f_e_mask)
+    cnt_image, bkg_rms = estimate_background(cnt_image, band)
     threshold = estimate_threshold(bkg_rms, band, exposure_time)
 
     return cnt_image, threshold
 
 
-def estimate_background(cnt_image, f_e_mask):
+def estimate_background(cnt_image, band):
     from photutils.background import Background2D, MedianBackground
     from astropy.stats import SigmaClip
 
     sigma_clip = SigmaClip(sigma=3.)
     bkg_estimator = MedianBackground()
+    # remove f_e mask from background 2d
     bkg = Background2D(cnt_image,
                        (50, 50),
                        filter_size=(3, 3),
                        bkg_estimator=bkg_estimator,
-                       sigma_clip=sigma_clip,
-                       mask=f_e_mask)
-    cnt_image -= bkg.background
+                       sigma_clip=sigma_clip)
+    if band == "NUV":
+        cnt_image -= bkg.background
     del bkg.background
     del bkg._unfiltered_background_mesh
     del bkg.background_mesh

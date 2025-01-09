@@ -154,6 +154,7 @@ def execute_photonpipe(ctx: PipeContext, raw6file: Optional[str] = None):
                 list(array_dict.values()), names=list(array_dict.keys())
             ),
             leg_ctx['photonfile'],
+            row_group_size=5000000,
             use_dictionary=FIELDS_FOR_WHICH_DICTIONARY_COMPRESSION_IS_USEFUL,
             version="2.6",
         )

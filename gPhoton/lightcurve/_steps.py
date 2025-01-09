@@ -138,7 +138,6 @@ def get_point_and_extended_sources(
     Extended source extraction occurs in helper functions.
     """
     
-    # cnt_image is no longer background subtracted
     # DAO threshold is now based on power law relationship with exposure time
     # TODO: Document this relationship
     print("Masking for extended sources.")
