@@ -133,8 +133,9 @@ def get_point_and_extended_sources(
     Main function for extracting point and extended sources from an eclipse.
     Image segmentation and point source extraction occurs in a separate function.
     The threshold for being a source in NUV is set at 1.5 times the background
-    rms values (2d array), while for FUV it is 3 times. The FUV setting isn't
-    ~perfect~. TODO: improve FUV threshold setting.
+    rms values (2d array) for eclipses over 800 sec, while for NUV under 800s and
+    for all FUV it is 3 times bkg rms. Then there is a minimum threshold for FUV
+    of the upper quartile of all threshold values over 0.0005.
     Extended source extraction occurs in helper functions.
     """
     
