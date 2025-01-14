@@ -61,8 +61,7 @@ def find_sources(
     datapath: Union[str, Path],
     image_dict,
     wcs,
-    source_table: Optional[pd.DataFrame] = None,
-    extraction_threshold: float = 0.01 # lower values geneate more detections
+    source_table: Optional[pd.DataFrame] = None
 ):
     from gPhoton.coadd import zero_flag_and_edge, flag_and_edge_mask
     # TODO, maybe: pop these into a handler function
@@ -122,6 +121,7 @@ def find_sources(
         # possibly a future TODO.
         return source_table, None, None, None
 
+
 def get_point_and_extended_sources(
         cnt_image: np.ndarray,
         band: str,
@@ -138,15 +138,12 @@ def get_point_and_extended_sources(
     of the upper quartile of all threshold values over 0.0005.
     Extended source extraction occurs in helper functions.
     """
-    
-    # DAO threshold is now based on power law relationship with exposure time
-    # TODO: Document this relationship
+
     print("Masking for extended sources.")
     masks, extended_source_cat = mask_for_extended_sources(cnt_image, band, exposure_time)
 
     deblended_seg_map, outline_seg_map, seg_sources = image_segmentation(cnt_image, band, f_e_mask, exposure_time)
     print("Checking for extended source overlap with point sources.")
-    # checking for overlap between extended source mask and segmentation image
     seg_sources = check_point_in_extended(outline_seg_map, masks, seg_sources)
 
     #seg_sources.dropna() was old setting
@@ -215,7 +212,6 @@ def write_exptime_file(expfile: Pathlike, movie_dict) -> None:
     print(f"writing exposure time table to {expfile}")
     # noinspection PyTypeChecker
     exptime_table.to_csv(expfile, index=False)
-
 
 
 def _load_csv_catalog(

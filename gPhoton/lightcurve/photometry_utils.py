@@ -171,10 +171,13 @@ class LocalHIGHSlocal:
         self.peaks = find_peaks(**peak_find_kwargs)
         return self.peaks
 
+
 # This is a copy of the 
 # photutils.segmentation.segmentation.SegmentationImage.outline_segments
 # from v1.7, after which it was deprecated without a functionally
-# identical replacement.
+# identical replacement. The closest replacement,
+# SegmentationImage.to_patches, is more memory-intensive and requires
+# more steps.
 def outline_segments(self, mask_background=False):
     """
     Outline the labeled segments.
@@ -217,6 +220,7 @@ def outline_segments(self, mask_background=False):
         outlines = np.ma.masked_where(outlines == 0, outlines)
 
     return outlines
+
 
 def image_segmentation(cnt_image: np.ndarray, band: str, f_e_mask, exposure_time):
 
@@ -263,6 +267,13 @@ def image_segmentation(cnt_image: np.ndarray, band: str, f_e_mask, exposure_time
     seg_sources.astype({'label': 'int32'})
     seg_sources = seg_sources.set_index("label", drop=True).dropna(axis=0, how='any')
 
+    # for source finding troubleshooting purposes:
+    #from astropy.io import fits
+    #deblended_data = deblended_segment_map.data.astype(np.int32)
+    #hdu = fits.PrimaryHDU(deblended_data)
+    #hdul = fits.HDUList([hdu])
+    #hdul.writeto('deblended_segmentation.fits', overwrite=True)
+
     return deblended_segment_map.data, outline_seg_map, seg_sources
 
 
@@ -296,7 +307,8 @@ def estimate_background(cnt_image, band):
 
     sigma_clip = SigmaClip(sigma=3.)
     bkg_estimator = MedianBackground()
-    # remove f_e mask from background 2d
+    # remove f_e mask from background 2d, could consider
+    # using the coverage_mask option for no data areas
     bkg = Background2D(cnt_image,
                        (50, 50),
                        filter_size=(3, 3),
@@ -304,11 +316,10 @@ def estimate_background(cnt_image, band):
                        sigma_clip=sigma_clip)
     if band == "NUV":
         cnt_image -= bkg.background
-    del bkg.background
-    del bkg._unfiltered_background_mesh
-    del bkg.background_mesh
-    del bkg._bkg_stats
+    # no longer have to explicitly delete all bkg components bc of
+    # photutils 2.0 update
     rms = bkg.background_rms
+
     return cnt_image, rms.astype(np.float32)
 
 
@@ -316,7 +327,7 @@ def mask_for_extended_sources(cnt_image: np.ndarray, band: str, exposure_time):
     print("Running DAO for extended source ID.")
     dao_sources = dao_handler(cnt_image, exposure_time)
     print(f"Found {len(dao_sources)} peaks with DAO.")
-    masks, extended_source_cat = get_extended(dao_sources, cnt_image.shape, band)
+    masks, extended_source_cat = get_extended(dao_sources, band)
     return masks, extended_source_cat
 
 
@@ -339,11 +350,15 @@ def check_point_in_extended(outline_seg_map, masks, seg_sources):
 
 
 def dao_handler(cnt_image: np.ndarray, exposure_time):
-    # run DAO twice to get more sources
-    dao_sources1 = dao_finder(cnt_image, threshold=0.01, fwhm=5)
-    dao_sources2 = dao_finder(cnt_image,threshold=0.02, fwhm=3)
+    # runs DAO twice with diff kernel sizes to get more sources
+    #TODO: experimenting with dao threshold being based on exp time again, then document
+    # dao_1 was thresh = 0.01, dao_2 was thresh = 0.02
+    threshold = np.multiply(np.power(exposure_time, -0.86026), 3)
+    dao_sources1 = dao_finder(cnt_image, threshold=threshold, fwhm=5)
+    dao_sources2 = dao_finder(cnt_image,threshold=threshold, fwhm=3)
     dao_sources = pd.concat([dao_sources1, dao_sources2])
     return dao_sources
+
 
 def dao_finder(cnt_image: np.ndarray, threshold: float = 0.01,
                fwhm: float = 5, sigma_radius: float = 1.5, ratio: float = 1,
@@ -355,13 +370,14 @@ def dao_finder(cnt_image: np.ndarray, threshold: float = 0.01,
     dao_sources = daofind.find_peaks(cnt_image)
     return dao_sources
 
-def get_extended(dao_sources: pd.DataFrame, image_size, band: str):
+
+def get_extended(dao_sources: pd.DataFrame, band: str):
     """
     DBSCAN groups input local maximum locations from DAOStarFinder according to
     a max. separation distance called "epsilon" to be considered in the same group.
     extended sources are considered dense collections of many local maximums.
     """
-    from photutils.psf.groupers import SourceGrouper # previously psf.groupstars.DBSCANGroup
+    from photutils.psf.groupers import SourceGrouper
     positions = np.transpose((dao_sources['x_peak'], dao_sources['y_peak']))
 
     from astropy.table import Table
@@ -373,10 +389,9 @@ def get_extended(dao_sources: pd.DataFrame, image_size, band: str):
     starlist['x_0'] = x_0
     starlist['y_0'] = y_0
     print(len(starlist))
-    epsilon = 40 if band == "NUV" else 50 # nuv was 40
-    dbscan_group = SourceGrouper(min_separation=epsilon) # previously used DBSCANGroup
+    epsilon = 40 if band == "NUV" else 50
+    dbscan_group = SourceGrouper(min_separation=epsilon)
     dbsc_star_groups = dbscan_group(starlist['x_0'],starlist['y_0'])
-    # dbsc_star_groups = dbsc_star_groups.group_by('group_id')
     dbsc_star_groups = pd.DataFrame({'group_id':dbsc_star_groups}).groupby('group_id')
     # combining hull shapes for all extended sources to make a single
     # hull "mask" that shows extent of extended sources. pixel value of
@@ -384,27 +399,26 @@ def get_extended(dao_sources: pd.DataFrame, image_size, band: str):
     extended_source_cat = pd.DataFrame(columns=["id", "hull_area", "num_dao_points", "hull_vertices"])
     masks = {}
     gID = 1
-    # this way of adding hull masks needs work because sometimes convex hulls overlap
-    # for i, group in enumerate(dbsc_star_groups.groups):
+    # todo: this way of adding hull masks needs work because sometimes convex hulls overlap
     for i in dbsc_star_groups.groups.keys():
         group = dbsc_star_groups.groups[i]
         if len(group) > 100:
+            # meant to avoid large stars that aren't really
+            # "extended" sources with ~<100 dao sources
             path, extended_hull_data = get_hull_path(
                 pd.DataFrame({'y_0': np.array(starlist['y_0'])[group],
                               'x_0': np.array(starlist['x_0'])[group]}),
                 # group,
-                gID,
-                image_size,
-                10
+                gID
                 )
             extended_source_cat = pd.concat([extended_source_cat, extended_hull_data])
             masks[gID] = path
-            gID += 1 # TODO: this should probably just be based off `i`
+            gID += 1
 
     return masks, extended_source_cat
 
 
-def get_hull_path(group, groupID: int, imageSize: tuple, critSep):
+def get_hull_path(group, group_id: int):
     """
     calculates convex hull of pts in group and uses Path to make a mask of
     each convex hull, assigning a number to each hull as they are made
@@ -412,13 +426,11 @@ def get_hull_path(group, groupID: int, imageSize: tuple, critSep):
     import matplotlib.path
     from scipy.spatial import ConvexHull
 
-    ny, nx = imageSize  # imageSize is a tuple of width, height
-
     xypos = np.transpose([group['y_0'], group['x_0']]) # switched x and y
     hull = ConvexHull(xypos)
     hull_verts = tuple(zip(xypos[hull.vertices, 0], xypos[hull.vertices, 1]))
 
-    hull_data_dict = {'id': groupID, 'hull_area': hull.area,
+    hull_data_dict = {'id': group_id, 'hull_area': hull.area,
                       'num_dao_points': hull.npoints, 'hull_vertices': hull_verts}
     extended_hull_data = pd.DataFrame(data=hull_data_dict)
 

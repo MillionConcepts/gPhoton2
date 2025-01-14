@@ -12,7 +12,7 @@ dependencies:
   - numba
   - numpy<2.0.0
   - pandas
-  - photutils<2.0
+  - photutils>=2.0
   - pip
   - pyarrow
   - requests

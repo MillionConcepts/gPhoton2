@@ -33,8 +33,7 @@ def make_lightcurves(sky_arrays: Mapping, ctx: PipeContext):
          str(ctx.eclipse_path()),
          sky_arrays["image_dict"],
          sky_arrays["wcs"],
-         source_table=sources,
-         extraction_threshold=ctx.extraction_threshold,
+         source_table=sources
     )
     ctx.watch.click()
     # failure messages due to low exptime or no data

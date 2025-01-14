@@ -254,7 +254,6 @@ class PipeContext:
         aspect: str = "aspect",
         start_time: Optional[float] = None,
         snippet: Optional[tuple] = None,
-        extraction_threshold: float = 0.01,
         suffix: Optional[str] = None,
     ):
         self.eclipse = eclipse
@@ -287,7 +286,6 @@ class PipeContext:
         self.aspect = aspect
         self.start_time = start_time
         self.snippet = snippet
-        self.extraction_threshold = extraction_threshold
         self.suffix = suffix
 
     def __repr__(self):
