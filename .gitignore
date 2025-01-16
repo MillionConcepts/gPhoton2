@@ -5,6 +5,7 @@
 *pem
 .idea
 **__pycache__**
+/dist/
 /build/
 /gPhoton/build/
 /photom/
