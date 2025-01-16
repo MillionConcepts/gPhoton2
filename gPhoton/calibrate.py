@@ -6,6 +6,7 @@
        calibration, including walk, wiggle, linearity, post-CSP, and stim
        scaling corrections.
 """
+from pathlib import Path
 from typing import Sequence
 
 import numba
@@ -471,12 +472,20 @@ def compute_flat_scale(t, band, verbose=0):
     return flat_scale
 
 
-def get_fuv_temp(eclipse: int) -> float:
+def get_fuv_temp(eclipse: int, aspect_dir: None | str | Path = None) -> float:
     """return FUV detector temperature for a given eclipse."""
-    return aspect_tables(eclipse, ["metadata"])[0]['fuv_temp'][0].as_py()
+    return aspect_tables(
+        eclipse=eclipse,
+        tables="metadata",
+        columns=["fuv_temp"],
+        aspect_dir=aspect_dir
+    )[0]["fuv_temp"][0].as_py()
 
 
-def find_fuv_offset(eclipse: int) -> tuple[float, float]:
+def find_fuv_offset(
+    eclipse: int,
+    aspect_dir: None | str | Path = None,
+) -> tuple[float, float]:
     """
     Computes NUV->FUV center offset based on lookup tables. Raises a
     ValueError if no FUV temperature was recorded in the scst (spacecraft
@@ -486,7 +495,7 @@ def find_fuv_offset(eclipse: int) -> tuple[float, float]:
     :returns: tuple -- A two-element tuple containing the x and y offsets.
     """
     fodx_coef_0, fody_coef_0, fodx_coef_1, _ = (0.0, 0.0, 0.0, 0.0)
-    fuv_temp = get_fuv_temp(eclipse)
+    fuv_temp = get_fuv_temp(eclipse, aspect_dir=aspect_dir)
     if (fuv_temp is None) or np.isnan(fuv_temp):
         raise ValueError("This is probably not a valid FUV observation.")
     print(f"Offsetting FUV image for eclipse {eclipse} at {fuv_temp} degrees.")

@@ -135,18 +135,28 @@ def crudely_find_library(obj: Any) -> str:
 
 
 @cache
-def get_legs(eclipse):
+def get_legs(eclipse, aspect_dir: None | str | Path = None):
     from gPhoton.aspect import aspect_tables
 
-    return tuple(range(len(aspect_tables(eclipse, ("boresight",))[0]["time"])))
+    return tuple(range(len(aspect_tables(
+        eclipse=eclipse,
+        tables="boresight",
+        columns=["time"],
+        aspect_dir=aspect_dir,
+    )[0]["time"])))
 
 
 @cache
-def titular_legs(eclipse):
+def titular_legs(eclipse, aspect_dir: None | str | Path = None):
     from gPhoton.aspect import aspect_tables
 
-    actual = len(get_legs(eclipse))
-    nominal = aspect_tables(eclipse, ("metadata",))[0]["legs"][0].as_py()
+    actual = len(get_legs(eclipse, aspect_dir=aspect_dir))
+    nominal = aspect_tables(
+        eclipse=eclipse,
+        tables="metadata",
+        columns=["legs"],
+        aspect_dir=aspect_dir
+    )[0]["legs"][0].as_py()
     if (actual == 1) and (nominal == 0):
         return 0, 0
     return actual, nominal
@@ -255,6 +265,7 @@ class PipeContext:
         start_time: Optional[float] = None,
         snippet: Optional[tuple] = None,
         suffix: Optional[str] = None,
+        aspect_dir: None | str | Path = None,
     ):
         self.eclipse = eclipse
         self.band = band
@@ -287,15 +298,12 @@ class PipeContext:
         self.start_time = start_time
         self.snippet = snippet
         self.suffix = suffix
+        self.aspect_dir = aspect_dir
 
     def __repr__(self):
-        return (
-            f"PipeContext(eclipse={self.eclipse}, band={self.band}, "
-            f"depth={self.depth}, compression={self.compression}, "
-            f"frame={self.frame}, mode={self.mode}, leg={self.leg}, "
-            f"apertures={self.aperture_sizes}, local={self.local}, "
-            f"remote={self.remote}",f"suffix={self.suffix}",
-        )
+        params = [ f"{k}={v!r}" for k,v in self.__dict__ ]
+        params.sort()
+        return "PipeContext(" + ", ".join(params) + ")"
 
     def __str__(self):
         return repr(self)
@@ -316,37 +324,7 @@ class PipeContext:
         }
 
     def asdict(self) -> dict[str, Any]:
-        return {
-            "eclipse": self.eclipse,
-            "band": self.band,
-            "depth": self.depth,
-            "compression": self.compression,
-            "local": self.local,
-            "remote": self.remote,
-            "frame": self.frame,
-            "mode": self.mode,
-            "leg": self.leg,
-            "aperture_sizes": self.aperture_sizes,
-            "download": self.download,
-            "recreate": self.recreate,
-            "verbose": self.verbose,
-            "source_catalog_file": self.source_catalog_file,
-            "write": self.write,
-            "lil": self.lil,
-            "coregister_lightcurves": self.coregister_lightcurves,
-            "stop_after": self.stop_after,
-            "min_exptime": self.min_exptime,
-            "photometry_only": self.photometry_only,
-            "burst": self.burst,
-            "hdu_constructor_kwargs": self.hdu_constructor_kwargs,
-            "threads": self.threads,
-            "watch": self.watch,
-            "chunksz": self.chunksz,
-            "share_memory": self.share_memory,
-            "extended_photonlist": self.extended_photonlist,
-            "start_time": self.start_time,
-            "suffix": self.suffix,
-        }
+        return self.__dict__.copy()
 
     def eclipse_path(self, remote=False):
         root = self.local if remote is False else self.remote
@@ -373,23 +351,25 @@ class PipeContext:
         """
         generate a list of PipeContexts, one for each leg of the eclipse
         """
-        legs = get_legs(self.eclipse)
+        legs = get_legs(self.eclipse, aspect_dir=self.aspect_dir)
         kdict = self.asdict()
         del kdict['leg']
         return [PipeContext(leg=leg, **kdict) for leg in legs]
 
 
-def check_eclipse(eclipse):
+def check_eclipse(eclipse, aspect_dir: None | str | Path = None):
     from gPhoton.aspect import aspect_tables
     e_warn, e_error = [], []
     if eclipse > 47000:
         e_error.append("CAUSE data w/eclipse>47000 are not yet supported.")
-    meta = aspect_tables(eclipse, ("metadata",))[0]
+    meta = aspect_tables(
+        eclipse=eclipse, tables="metadata", aspect_dir=aspect_dir
+    )[0]
     if len(meta) == 0:
         e_error.append(f"No metadata found for e{eclipse}.")
         return e_warn, e_error
     obstype = meta['obstype'].to_pylist()[0]
-    actual, nominal = titular_legs(eclipse)
+    actual, nominal = titular_legs(eclipse, aspect_dir=aspect_dir)
     if obstype == 'CAI':
         e_error.append('CAI mode is not yet supported.')
     elif (obstype in ("MIS", "GII")) and (actual == 1) and (nominal > 0):

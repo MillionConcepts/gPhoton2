@@ -4,44 +4,77 @@ aspect solution tables
 """
 
 from pathlib import Path
-from typing import Mapping, Collection, Literal, Dict, Hashable
+from typing import Any, Iterable, Literal, Sequence
 
 import numpy as np
 import pandas as pd
 import pyarrow as pa
 from pyarrow import parquet
 
-from gPhoton import ASPECT_DIR
+from gPhoton import DEFAULT_ASPECT_DIR
 from gPhoton.coords.gnomonic import gnomfwd_simple
 from gPhoton.parquet_utils import parquet_to_ndarrays
 from gPhoton.pretty import print_inline
 
-# fully-qualified paths to aspect table files
-# aspect2 for alternative aspect solution files
-TABLE_PATHS = {
-    "aspect": Path(ASPECT_DIR, "aspect.parquet"),
-    "aspect2": Path(ASPECT_DIR, "aspect2.parquet"),
-    "boresight": Path(ASPECT_DIR, "boresight.parquet"),
-    "metadata": Path(ASPECT_DIR, "metadata.parquet"),
-}
-
+ASPECT_TABLE_TYPE = Literal["aspect", "aspect2", "boresight", "metadata"]
 
 def aspect_tables(
-    eclipse: int,
-    tables: Collection[
-        Literal["aspect", "boresight", "metadata"]
-    ] = ("aspect", "boresight", "metadata"),
+    eclipse: None | int,
+    tables: None | ASPECT_TABLE_TYPE | Iterable[ASPECT_TABLE_TYPE] =
+        ("aspect", "boresight", "metadata"),
+    # the type specification for pyarrow filter expressions
+    # is too complicated (and probably variable depending on
+    # pyarrow version) to replicate
+    filters: Any = None,
+    aspect_dir: None | str | Path = None,
+    **kwargs: Any # additional arguments passed to parquet.read_table
 ) -> list[pa.Table]:
     """
     fetch full-resolution aspect, per-leg boresight, and/or general metadata
     for a particular eclipse.
     """
-    if tables is None:
-        paths = TABLE_PATHS.values()
+    if aspect_dir is None:
+        aspect_dir = DEFAULT_ASPECT_DIR
+    if not isinstance(aspect_dir, Path):
+        aspect_dir = Path(aspect_dir)
+
+    if isinstance(tables, str):
+        tables = [tables]
+    elif tables is not None:
+        tables = sorted(set(tables))
+
+    if not tables:
+        # Literal guarantees to deduplicate its parameters
+        tables = sorted(ASPECT_TABLE_TYPE.__args__)
+
+    if not filters:
+        if eclipse is None:
+            filters = None
+        else:
+            filters = [("eclipse", "=", eclipse)]
+
     else:
-        paths = [TABLE_PATHS[table_name] for table_name in tables]
-    filters = [("eclipse", "=", eclipse)]
-    return [parquet.read_table(path, filters=filters) for path in paths]
+        if eclipse is not None:
+            # adding a conjunctive clause to filters is too difficult,
+            # given the variety of things filters could be, and the
+            # lack of any "convert this filter argument to an Expression"
+            # utility in pyarrow (that I can find); it'll be easier
+            # for the caller
+            raise NotImplementedError(
+                "sorry, not implemented: automatically combining filters="
+                " with eclipse= (note: eclipse=N is shorthand for"
+                " filters=[('eclipse', '=', N)])"
+            )
+
+    if filters is None:
+        del kwargs["filters"] # this should be impossible but just in case
+    else:
+        kwargs["filters"] = filters
+
+    return [
+        parquet.read_table(aspect_dir / (table + ".parquet"), **kwargs)
+        for table in tables
+    ]
 
 
 def distribute_legs(
@@ -77,7 +110,10 @@ def distribute_legs(
 
 
 def load_aspect_solution(
-    eclipse: int, aspect, verbose: int = 0
+    eclipse: int,
+    aspect: str,
+    verbose: int = 0,
+    aspect_dir: None | str | Path = None,
 ) -> pd.DataFrame:
     """
     loads full-resolution aspect solution + per-leg boresight solution for
@@ -92,7 +128,11 @@ def load_aspect_solution(
         print_inline("Loading aspect solution from disk...")
     aspect, boresight = [
         tab.to_pandas()
-        for tab in aspect_tables(eclipse, (aspect, "boresight"))
+        for tab in aspect_tables(
+            eclipse=eclipse,
+            tables=(aspect, "boresight"),
+            aspect_dir=aspect_dir
+        )
     ]
     if "ra" not in aspect.columns:
         print("Using aspect2.parquet")

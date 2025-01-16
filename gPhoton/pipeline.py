@@ -137,6 +137,7 @@ def execute_pipeline(
     aspect: str = 'aspect',
     override_eclipse_limits: bool = False,
     suffix: Optional[str] = None,
+    aspect_dir: None | str | Path = None,
 ) -> str:
     """
     Args:
@@ -207,12 +208,13 @@ def execute_pipeline(
             and/or support for this eclipse appear to be limited or absent?
             note that the pipeline will most likely still fail in these cases.
         suffix: optional string to append to the end of the output filenames
+        aspect_dir: specifies the location of aspect tables
     Returns:
         str: `"return code: successful"` for fully successful execution;
             `"return code: {other_thing}"` for various known failure states
             (many of which produce a subset of valid output products)
     """
-    e_warn, e_error = check_eclipse(eclipse)
+    e_warn, e_error = check_eclipse(eclipse, aspect_dir=aspect_dir)
     if (verbose > 0) and len(e_warn) > 0:
         print("\n".join(e_warn))
     if len(e_error) > 0:
@@ -249,6 +251,7 @@ def execute_pipeline(
         aspect=aspect,
         start_time=1000, # this is a no-op
         suffix=suffix,
+        aspect_dir=aspect_dir,
     )
     ctx.watch.start()
     if photometry_only:
@@ -261,8 +264,14 @@ def execute_full_pipeline(ctx):
     if ctx.verbose > 1:
         from gPhoton.aspect import aspect_tables
 
-        metadata = aspect_tables(ctx.eclipse, ("metadata",))[0]
-        actual, nominal = gPhoton.reference.titular_legs(ctx.eclipse)
+        metadata = aspect_tables(
+            eclipse=ctx.eclipse,
+            tables="metadata",
+            aspect_dir=ctx.aspect_dir
+        )[0]
+        actual, nominal = gPhoton.reference.titular_legs(
+            ctx.eclipse, aspect_dir=ctx.aspect_dir
+        )
         headline = (
             f"eclipse {ctx.eclipse} {ctx.band}  -- "
             f"{metadata['obstype'][0].as_py()}; "
