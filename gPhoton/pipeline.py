@@ -25,6 +25,7 @@ from gPhoton.reference import PipeContext, check_eclipse
 from gPhoton.types import GalexBand
 
 # oh no! divide by zero! i am very distracting!
+# (we love dividing by zero. dividing by zero is cool.)
 warnings.filterwarnings(action="ignore", category=RuntimeWarning)
 
 
@@ -223,6 +224,9 @@ def execute_pipeline(
         print("override_eclipse_limits=True, continuing anyway")
     if lil==False:
         warnings.warn("lil=False is deprected and will be removed in a future release. Defaulting to lil=True.")
+    if not source_catalog_file is None and not Path(source_catalog_file).exists():
+        print(f"source_catalog_file {source_catalog_file} not found, bailing out.")
+        return("return code: source catalog file not found")
     ctx = PipeContext(
         eclipse,
         band,
