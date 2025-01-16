@@ -1,16 +1,10 @@
 """utilities that retrieve and yield GALEX cal files / objects."""
 
-import os
+import importlib.resources
 
 import numpy as np
 
-from gPhoton import CAL_DIR
 from gPhoton.io.fits_utils import get_fits_data, get_fits_header, get_tbl_data
-from gPhoton.io.netutils import chunked_download
-
-
-# Remote repository for GALEX calibration files.
-CAL_URL = "https://archive.stsci.edu/prepds/gphoton/cal/cal/"
 
 
 def check_band(band):
@@ -26,24 +20,22 @@ def check_xy(xy):
 
 
 def read_data(fn, dim=0):
-    path = os.path.join(CAL_DIR, fn)
-    # Download the file if it doesn't exist locally.
-    if not os.path.exists(path):
-        data_url = "{b}/{f}".format(b=CAL_URL, f=fn)
-        chunked_download(data_url, path)
-    if ".fits" in fn:
-        data = get_fits_data(path, dim=dim)
-        header = get_fits_header(path)
-        if isinstance(data, np.recarray):
-            for name in data.names:
-                data[name] = data[name].byteswap().newbyteorder()
+    files = importlib.resources.files("gPhoton.cal_data")
+    with importlib.resources.as_file(files / fn) as path:
+        if ".fits" in fn:
+            data = get_fits_data(path, dim=dim)
+            header = get_fits_header(path)
+            if isinstance(data, np.recarray):
+                for name in data.names:
+                    data[name] = data[name].byteswap().newbyteorder()
+                else:
+                    data = data.byteswap().newbyteorder()
+            return data, header
+        elif ".tbl" in fn:
+            return get_tbl_data(path)
         else:
-            data = data.byteswap().newbyteorder()
-        return data, header
-    elif ".tbl" in fn:
-        return get_tbl_data(path)
-    else:
-        raise ValueError("Unrecognized data type: {ext}".format(ext=fn[-4:]))
+            raise ValueError("Unrecognized data type: {ext}"
+                             .format(ext=fn[-4:]))
 
 
 def wiggle(band, xy):
