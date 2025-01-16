@@ -61,10 +61,12 @@ def make_lightcurves(sky_arrays: Mapping, ctx: PipeContext):
         else:
             write_exptime_file(ctx["expfile"], sky_arrays["image_dict"])
         extended_shapes = ctx(aperture=aperture_size)['extended_shapes']
-        print(f"writing extended source table to {extended_shapes}")
-        extended_shapes_cat.to_csv(
-            extended_shapes, index=False  # added s and [leg]??
-        )
+        # check that this is not NoneType
+        if extended_shapes_cat is not None:
+            print(f"writing extended source table to {extended_shapes}")
+            extended_shapes_cat.to_csv(
+                extended_shapes, index=False  # added s and [leg]??
+            )
         photomfile = ctx(aperture=aperture_size)['photomfile']
         print(f"writing source table to {photomfile}")
         photometry_table.to_csv(photomfile, index=False)
