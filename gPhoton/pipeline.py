@@ -135,6 +135,7 @@ def execute_pipeline(
     chunksz: int = 1000000,
     share_memory: Optional[bool] = None,
     extended_photonlist: bool = False,
+    extended_flagging: bool = False,
     aspect: str = 'aspect',
     override_eclipse_limits: bool = False,
     suffix: Optional[str] = None,
@@ -201,6 +202,8 @@ def execute_pipeline(
         extended_photonlist: write extended variables to photonlists?
             these are not used in standard moviemaker/lightcurve pipelines.
             they are principally useful for diagnostics and ancillary products.
+        extended_flagging: to run extended source finding. Includes flagging
+        for non-catalog runs.
         aspect: default is standard aspect table, aspect.parquet ('aspect') but
             can designate to use alt aspect table, 'aspect2', which should be in the
             aspect directory and be named 'aspect2.parquet'
@@ -250,6 +253,7 @@ def execute_pipeline(
         chunksz=chunksz,
         share_memory=share_memory,
         extended_photonlist=extended_photonlist,
+        extended_flagging=extended_flagging,
         aspect=aspect,
         start_time=1000, # this is a no-op
         suffix=suffix,

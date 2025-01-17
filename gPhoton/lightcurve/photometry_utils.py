@@ -222,7 +222,16 @@ def outline_segments(self, mask_background=False):
     return outlines
 
 
-def image_segmentation(cnt_image: np.ndarray, band: str, f_e_mask, exposure_time):
+def get_point_sources(cnt_image: np.ndarray, band: str, f_e_mask, exposure_time):
+    """
+    Uses image segmentation to identify point sources.
+    The threshold for being a source in NUV is set at 1.5 times the background
+    rms values (2d array) for eclipses over 800 sec, while for NUV under 800s and
+    for all FUV it is 3 times bkg rms. Then there is a minimum threshold for FUV
+    of the upper quartile of all threshold values over 0.0005.
+    This was called image_segmentation historically.
+    Returns an array with source outlines and a source catalog.
+    """
 
     from photutils.segmentation import (detect_sources, make_2dgaussian_kernel,
                                         SourceCatalog, deblend_sources)
@@ -274,7 +283,7 @@ def image_segmentation(cnt_image: np.ndarray, band: str, f_e_mask, exposure_time
     #hdul = fits.HDUList([hdu])
     #hdul.writeto('deblended_segmentation.fits', overwrite=True)
 
-    return deblended_segment_map.data, outline_seg_map, seg_sources
+    return outline_seg_map, seg_sources
 
 
 def estimate_threshold(bkg_rms, band, exposure_time):
@@ -301,7 +310,7 @@ def estimate_background_and_threshold(cnt_image: np.ndarray, band, exposure_time
     return cnt_image, threshold
 
 
-def estimate_background(cnt_image, band):
+def estimate_background(cnt_image: np.ndarray, band):
     from photutils.background import Background2D, MedianBackground
     from astropy.stats import SigmaClip
 
@@ -331,22 +340,24 @@ def mask_for_extended_sources(cnt_image: np.ndarray, band: str, exposure_time):
     return masks, extended_source_cat
 
 
-def check_point_in_extended(outline_seg_map, masks, seg_sources):
+def check_point_in_extended(outline_seg_map: np.ndarray, masks, source_table):
     """
     Checks if the borders of any segments are inside of
     each extended source, which are paths stored in the
     dictionary "masks". Adds the ID of overlapping extended
     source to the DF holding pt sources (seg_sources).
+    0 = not in an extended source, but extended source
+    detection was run.
     """
     seg_outlines = np.nonzero(outline_seg_map)
     seg_outlines_vert = np.vstack((seg_outlines[0], seg_outlines[1])).T
-    seg_sources["extended_source"] = 0 # added to fix key error?
+    source_table["extended_source"] = source_table["extended_source"].fillna(0)
     for key in masks:
         inside_extended = masks[key].contains_points(seg_outlines_vert)
         segments_in_extended = outline_seg_map[seg_outlines][inside_extended]
-        seg_sources.loc[segments_in_extended, "extended_source"] = int(key)
+        source_table.loc[segments_in_extended, "extended_source"] = int(key)
     #seg_sources.to_csv("seg_sources_in_extented.csv") # for debug only
-    return seg_sources
+    return source_table
 
 
 def dao_handler(cnt_image: np.ndarray, exposure_time):
@@ -396,10 +407,10 @@ def get_extended(dao_sources: pd.DataFrame, band: str):
     # combining hull shapes for all extended sources to make a single
     # hull "mask" that shows extent of extended sources. pixel value of
     # each hull is the ID for that extended source.
-    extended_source_cat = pd.DataFrame(columns=["id", "hull_area", "num_dao_points", "hull_vertices"])
     masks = {}
-    gID = 1
     # todo: this way of adding hull masks needs work because sometimes convex hulls overlap
+    extended_source_list = []
+    gID = 1
     for i in dbsc_star_groups.groups.keys():
         group = dbsc_star_groups.groups[i]
         if len(group) > 100:
@@ -411,10 +422,16 @@ def get_extended(dao_sources: pd.DataFrame, band: str):
                 # group,
                 gID
                 )
-            extended_source_cat = pd.concat([extended_source_cat, extended_hull_data])
+            extended_source_list.append(extended_hull_data)
             masks[gID] = path
             gID += 1
-
+    if len(extended_source_list)>0:
+        extended_source_cat = pd.concat(extended_source_list, ignore_index=True)
+    if gID>=128:
+        print("There are too many extended sources identified, you can't label more than 128.")
+        return
+    else:
+        extended_source_cat = pd.DataFrame(columns=["id", "hull_area", "num_dao_points", "hull_vertices"])
     return masks, extended_source_cat
 
 

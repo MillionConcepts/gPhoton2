@@ -251,6 +251,7 @@ class PipeContext:
         share_memory: Optional[bool] = None,
         chunksz: Optional[int] = 1000000,
         extended_photonlist: bool = False,
+        extended_flagging: bool = False,
         aspect: str = "aspect",
         start_time: Optional[float] = None,
         snippet: Optional[tuple] = None,
@@ -281,6 +282,7 @@ class PipeContext:
         self.threads = threads
         self.watch = watch if watch is not None else Stopwatch()
         self.extended_photonlist = extended_photonlist
+        self.extended_flagging = extended_flagging
         self.chunksz = chunksz
         self.share_memory = share_memory
         self.aspect = aspect
@@ -344,6 +346,7 @@ class PipeContext:
             "chunksz": self.chunksz,
             "share_memory": self.share_memory,
             "extended_photonlist": self.extended_photonlist,
+            "extended_flagging": self.extended_flagging,
             "start_time": self.start_time,
             "suffix": self.suffix,
         }
