@@ -17,7 +17,7 @@ from inspect import getmodule
 from math import floor
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Callable, Sequence, Mapping, Optional, Literal
+from typing import Any, Sequence, Mapping, Optional, Literal
 
 from gPhoton.types import Pathlike, GalexBand
 
@@ -127,11 +127,13 @@ class Netstat:
 
 def crudely_find_library(obj: Any) -> str:
     if isinstance(obj, functools.partial):
-        if len(obj.args) > 0:
-            if isinstance(obj.args[0], Callable):
-                return crudely_find_library(obj.args[0])
+        if obj.args and callable(obj.args[0]):
+            return crudely_find_library(obj.args[0])
         return crudely_find_library(obj.func)
-    return getmodule(obj).__name__.split(".")[0]
+    mod = getmodule(obj)
+    if mod is None:
+        raise ImportError("could not find a library for " + repr(obj))
+    return mod.__name__.split(".")[0]
 
 
 @cache
@@ -189,7 +191,8 @@ def eclipse_to_paths(
     optionally including files at a specific depth
     """
     root = "data" if root is None else root
-    zpad, leg = str(eclipse).zfill(5), str(leg).zfill(2)
+    zpad = str(eclipse).zfill(5)
+    leg = str(leg).zfill(2)
     eclipse_path = f"{root}/e{zpad}/"
     eclipse_base = f"{eclipse_path}e{zpad}"
     if kwargs.get("emoji") is True:
@@ -261,7 +264,7 @@ class PipeContext:
         share_memory: Optional[bool] = None,
         chunksz: Optional[int] = 1000000,
         extended_photonlist: bool = False,
-        aspect: str = "aspect",
+        aspect: Literal["aspect", "aspect2"] = "aspect",
         start_time: Optional[float] = None,
         snippet: Optional[tuple] = None,
         suffix: Optional[str] = None,
@@ -359,7 +362,8 @@ class PipeContext:
 
 def check_eclipse(eclipse, aspect_dir: None | str | Path = None):
     from gPhoton.aspect import aspect_tables
-    e_warn, e_error = [], []
+    e_warn: list[str] = []
+    e_error: list[str] = []
     if eclipse > 47000:
         e_error.append("CAUSE data w/eclipse>47000 are not yet supported.")
     meta = aspect_tables(

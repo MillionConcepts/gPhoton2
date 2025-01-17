@@ -1,7 +1,7 @@
 """top-level handler module for gPhoton.moviemaker"""
 
 from multiprocessing import Pool
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 from dustgoggles.structures import NestingDict
 from more_itertools import windowed
@@ -26,7 +26,7 @@ def make_movies(
     map_ix_dict: dict,
     total_trange: tuple[int, int],
     imsz: tuple[int, int],
-    fixed_start_time: Optional[float] = None,
+    fixed_start_time: Optional[int] = None,
 ) -> tuple[str, dict]:
     """
     :param ctx: PipeContext options handler
@@ -39,6 +39,7 @@ def make_movies(
     """
     if fixed_start_time is not None:
         total_trange = (fixed_start_time, total_trange[1])
+    assert ctx.depth is not None
     t0s = np.arange(total_trange[0], total_trange[1] + ctx.depth, ctx.depth)
     tranges = list(windowed(t0s, 2))
     # TODO, maybe: at very short depths, slicing arrays into memory becomes a
@@ -87,7 +88,7 @@ def make_movies(
         pool.join()
         results = {task: result.get() for task, result in results.items()}
     frame_indices = sorted(results.keys())
-    movies = {"cnt": [], "flag": [], "edge": []}
+    movies: dict[str, list[Any]] = {"cnt": [], "flag": [], "edge": []}
     exptimes = []
     for frame_ix in frame_indices:
         for map_name in ("cnt", "flag", "edge"):
@@ -102,7 +103,7 @@ def make_movies(
 
 def make_full_depth_image(
     exposure_array, map_ix_dict, total_trange, imsz, band="NUV"
-) -> tuple[str, dict]:
+): # -> tuple[str, dict]:  we're not ready to typecheck this function yet
     # TODO: this weird arithmetic cartwheel doesn't seem _wrong_, but it can't
     #  be _necessary_, right?
     interval = total_trange[1] - total_trange[0]
@@ -138,7 +139,7 @@ def create_images_and_movies(
 ) -> Union[dict, str]:
     print(f"making images from {photonfile}")
     print("indexing data and making WCS solution")
-    movie_dict, image_dict, status = {}, {}, "started"
+    status = "started"
     exposure_array, map_ix_dict, total_trange, wcs = prep_image_inputs(
         photonfile, edge_threshold
     )

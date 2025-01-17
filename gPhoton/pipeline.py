@@ -113,7 +113,7 @@ def execute_photometry_only(ctx: PipeContext):
 def execute_pipeline(
     eclipse: int,
     band: GalexBand,
-    depth: Optional[float] = None,
+    depth: Optional[int] = None,
     threads: Optional[int] = None,
     local_root: str = "test_data",
     remote_root: Optional[str] = None,
@@ -134,7 +134,7 @@ def execute_pipeline(
     chunksz: int = 1000000,
     share_memory: Optional[bool] = None,
     extended_photonlist: bool = False,
-    aspect: str = 'aspect',
+    aspect: Literal['aspect', 'aspect2'] = 'aspect',
     override_eclipse_limits: bool = False,
     suffix: Optional[str] = None,
     aspect_dir: None | str | Path = None,
@@ -225,6 +225,8 @@ def execute_pipeline(
         print("override_eclipse_limits=True, continuing anyway")
     if lil==False:
         warnings.warn("lil=False is deprected and will be removed in a future release. Defaulting to lil=True.")
+    if aspect not in ("aspect", "aspect2"):
+        return f"Invalid aspect argument {aspect}"
     ctx = PipeContext(
         eclipse,
         band,

@@ -46,15 +46,12 @@ def reference_shared_memory_arrays(
         variable: SharedMemory(name=info["name"])
         for variable, info in block_info.items()
     }
-    if fetch is True:
-        chunk = {
-            variable: np.ndarray(
+    chunk: dict[str, np.ndarray] = {}
+    if fetch:
+        for variable, info in block_info.items():
+            chunk[variable] = np.ndarray(
                 info["shape"], dtype=info["dtype"], buffer=blocks[variable].buf
             )
-            for variable, info in block_info.items()
-        }
-    else:
-        chunk = {}
     return blocks, chunk
 
 

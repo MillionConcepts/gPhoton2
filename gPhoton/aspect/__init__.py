@@ -4,7 +4,7 @@ aspect solution tables
 """
 
 from pathlib import Path
-from typing import Any, Iterable, Literal, Sequence
+from typing import Any, Iterable, Literal, Sequence, cast, get_args
 
 import numpy as np
 import pandas as pd
@@ -17,14 +17,22 @@ from gPhoton.parquet_utils import parquet_to_ndarrays
 from gPhoton.pretty import print_inline
 
 ASPECT_TABLE_TYPE = Literal["aspect", "aspect2", "boresight", "metadata"]
+# This odd-looking construct is needed because get_args returns
+# tuple[Any, ...]; we're essentially saying 'trust me, in this case
+# the elements of the tuple are all appropriate strings'.
+# Literal guarantees to deduplicate its args but not necessarily to
+# give them back in any particular order
+ALL_ASPECT_TABLES = \
+    cast(list[ASPECT_TABLE_TYPE], sorted(get_args(ASPECT_TABLE_TYPE)))
 
 def aspect_tables(
     eclipse: None | int,
     tables: None | ASPECT_TABLE_TYPE | Iterable[ASPECT_TABLE_TYPE] =
-        ("aspect", "boresight", "metadata"),
-    # the type specification for pyarrow filter expressions
-    # is too complicated (and probably variable depending on
-    # pyarrow version) to replicate
+        ["aspect", "boresight", "metadata"],
+    # The type specification for pyarrow filter expressions is too
+    # complicated (and probably variable depending on pyarrow version)
+    # to replicate.  It might be worth revisiting this after pyarrow
+    # itself grows type annotations, if it ever does.
     filters: Any = None,
     aspect_dir: None | str | Path = None,
     **kwargs: Any # additional arguments passed to parquet.read_table
@@ -40,12 +48,12 @@ def aspect_tables(
 
     if isinstance(tables, str):
         tables = [tables]
-    elif tables is not None:
+    elif tables is None:
+        tables = ALL_ASPECT_TABLES
+    else:
         tables = sorted(set(tables))
-
-    if not tables:
-        # Literal guarantees to deduplicate its parameters
-        tables = sorted(ASPECT_TABLE_TYPE.__args__)
+        if not tables:
+            tables = ALL_ASPECT_TABLES
 
     if not filters:
         if eclipse is None:
@@ -111,7 +119,7 @@ def distribute_legs(
 
 def load_aspect_solution(
     eclipse: int,
-    aspect: str,
+    aspect: Literal["aspect", "aspect2"],
     verbose: int = 0,
     aspect_dir: None | str | Path = None,
 ) -> pd.DataFrame:

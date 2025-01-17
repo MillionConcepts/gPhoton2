@@ -30,9 +30,10 @@ from gPhoton.sharing import (
     send_mapping_to_shared_memory,
     get_column_from_shared_memory,
 )
+from gPhoton.types import Pathlike
 
 
-def execute_photonpipe(ctx: PipeContext, raw6file: Optional[str] = None):
+def execute_photonpipe(ctx: PipeContext, raw6file: Optional[Pathlike] = None):
     """
     Apply static and sky calibrations to -raw6 GALEX data, producing fully
         aspect_data-corrected and time-tagged photon list files.
