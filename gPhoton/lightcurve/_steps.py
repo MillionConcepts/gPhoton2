@@ -57,7 +57,9 @@ def count_full_depth_image(
 def check_empty_image(eclipse:int, band:GalexBand, image_dict):
     if not image_dict["cnt"].max():
         print(f"{eclipse} appears to contain nothing in {band}.")
-        Path(datapath, f"No{band}").touch()
+        # do we want to return a file when the image is empty?
+        # realistically it probably means there's something wrong
+        # with the observation
         return f"{eclipse} appears to contain nothing in {band}."
 
 
