@@ -103,7 +103,9 @@ def galex_cone_search(ra: float, dec: float, arcseconds=2250, legs=False,
     return meta_match
 
 
-def eclipses_near_object(object_name: str, arcseconds: float, verbose=True):
+def eclipses_near_object(object_name: str, arcseconds: float,
+                         verbose: bool = True,
+                         aspect_dir: None | str | Path = None):
     """
     query SIMBAD for the position of `object`. return eclipse numbers of
     all GALEX visits whose nominal boresight bounds are within `arcseconds`
@@ -125,7 +127,7 @@ def eclipses_near_object(object_name: str, arcseconds: float, verbose=True):
     ra_d, dec_d = float(result['RA_d'][0]), float(result['DEC_d'][0])
     if verbose:
         print(f"{object_name} position: RA {ra_d}, DEC {dec_d}")
-    matches = galex_sky_box(ra_d, dec_d, arcseconds)
+    matches = galex_sky_box(ra_d, dec_d, arcseconds, aspect_dir=aspect_dir)
     if len(matches) == 0:
         raise ValueError(
             f"No eclipses found within {arcseconds} asec of {object_name}."
