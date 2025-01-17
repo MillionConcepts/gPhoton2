@@ -22,7 +22,6 @@ from gPhoton.pretty import print_inline
 from gPhoton.types import Pathlike, GalexBand
 
 from gPhoton.lightcurve.photometry_utils import (mask_for_extended_sources,
-                                                 image_segmentation,
                                                  check_point_in_extended)
 
 def count_full_depth_image(
@@ -55,99 +54,11 @@ def count_full_depth_image(
     return source_table, apertures
 
 
-def find_sources(
-    eclipse: int,
-    band: GalexBand,
-    datapath: Union[str, Path],
-    image_dict,
-    wcs,
-    source_table: Optional[pd.DataFrame] = None
-):
-    from gPhoton.coadd import zero_flag_and_edge, flag_and_edge_mask
-    # TODO, maybe: pop these into a handler function
+def check_empty_image(eclipse:int, band:GalexBand, image_dict):
     if not image_dict["cnt"].max():
         print(f"{eclipse} appears to contain nothing in {band}.")
         Path(datapath, f"No{band}").touch()
         return f"{eclipse} appears to contain nothing in {band}."
-    exptime = image_dict["exptimes"][0]
-    if source_table is None:
-        print("Extracting sources with DAOFIND.")
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            # for some reason image segmentation still finds sources in the
-            # masked cnt image? so we mask twice: once by zeroing and then
-            # again by making a bool mask and feeding it to image segmentation
-            # TODO: reinvestigate the cause of this
-            masked_cnt_image = zero_flag_and_edge(
-                image_dict["cnt"],
-                image_dict["flag"],
-                image_dict["edge"],
-                copy=True
-            ) / exptime
-            masked_cnt_image = masked_cnt_image.astype(np.float32)
-            flag_edge_mask = flag_and_edge_mask(
-                image_dict["cnt"],
-                image_dict["flag"],
-                image_dict["edge"])
-            image_dict["cnt"] = scipy.sparse.coo_matrix(image_dict["cnt"]) # why is it doing this?
-            source_table, segment_map, extended_source_paths, extended_source_cat = \
-                get_point_and_extended_sources(masked_cnt_image, band, flag_edge_mask, exptime)
-            del masked_cnt_image
-            #gc.collect()
-            image_dict["cnt"] = image_dict["cnt"].toarray()
-        try:
-            print(f"Located {len(source_table)} sources.")
-        except TypeError:
-            print(f"{eclipse} {band} contains no sources.")
-            Path(datapath, f"No{band}").touch()
-            return None, None
-    else:
-        print(f"Using specified catalog of {len(source_table)} sources.")
-        positions = np.vstack(
-            [
-                wcs.wcs_world2pix([position], 1, ra_dec_order=True)
-                for position in source_table[["ra", "dec"]].values
-            ]
-        )
-        source_table[["xcentroid", "ycentroid"]] = positions
-    #return source_table
-    # TODO: This breaks if you pass a catalog to `execute_pipeline` because it
-    # doesn't know anything about the segment maps.
-    try:
-        return source_table, segment_map, extended_source_paths, extended_source_cat
-    except UnboundLocalError:
-        # This is the fallback when a catalog is passed to `execute_pipeline`
-        # and therefore no segment map is generated. This is sort of messy and
-        # possibly a future TODO.
-        return source_table, None, None, None
-
-
-def get_point_and_extended_sources(
-        cnt_image: np.ndarray,
-        band: str,
-        f_e_mask,
-        exposure_time
-        ):
-
-    """
-    Main function for extracting point and extended sources from an eclipse.
-    Image segmentation and point source extraction occurs in a separate function.
-    The threshold for being a source in NUV is set at 1.5 times the background
-    rms values (2d array) for eclipses over 800 sec, while for NUV under 800s and
-    for all FUV it is 3 times bkg rms. Then there is a minimum threshold for FUV
-    of the upper quartile of all threshold values over 0.0005.
-    Extended source extraction occurs in helper functions.
-    """
-
-    print("Masking for extended sources.")
-    masks, extended_source_cat = mask_for_extended_sources(cnt_image, band, exposure_time)
-
-    deblended_seg_map, outline_seg_map, seg_sources = image_segmentation(cnt_image, band, f_e_mask, exposure_time)
-    print("Checking for extended source overlap with point sources.")
-    seg_sources = check_point_in_extended(outline_seg_map, masks, seg_sources)
-
-    #seg_sources.dropna() was old setting
-    return seg_sources, deblended_seg_map, masks, extended_source_cat
 
 
 def extract_frame(frame, apertures):
@@ -265,3 +176,15 @@ def load_source_catalog(
             "'eclipse'."
         )
     return sources[~sources.duplicated()].reset_index(drop=True)
+
+
+def format_source_catalog(source_table, wcs):
+    print(f"Using specified catalog of {len(source_table)} sources.")
+    positions = np.vstack(
+        [
+            wcs.wcs_world2pix([position], 1, ra_dec_order=True)
+            for position in source_table[["ra", "dec"]].values
+        ]
+    )
+    source_table[["xcentroid", "ycentroid"]] = positions
+    return source_table

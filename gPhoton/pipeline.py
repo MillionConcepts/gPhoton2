@@ -25,6 +25,7 @@ from gPhoton.reference import PipeContext, check_eclipse
 from gPhoton.types import GalexBand
 
 # oh no! divide by zero! i am very distracting!
+# (we love dividing by zero. dividing by zero is cool.)
 warnings.filterwarnings(action="ignore", category=RuntimeWarning)
 
 
@@ -134,6 +135,7 @@ def execute_pipeline(
     chunksz: int = 1000000,
     share_memory: Optional[bool] = None,
     extended_photonlist: bool = False,
+    extended_flagging: bool = False,
     aspect: Literal['aspect', 'aspect2'] = 'aspect',
     override_eclipse_limits: bool = False,
     suffix: Optional[str] = None,
@@ -201,6 +203,8 @@ def execute_pipeline(
         extended_photonlist: write extended variables to photonlists?
             these are not used in standard moviemaker/lightcurve pipelines.
             they are principally useful for diagnostics and ancillary products.
+        extended_flagging: to run extended source finding. Includes flagging
+        for non-catalog runs.
         aspect: default is standard aspect table, aspect.parquet ('aspect') but
             can designate to use alt aspect table, 'aspect2', which should be in the
             aspect directory and be named 'aspect2.parquet'
@@ -226,7 +230,11 @@ def execute_pipeline(
     if lil==False:
         warnings.warn("lil=False is deprected and will be removed in a future release. Defaulting to lil=True.")
     if aspect not in ("aspect", "aspect2"):
-        return f"Invalid aspect argument {aspect}"
+        print(f"Invalid aspect argument {aspect}, bailing out.")
+        return f"return code: invalid aspect argument {aspect}"
+    if source_catalog_file is not None and not Path(source_catalog_file).exists():
+        print(f"source_catalog_file {source_catalog_file} not found, bailing out.")
+        return("return code: source catalog file not found")
     ctx = PipeContext(
         eclipse,
         band,
@@ -250,6 +258,7 @@ def execute_pipeline(
         chunksz=chunksz,
         share_memory=share_memory,
         extended_photonlist=extended_photonlist,
+        extended_flagging=extended_flagging,
         aspect=aspect,
         start_time=1000, # this is a no-op
         suffix=suffix,

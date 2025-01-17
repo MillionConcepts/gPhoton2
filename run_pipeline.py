@@ -28,6 +28,8 @@ if __name__ == "__main__":
         # write movie frames as separate files
         burst=False,
         extended_photonlist=True,
+        extended_flagging=True,
         # aspect file, don't need to set unless need to use alt
         # file, 'aspect2.parquet'
+        source_catalog_file="test_data/e00775/e00775-nd-f0120-b01-movie-photom-12_8.csv"
     )
