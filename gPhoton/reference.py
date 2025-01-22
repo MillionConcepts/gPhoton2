@@ -376,9 +376,7 @@ def check_eclipse(eclipse, aspect_dir: None | str | Path = None):
         return e_warn, e_error
     obstype = meta['obstype'].to_pylist()[0]
     actual, nominal = titular_legs(eclipse, aspect_dir=aspect_dir)
-    if obstype == 'CAI':
-        e_error.append('CAI mode is not yet supported.')
-    elif (obstype in ("MIS", "GII")) and (actual == 1) and (nominal > 0):
+    if (obstype in ("MIS", "GII")) and (actual == 1) and (nominal > 0):
         e_error.append('petal pattern is not yet supported.')
     elif actual != nominal:
         e_warn.append(
