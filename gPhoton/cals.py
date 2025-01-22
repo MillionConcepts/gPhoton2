@@ -19,18 +19,35 @@ def check_xy(xy):
     return xy
 
 
+def enforce_native_byteorder(arr: np.ndarray) -> np.ndarray:
+    # NOTE: I'm not sure if np.dtype.isnative's behavior for structured data
+    #  types is consistent across versions, so it would be nice if we could do
+    #  a single check here in that case, but I don't know that we can
+    if arr.dtype.fields is None and arr.dtype.isnative:
+        return arr
+    elif arr.dtype.fields is None:
+        return arr.byteswap().view(arr.dtype.newbyteorder("="))
+    # structured array case
+    swap_targets, swapped_dtype = [], []
+    for name, field in arr.dtype.fields.items():
+        if field[0].isnative is False:
+            swap_targets.append(name)
+            swapped_dtype.append((name, field[0].newbyteorder("=")))
+        elif "V" not in str(field[0]):
+            swapped_dtype.append((name, field[0]))
+        else:
+            # NOTE: should never happen here
+            swapped_dtype.append((name, "O"))
+    return arr.astype(swapped_dtype)
+
+
 def read_data(fn, dim=0):
     files = importlib.resources.files("gPhoton.cal_data")
     with importlib.resources.as_file(files / fn) as path:
         if ".fits" in fn:
             data = get_fits_data(path, dim=dim)
             header = get_fits_header(path)
-            if isinstance(data, np.recarray):
-                for name in data.names:
-                    data[name] = data[name].byteswap().newbyteorder()
-                else:
-                    data = data.byteswap().newbyteorder()
-            return data, header
+            return enforce_native_byteorder(data), header
         elif ".tbl" in fn:
             return get_tbl_data(path)
         else:
