@@ -235,6 +235,9 @@ def execute_pipeline(
     if source_catalog_file is not None and not Path(source_catalog_file).exists():
         print(f"source_catalog_file {source_catalog_file} not found, bailing out.")
         return("return code: source catalog file not found")
+    if not depth: # movie-writing has no meaning here
+        write = dict(write)
+        write['movie']=False
     ctx = PipeContext(
         eclipse,
         band,
