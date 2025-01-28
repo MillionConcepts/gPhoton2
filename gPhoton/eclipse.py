@@ -3,19 +3,41 @@ shared parameters that depend on the eclipse and on how gphoton
 is being run but not on anything else
 """
 
-from math import floor
-from typing import Literal, Optional
+from math import modf
+from typing import Literal, Optional, TYPE_CHECKING
+if TYPE_CHECKING:
+    from _typeshed import ConvertibleToFloat
 
 from gPhoton.types import Pathlike, GalexBand
 
 
-def intfill(obj, zfill=4):
-    obj = float(obj)
-    integer = str(floor(obj)).zfill(zfill)
-    if (decimal := obj - floor(obj)) > 0:
-        # round for floating-point error
-        return integer + str(round(decimal, 4))[2:]
-    return integer
+def intfill(obj: 'ConvertibleToFloat', zfill: int = 4) -> str:
+    """
+    Zero-fill the integer part of `obj` to `zfill` places, then
+    append the fractional part of `obj`, rounded to four decimal
+    places, *without* an intervening decimal point.
+
+    >>> intfill(123)
+    '0123'
+    >>> intfill(123.0)
+    '0123'
+    >>> intfill(123.45)
+    '012345'
+    """
+    if isinstance(obj, int):
+        # shortcut - save some conversions
+        return str(obj).zfill(zfill)
+
+    if not isinstance(obj, float):
+        obj = float(obj)
+
+    decimal, integer = modf(obj)
+    # both values returned by modf are floats, and if the input was
+    # negative, both are negative.
+    integer = str(int(integer)).zfill(zfill)
+    if not decimal:
+        return integer
+    return integer + str(round(abs(decimal), 4))[2:]
 
 
 def emojified(compression, depth, leg, band, eclipse_base, frame):
