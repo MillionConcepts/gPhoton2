@@ -275,12 +275,19 @@ class PipeContext:
 
     def __call__(self, remote=False, **kwargs):
         kwargs = self.pathdict() | kwargs
+
         apertures = kwargs.pop("aperture_sizes")
-        if "aperture" not in kwargs.keys():
-            kwargs["aperture"] = apertures[0]
-        if "root" not in kwargs.keys():
-            kwargs["root"] = self.remote if remote is True else self.local
-        kwargs.pop("local"), kwargs.pop("remote")
+        kwargs.setdefault("aperture", apertures[0])
+
+        local_base = kwargs.pop("local")
+        remote_base = kwargs.pop("remote")
+        root = kwargs.pop("root", None)
+        if root is None:
+            root = remote_base if remote is True else local_base
+        if not isinstance(root, Path):
+            root = Path(root)
+        kwargs["root"] = root
+
         return eclipse_to_paths(**kwargs)
 
     def __getitem__(self, key):

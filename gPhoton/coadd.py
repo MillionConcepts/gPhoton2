@@ -22,7 +22,7 @@ from gPhoton.io.fits_utils import (
     AgnosticHDUL,
     AgnosticHDU,
 )
-from gPhoton.reference import eclipse_to_paths
+from gPhoton.eclipse import eclipse_to_paths
 from gPhoton.types import Pathlike
 
 
@@ -38,7 +38,8 @@ def get_image_fns(*eclipses, band="NUV", root="test_data"):
 
     """
     return [
-        eclipse_to_paths(eclipse, root)[band]["image"] for eclipse in eclipses
+        eclipse_to_paths(eclipse, band=band, root=root)["image"]
+        for eclipse in eclipses
     ]
 
 
