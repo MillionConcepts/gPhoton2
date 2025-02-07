@@ -113,7 +113,7 @@ def raw6_path(
     emoji: bool = False
 ) -> Path:
     d, p = eclipse_prefix(eclipse, band, mode, emoji)
-    return d / f"{p}raw6.fits.gz"
+    return d / f"{p}-raw6.fits.gz"
 
 
 @cache
@@ -127,7 +127,7 @@ def photonfile_path(
 ) -> Path:
     leg = format_leg(leg, emoji)
     d, p = eclipse_prefix(eclipse, band, mode, emoji)
-    return d / f"{p}{leg}.parquet"
+    return d / f"{p}-{leg}.parquet"
 
 
 @cache
@@ -145,7 +145,7 @@ def image_path(
     img = IMAGE_TAG[emoji]
     depth = format_depth(None, emoji)
     d, p = eclipse_prefix(eclipse, band, mode, emoji)
-    return d / f"{p}{depth}-{leg}-{img}-{comp}"
+    return d / f"{p}-{depth}-{leg}-{img}-{comp}"
 
 
 @cache
@@ -162,7 +162,7 @@ def extended_shapes_path(
     # TODO: is this being used?
     leg = format_leg(leg, emoji)
     d, p = eclipse_prefix(eclipse, band, mode, emoji)
-    return d / f"{p}{leg}-extended-shapes.csv"
+    return d / f"{p}-{leg}-extended-shapes.csv"
 
 
 @cache
@@ -176,7 +176,7 @@ def extended_catalog_path(
 ) -> Path:
     leg = format_leg(leg, emoji)
     d, p = eclipse_prefix(eclipse, band, mode, emoji)
-    return d / f"{p}{leg}-extended-sources.csv"
+    return d / f"{p}-{leg}-extended-sources.csv"
 
 
 @cache
@@ -198,7 +198,7 @@ def photomfile_path(
     aper = format_aperture(aperture, emoji)
     suffix = "" if suffix is None else "-" + suffix
     d, p = eclipse_prefix(eclipse, band, mode, emoji)
-    return d / f"{p}{depth}-{leg}-{start}-photom-{aper}{suffix}.csv"
+    return d / f"{p}-{depth}-{leg}-{start}-photom-{aper}{suffix}.csv"
 
 
 @cache
@@ -220,7 +220,7 @@ def movie_path(
     depth = format_depth(depth, emoji)
     comp = COMP_TAG_EXT[compression][emoji]
     d, p = eclipse_prefix(eclipse, band, mode, emoji)
-    return d / f"{p}{depth}-{leg}-{start}-{comp}"
+    return d / f"{p}-{depth}-{leg}-{start}-{comp}"
 
 
 @cache
@@ -240,7 +240,7 @@ def expfile_path(
     start = format_start(start, depth, emoji)
     depth = format_depth(depth, emoji)
     d, p = eclipse_prefix(eclipse, band, mode, emoji)
-    return d / f"{p}{depth}-{leg}-{start}-exptime.csv"
+    return d / f"{p}-{depth}-{leg}-{start}-exptime.csv"
 
 
 class EclipsePaths(Mapping):
@@ -288,9 +288,9 @@ class EclipsePaths(Mapping):
 
         def image():
             s = self
-            return raw6_path(s._eclipse, s._leg, s._band, s._mode,
-                             compression=s._compression,
-                             emoji=s._emoji)
+            return image_path(s._eclipse, s._leg, s._band, s._mode,
+                              compression=s._compression,
+                              emoji=s._emoji)
 
         def extended_shapes():
             s = self
@@ -307,7 +307,7 @@ class EclipsePaths(Mapping):
             s = self
             return photomfile_path(s._eclipse, s._leg, s._band, s._mode,
                                    depth=s._depth, start=s._start,
-                                   aperture=s._aperture, suffix=s.suffix,
+                                   aperture=s._aperture, suffix=s._suffix,
                                    emoji=s._emoji)
 
         def movie():
@@ -319,7 +319,7 @@ class EclipsePaths(Mapping):
         def expfile():
             s = self
             return expfile_path(s._eclipse, s._leg, s._band, s._mode,
-                                s._depth, s._start, s._emoji)
+                                depth=s._depth, start=s._start, emoji=s._emoji)
 
 
         self._paths: dict[str, Path | Callable[[], Path]] = {

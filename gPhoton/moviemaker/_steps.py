@@ -322,7 +322,9 @@ def write_fits_array(
         # burst mode writes each frame as a separate file w/cnt, flag, and edge
         for frame in range(len(arraymap["cnt"])):
             start = arraymap['tranges'][frame][0] - ctx.start_time
-            array_path = ctx(start=start)["movie"].replace(".gz", "")
+            array_path = ctx(start=start)["movie"]
+            if array_path.suffix == ".gz":
+                array_path = array_path.with_suffix("")
             print(f"writing {array_name} frame {frame} to {array_path}")
             initialize_fits_file(array_path)
             for key in ["cnt", "flag", "edge"]:
@@ -340,8 +342,9 @@ def write_fits_array(
                 )
             outpaths.append(array_path)
     else:
-        array_file = ctx["movie"] if is_movie is True else ctx["image"]
-        array_path = Path(array_file.replace(".gz", ""))
+        array_path = ctx["movie"] if is_movie is True else ctx["image"]
+        if array_path.suffix == ".gz":
+            array_path = array_path.with_suffix("")
         print(f"writing {array_name} to {array_path}")
         initialize_fits_file(array_path)
         for key in ["cnt", "flag", "edge"]:

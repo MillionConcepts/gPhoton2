@@ -64,7 +64,7 @@ def execute_photonpipe(ctx: PipeContext, raw6file: Optional[Pathlike] = None):
     eclipse = get_eclipse_from_header(raw6file, ctx.eclipse)
     print(f"Processing eclipse {eclipse}")
     if ctx.band == "FUV":
-        xoffset, yoffset = find_fuv_offset(eclipse)
+        xoffset, yoffset = find_fuv_offset(eclipse, aspect_dir=ctx.aspect_dir)
     else:
         xoffset, yoffset = 0.0, 0.0
 
