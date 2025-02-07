@@ -288,6 +288,10 @@ class PipeContext:
             root = Path(root)
         kwargs["root"] = root
 
+        frame = kwargs.pop("frame", None)
+        if frame is not None and kwargs.get("start") is None:
+            kwargs["start"] = frame
+
         return eclipse_to_paths(**kwargs)
 
     def __getitem__(self, key):
