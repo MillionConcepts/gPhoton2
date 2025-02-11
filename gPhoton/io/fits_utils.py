@@ -39,7 +39,7 @@ class AgnosticHDU:
     @property
     def data(self):
         if self.library == "fitsio":
-            return self._hdu
+            return self._hdu.read()
         return self._hdu.data
 
     @property

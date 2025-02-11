@@ -319,14 +319,12 @@ def check_eclipse(eclipse, aspect_dir: None | str | Path = None):
     if len(meta) == 0:
         e_error.append(f"No metadata found for e{eclipse}.")
         return e_warn, e_error
-    obstype = meta['obstype'].to_pylist()[0]
     actual, nominal = titular_legs(eclipse, aspect_dir=aspect_dir)
-    if (obstype in ("MIS", "GII")) and (actual == 1) and (nominal > 0):
-        e_error.append('petal pattern is not yet supported.')
-    elif actual != nominal:
+    if actual != nominal:
+        obstype = meta['obstype'].to_pylist()[0]
         e_warn.append(
             f"Note: e{eclipse} observation-level metadata specifies "
             f"{nominal} legs, but only {actual} appear(s) to have "
-            f"been completed."
+            f"been completed. Obstype is {obstype}."
         )
     return e_warn, e_error
