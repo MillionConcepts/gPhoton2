@@ -204,6 +204,7 @@ class PipeContext:
         snippet: Optional[tuple] = None,
         suffix: Optional[str] = None,
         aspect_dir: None | str | Path = None,
+        ftype: str = "csv",
     ):
         self.eclipse = eclipse
         self.band = band
@@ -238,6 +239,7 @@ class PipeContext:
         self.snippet = snippet
         self.suffix = suffix
         self.aspect_dir = aspect_dir
+        self.ftype = ftype
 
     def __repr__(self):
         params = [ f"{k}={v!r}" for k,v in self.__dict__ ]
@@ -260,6 +262,7 @@ class PipeContext:
             "leg": self.leg,
             "aperture_sizes": self.aperture_sizes,
             "suffix": self.suffix,
+            "ftype": self.ftype
         }
 
     def asdict(self) -> dict[str, Any]:

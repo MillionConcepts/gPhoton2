@@ -95,6 +95,12 @@ def make_lightcurves(sky_arrays: Mapping, ctx: PipeContext):
     if source_table is None:
         return "skipped photometry because no sources were found"
 
+    # exposure times
+    if sky_arrays["movie_dict"] is not None:
+        write_exptime_file(ctx["expfile"], sky_arrays["movie_dict"])
+    else:
+        write_exptime_file(ctx["expfile"], sky_arrays["image_dict"])
+
     # photometry on point sources
     for aperture_size in ctx.aperture_sizes:
         aperture_size_px = aperture_size / c.ARCSECPERPIXEL
@@ -113,13 +119,15 @@ def make_lightcurves(sky_arrays: Mapping, ctx: PipeContext):
                     apertures,
                     ctx.threads
                 )
-                write_exptime_file(ctx["expfile"], sky_arrays["movie_dict"])
-            else:
-                write_exptime_file(ctx["expfile"], sky_arrays["image_dict"])
 
         photomfile = ctx(aperture=aperture_size)['photomfile']
         print(f"writing source table to {photomfile}")
-        photometry_table.to_csv(photomfile, index=False)
+        if ctx.ftype == "parquet":
+            photometry_table.to_parquet(photomfile, index=False)
+        elif ctx.ftype == "csv":
+            photometry_table.to_csv(photomfile, index=False)
+        else:
+            raise ValueError(f"unknown photometry format '{ctx.ftype}'")
         ctx.watch.click()
 
     return "source finding and photometry successful"

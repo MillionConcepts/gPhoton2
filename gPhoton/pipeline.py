@@ -140,6 +140,7 @@ def execute_pipeline(
     override_eclipse_limits: bool = False,
     suffix: Optional[str] = None,
     aspect_dir: None | str | Path = None,
+    ftype: str = "csv",
 ) -> str:
     """
     Args:
@@ -213,6 +214,8 @@ def execute_pipeline(
             note that the pipeline will most likely still fail in these cases.
         suffix: optional string to append to the end of the output filenames
         aspect_dir: specifies the location of aspect tables
+        ftype: file type desired for output files; can be either
+            "csv" or "parquet", currently only affects photometry files
     Returns:
         str: `"return code: successful"` for fully successful execution;
             `"return code: {other_thing}"` for various known failure states
@@ -266,6 +269,7 @@ def execute_pipeline(
         start_time=1000, # this is a no-op
         suffix=suffix,
         aspect_dir=aspect_dir,
+        ftype=ftype,
     )
     ctx.watch.start()
     if photometry_only:

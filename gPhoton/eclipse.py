@@ -88,7 +88,7 @@ def format_depth(depth: int | None, emoji: bool) -> str:
 
 
 def format_aperture(aperture: float | None, emoji: bool) -> str:
-    return "" if aperture is None else str(aperture).replace(".", "_")
+    return "" if aperture is None else "-" + str(aperture).replace(".", "_")
 
 
 @cache
@@ -191,6 +191,7 @@ def photomfile_path(
     aperture: float | None = None,
     suffix: str | None = None,
     emoji: bool = False,
+    ftype: str = "csv",
 ):
     leg = format_leg(leg, emoji)
     start = format_start(start, depth, emoji)
@@ -198,7 +199,7 @@ def photomfile_path(
     aper = format_aperture(aperture, emoji)
     suffix = "" if suffix is None else "-" + suffix
     d, p = eclipse_prefix(eclipse, band, mode, emoji)
-    return d / f"{p}-{depth}-{leg}-{start}-photom-{aper}{suffix}.csv"
+    return d / f"{p}-{depth}-{leg}-{start}-photom{aper}{suffix}.{ftype}"
 
 
 @cache
@@ -260,6 +261,7 @@ class EclipsePaths(Mapping):
         aperture: float | None = None,
         suffix: str | None = None, # suffix for file names
         emoji: bool = False,
+        ftype: str = "csv",
     ):
         if root is not None and not isinstance(root, Path):
             root = Path(root)
@@ -275,6 +277,7 @@ class EclipsePaths(Mapping):
         self._aperture = aperture
         self._suffix = suffix
         self._emoji = emoji
+        self._ftype = ftype
 
         def raw6():
             s = self
@@ -308,7 +311,7 @@ class EclipsePaths(Mapping):
             return photomfile_path(s._eclipse, s._leg, s._band, s._mode,
                                    depth=s._depth, start=s._start,
                                    aperture=s._aperture, suffix=s._suffix,
-                                   emoji=s._emoji)
+                                   emoji=s._emoji, ftype=s._ftype)
 
         def movie():
             s = self
@@ -385,6 +388,7 @@ def eclipse_to_paths(
     aperture: float | None = None,
     suffix: str | None = None, # suffix for file names
     emoji: bool = False,
+    ftype: str = "csv",
 ) -> EclipsePaths:
     """
     generate canonical paths for files associated with a given eclipse,
@@ -402,4 +406,5 @@ def eclipse_to_paths(
         aperture=aperture,
         suffix=suffix,
         emoji=emoji,
+        ftype=ftype,
     )

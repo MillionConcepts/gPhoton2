@@ -143,10 +143,17 @@ def _load_parquet_catalog(
     source_catalog_file: Pathlike, eclipse: int
 ) -> pd.DataFrame:
     from pyarrow import parquet
+    ds = parquet.read_schema(source_catalog_file)
+    if "eclipse" in ds.names:
+        filters = [("eclipse", "=", eclipse)],
+    else:
+        # If there is not an eclipse column, then just use everything
+        # This lets you feed gPhoton2's outputs back into itself
+        filters = None
 
     return parquet.read_table(
         source_catalog_file,
-        filters=[('eclipse', '=', eclipse)],
+        filters=filters,
         columns=['ra', 'dec']
     ).to_pandas()
 
