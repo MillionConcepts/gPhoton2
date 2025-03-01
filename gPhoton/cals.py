@@ -97,7 +97,7 @@ def flat(band):
 def distortion(band, xy, eclipse, raw_stimsep):
     index = ""
     if band == "NUV":
-        if eclipse > 37460:
+        if eclipse > 37423:
             if raw_stimsep < 5136.3:
                 index = "a"
             elif raw_stimsep < 5137.25:

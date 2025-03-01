@@ -127,7 +127,7 @@ def avg_stimpos(band, eclipse):
         }
 
     elif band == "NUV":
-        if eclipse >= 38268:
+        if eclipse >= 38150:
             # The average stim positions after the clock change (post-CSP).
             avgstim = {
                 "x1": -2722.53,
@@ -303,7 +303,7 @@ def rtaph_yac(yactbl, ya, yb, yamc, eclipse):
     """
 
     yac = np.zeros(len(ya))
-    if eclipse <= 37460:
+    if eclipse <= 37423:
         return yac
 
     yap = rtaph_yap(ya, yb, yamc)

@@ -793,7 +793,7 @@ def load_cal_data(stims, band, eclipse):
     #  ...actually just document the data flow here better, as best we can,
     #  given our limited knowledge
     print_inline("Loading distortion files...")
-    if eclipse > 37460:
+    if eclipse > 37423:
         stimsep = compute_stimstats_2(stims, band)[-2]
     else:
         stimsep = c.STIMSEP

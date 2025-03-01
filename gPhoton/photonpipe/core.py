@@ -76,7 +76,7 @@ def execute_photonpipe(ctx: PipeContext, raw6file: Optional[Pathlike] = None):
     # temporarily retain them in both cases for brevity.
     # the use of a 90.001 separation angle and fixed stim coefficients
     # post-CSP is per original mission execute_pipeline; see rtaph.c #1391
-    if eclipse > 37460:
+    if eclipse > 37423:
         stims, _ = create_ssd_from_decoded_data(
             data, ctx.band, eclipse, ctx.verbose, margin=90.001
         )
@@ -86,7 +86,7 @@ def execute_photonpipe(ctx: PipeContext, raw6file: Optional[Pathlike] = None):
             data, ctx.band, eclipse, ctx.verbose, margin=20
         )
     # Post-CSP 'yac' corrections.
-    if eclipse > 37460:
+    if eclipse > 37423:
         data = perform_yac_correction(ctx.band, eclipse, stims, data)
     cal_data = load_cal_data(stims, ctx.band, eclipse)
     if share_memory is True:
