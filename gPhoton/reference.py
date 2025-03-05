@@ -316,6 +316,9 @@ def check_eclipse(eclipse, aspect_dir: None | str | Path = None):
     e_error: list[str] = []
     if eclipse > 47000:
         e_error.append("CAUSE data w/eclipse>47000 are not yet supported.")
+    if 37423 < eclipse <= 38149:
+        e_error.append(f"Eclipse {eclipse} is post-CSP and pre-TAC switch, "
+                       "suspect data that should not be processed.")
     meta = aspect_tables(
         eclipse=eclipse, tables="metadata", aspect_dir=aspect_dir
     )[0]
