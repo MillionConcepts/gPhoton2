@@ -6,7 +6,6 @@ TODO: these are somewhat repetitive/redundant, tossed around inconsistently,
 """
 
 import warnings
-from pathlib import Path
 from typing import Sequence
 
 import astropy.io.fits

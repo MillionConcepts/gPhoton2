@@ -4,7 +4,6 @@ recommend their use for any purpose whatsoever.
 """
 
 # import objgraph
-from time import time
 
 from line_profiler import LineProfiler
 from pympler import muppy
@@ -31,5 +30,3 @@ def pm():
 
 
 LP = LineProfiler()
-
-

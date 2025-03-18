@@ -155,7 +155,7 @@ def create_images_and_movies(
         "total_trange": total_trange,
         "imsz": imsz,
     }
-    print(f"making full-depth image")
+    print("making full-depth image")
     # don't be careful about memory wrt sparsification, just go for it
     status, image_dict = make_full_depth_image(**render_kwargs)
     if (

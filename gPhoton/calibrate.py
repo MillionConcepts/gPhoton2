@@ -403,14 +403,14 @@ def flat_scale_parameters(band):
     if band == "NUV":
         # flat_correct and flat_t0 never get used.
         # They are only retained in this code for historical purposes.
-        flat_correct = -0.0154
-        flat_t0 = 840418779.02
+        #flat_correct = -0.0154
+        #flat_t0 = 840418779.02
         flat_correct_0 = 1.9946352
         flat_correct_1 = -1.9679445e-09
         flat_correct_2 = 9.3025231e-19
     elif band == "FUV":
-        flat_correct = -0.0031
-        flat_t0 = 840418779.02
+        #flat_correct = -0.0031
+        #flat_t0 = 840418779.02
         flat_correct_0 = 1.2420282
         flat_correct_1 = -2.8843099e-10
         flat_correct_2 = 0.000

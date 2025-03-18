@@ -221,17 +221,12 @@ def apply_on_detector_corrections(
     xoffset,
     yoffset,
 ):
-    q, t, x, xa, xb, y, ya, yamc, yb = (
-        chunk["q"],
-        chunk["t"],
-        chunk["x"],
-        chunk["xa"],
-        chunk["xb"],
-        chunk["y"],
-        chunk["ya"],
-        chunk["yamc"],
-        chunk["yb"],
-    )
+    q = chunk["q"]
+    t = chunk["t"]
+    x = chunk["x"]
+    xa = chunk["xa"]
+    y = chunk["y"]
+    ya = chunk["ya"]
     flags = np.zeros(len(t), dtype=np.uint8)
     fptrx, fptry = apply_wiggle_correction(chunkid, x, y)
     # This and other lines like it below are to verify that the
@@ -827,14 +822,11 @@ def flag_ghosts(leg_data):
     """
     from quickbin import bin2d
 
-    ra, dec, ya, col, row, flags = (
-        leg_data["ra"],
-        leg_data["dec"],
-        leg_data["ya"],
-        leg_data["col"],
-        leg_data["row"],
-        leg_data["flags"],
-    )
+    ra = leg_data["ra"]
+    dec = leg_data["dec"]
+    ya = leg_data["ya"]
+    col = leg_data["col"]
+    row = leg_data["row"]
 
     print("filtering")
     valid_indices = (col >= 0) & (col <= 800) & (row >= 0) & (row <= 800)

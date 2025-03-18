@@ -2,7 +2,6 @@ import pytest
 import pandas as pd
 
 from gPhoton.pipeline import execute_pipeline
-import pandas as pd
 
 eclipse = 23456
 

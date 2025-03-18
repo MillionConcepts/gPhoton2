@@ -230,8 +230,11 @@ def execute_pipeline(
             print("Bailing out.")
             return f"return code: {';'.join(e_error)}"
         print("override_eclipse_limits=True, continuing anyway")
-    if lil==False:
-        warnings.warn("lil=False is deprected and will be removed in a future release. Defaulting to lil=True.")
+    if not lil:
+        warnings.warn(
+            "lil=False no longer has any effect."
+            " The `lil` argument will be removed in a future release."
+        )
     if aspect not in ("aspect", "aspect2"):
         print(f"Invalid aspect argument {aspect}, bailing out.")
         return f"return code: invalid aspect argument {aspect}"
@@ -326,7 +329,7 @@ def execute_full_pipeline(ctx):
             print(f"no unflagged data in {path}, not processing")
             leg_paths.append(False)
         leg_paths.append(path)
-    if all(l is False for l in leg_paths):
+    if not any(leg_paths):
         print("no usable legs, bailing out.")
         return "return code: no unflagged data (stopped after photon list)"
     # MOVIE-RENDERING SECTION

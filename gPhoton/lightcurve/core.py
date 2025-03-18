@@ -14,7 +14,7 @@ from gPhoton.lightcurve.photometry_utils import (
     get_point_sources,
     check_point_in_extended,
     mask_for_extended_sources)
-from gPhoton.reference import FakeStopwatch, PipeContext
+from gPhoton.reference import PipeContext
 from gPhoton.coadd import (zero_flag, flag_mask)
 
 

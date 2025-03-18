@@ -8,21 +8,16 @@ may not suitable for independent use.
 
 from multiprocessing import Pool
 from pathlib import Path
-from typing import Union, Optional, Mapping
-import warnings
+from typing import Mapping
 
 import astropy.wcs
 import numpy as np
 import pandas as pd
-from photutils.detection import DAOStarFinder
 from photutils.aperture import CircularAperture, aperture_photometry
 import scipy.sparse
 
 from gPhoton.pretty import print_inline
 from gPhoton.types import Pathlike, GalexBand
-
-from gPhoton.lightcurve.photometry_utils import (mask_for_extended_sources,
-                                                 check_point_in_extended)
 
 def count_full_depth_image(
     source_table: pd.DataFrame,
@@ -118,7 +113,7 @@ def extract_photometry(movie_dict, source_table, apertures, threads):
             )
         frame_indices = sorted(photometry.keys())
         if key in ("flag"):
-            column_prefix = f"artifact_flag"
+            column_prefix = "artifact_flag"
         else:
             column_prefix = "aperture_sum"
         photometry = {

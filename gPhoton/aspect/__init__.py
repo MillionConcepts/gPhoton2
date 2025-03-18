@@ -4,7 +4,7 @@ aspect solution tables
 """
 
 from pathlib import Path
-from typing import Any, Iterable, Literal, Sequence, cast, get_args
+from typing import Any, Iterable, Literal, cast, get_args
 
 import numpy as np
 import pandas as pd
@@ -13,7 +13,6 @@ from pyarrow import parquet
 
 from gPhoton import DEFAULT_ASPECT_DIR
 from gPhoton.coords.gnomonic import gnomfwd_simple
-from gPhoton.parquet_utils import parquet_to_ndarrays
 from gPhoton.pretty import print_inline
 
 ASPECT_TABLE_TYPE = Literal["aspect", "aspect2", "boresight", "metadata"]

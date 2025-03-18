@@ -9,9 +9,7 @@ from operator import eq
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
 from astropy.coordinates import angular_separation
-from pyarrow import parquet
 
 from gPhoton.aspect import aspect_tables
 

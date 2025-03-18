@@ -2,7 +2,6 @@ import pytest
 import pandas as pd
 
 from gPhoton.pipeline import execute_pipeline
-import pandas as pd
 
 dis_eclipse = 8330
 ais_eclipse = 18669
