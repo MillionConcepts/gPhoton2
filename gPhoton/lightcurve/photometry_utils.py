@@ -402,7 +402,6 @@ def get_extended(dao_sources: pd.DataFrame, band: str):
 
     starlist['x_0'] = x_0
     starlist['y_0'] = y_0
-    print(len(starlist))
     epsilon = 40 if band == "NUV" else 50
     dbscan_group = SourceGrouper(min_separation=epsilon)
     dbsc_star_groups = dbscan_group(starlist['x_0'],starlist['y_0'])

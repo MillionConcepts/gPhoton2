@@ -40,7 +40,7 @@ def count_full_depth_image(
         [source_table, phot_table[["xcenter", "ycenter", "aperture_sum"]]],
         axis=1,
     )
-    source_table["aperture_sum_mask"] = flag_table["aperture_sum"]
+    source_table["aperture_sum_flag"] = flag_table["aperture_sum"]
     source_table["aperture_sum_edge"] = edge_table["aperture_sum"]
     # TODO: this isn't necessary for specified catalog positions. but
     #  should we do a sanity check?

@@ -71,6 +71,33 @@ def make_frame(
     return frame.astype("f4")
 
 
+def make_mask_frame(
+    foc: np.ndarray,
+    weights: np.ndarray,
+    imsz: tuple[int, int],
+) -> np.ndarray:
+    """
+    make a mask / bitmap by calling mask_frame on diff bit values
+    and then combining
+    :param foc: 2-column array containing positions in detector space
+    :param weights: 1-D array containing counts at each position
+    :param imsz: x/y dimensions of output image
+    :return: ndarray containing single image made from 2D histogram of inputs
+    """
+    frame = np.zeros(imsz, dtype=np.uint8)
+    weights = np.array(weights, dtype=np.int64)
+    # 15 max if flag 0, 1, 2, and 3 are set
+    for i in range(16):
+        if np.any(weights & (1 << i)):
+            bit_mask = (weights & (1 << i)) >> i
+            valid_indices = bit_mask > 0
+            filtered_foc = foc[valid_indices]
+            filtered_bit_mask = weights[valid_indices]
+            mask_frame = make_frame(filtered_foc, filtered_bit_mask, imsz, booleanize=True)
+            frame |= (mask_frame > 0).astype(np.uint8) << i
+    return frame
+
+
 def shared_compute_exptime(
     event_block_info: Mapping, band: str, trange: tuple[float, float]
 ) -> float:
@@ -115,7 +142,20 @@ def prep_image_inputs(photonfile, edge_threshold):
         # don't bother us about divide-by-zero errors
         warnings.simplefilter("ignore")
         weights = 1.0 / event_table["response"].to_numpy()
-    mask_ix = np.where(event_table["mask"].to_numpy())
+
+    # combining flag and mask into 8 bit mask
+    # 7 & 12: off-detector or aspect flags
+    # 120: ghost flag
+    flag_to_bit = {7: 0, 12: 1, 120: 2}
+    # mask is for hotspots / cold spots
+    mask_bit = 3
+    mask_array = event_table["mask"].to_numpy().astype(np.uint8)
+    flags_array = event_table["flags"].to_numpy().astype(np.uint8)
+    mask_ix = np.zeros_like(flags_array, dtype=np.uint8)
+    for flag, bit in flag_to_bit.items():
+        mask_ix |= ((flags_array & flag) == flag).astype(np.uint8) << bit
+    mask_ix |= (mask_array != 0).astype(np.uint8) << mask_bit
+
     edge_ix = np.where(event_table["detrad"].to_numpy() > edge_threshold)
     t = event_table["t"].to_numpy()
     map_ix_dict = generate_indexed_values(edge_ix, foc, mask_ix, t, weights)
@@ -129,7 +169,15 @@ def generate_indexed_values(edge_ix, foc, mask_ix, t, weights):
         for map_ix, map_name in zip(
             (edge_ix, mask_ix, slice(None)), ("edge", "flag", "cnt")
         ):
-            indexed[map_name][value_name] = value[map_ix]
+            if map_name == "flag":
+                if value_name == "weights":
+                    indexed[map_name][value_name] = mask_ix
+                if  value_name == "foc":
+                    indexed[map_name][value_name] = foc
+                if value_name == "t":
+                    indexed[map_name][value_name] = t
+            else:
+                indexed[map_name][value_name] = value[map_ix]
     return indexed
 
 
@@ -240,8 +288,7 @@ def sm_make_map(block_directory, map_name, imsz):
         map_arrays["foc"],
         map_arrays["weights"],
         imsz,
-        booleanize=map_name in ("edge", "flag"),
-    )
+        booleanize= map_name == "edge")
 
 
 def generate_wcs_components(event_table):
@@ -348,7 +395,7 @@ def write_fits_array(
         print(f"writing {array_name} to {array_path}")
         initialize_fits_file(array_path)
         for key in ["cnt", "flag", "edge"]:
-            #print(f"writing {key} map")
+            print(f"writing {key} map")
             header = populate_fits_header(
                 ctx.band, wcs, arraymap["tranges"], arraymap["exptimes"]
             )

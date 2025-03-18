@@ -13,6 +13,7 @@ from gPhoton.moviemaker._steps import (
     sm_compute_movie_frame,
     unshared_compute_exptime,
     make_frame,
+    make_mask_frame,
     write_fits_array,
     prep_image_inputs,
 )
@@ -104,18 +105,21 @@ def make_movies(
 def make_full_depth_image(
     exposure_array, map_ix_dict, total_trange, imsz, band="NUV"
 ): # -> tuple[str, dict]:  we're not ready to typecheck this function yet
-    # TODO: this weird arithmetic cartwheel doesn't seem _wrong_, but it can't
-    #  be _necessary_, right?
     interval = total_trange[1] - total_trange[0]
     trange = np.arange(total_trange[0], total_trange[1] + interval, interval)
     exptime = unshared_compute_exptime(exposure_array, band, trange)
     output_dict = {"tranges": [trange], "exptimes": [exptime]}
-    for map_name in ("cnt", "flag", "edge"):
+    for map_name in ("cnt", "edge"):
         output_dict[map_name] = make_frame(
             map_ix_dict[map_name]["foc"],
             map_ix_dict[map_name]["weights"],
             imsz,
-            booleanize=map_name in ("flag", "edge"),
+            booleanize=map_name =='edge'
+        )
+    output_dict["flag"] = make_mask_frame(
+        map_ix_dict['flag']["foc"],
+        map_ix_dict['flag']["weights"],
+        imsz
         )
     return "successfully made image", output_dict
 

@@ -21,6 +21,7 @@ from gPhoton.photonpipe._steps import (
     process_chunk_in_shared_memory,
     chunk_data,
     process_chunk_in_unshared_memory,
+    flag_ghosts
 )
 from gPhoton.pretty import print_inline
 from gPhoton.reference import PipeContext
@@ -148,6 +149,10 @@ def execute_photonpipe(ctx: PipeContext, raw6file: Optional[Pathlike] = None):
         for address in leg_addresses:
             leg_results[address[1]] = results.pop(address)
         array_dict = retrieve_leg_results(leg_results, share_memory)
+        # ghost flag for post CSP
+        if eclipse > 37423:
+            print("running ghost flag")
+            array_dict = flag_ghosts(array_dict)
         proc_count += len(array_dict["t"])
         # noinspection PyArgumentList
         print(f"writing table to {leg_ctx['photonfile']}")

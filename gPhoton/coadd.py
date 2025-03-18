@@ -91,7 +91,8 @@ def make_shared_wcs(wcs_sequence):
 
 
 def zero_flag_and_edge(cnt, flag, edge, copy=False):
-    if copy is True: # TODO: What is this for?
+    # copy is for making masked cnt for lightcurve use
+    if copy is True:
         cnt = cnt.copy()
     cnt[~np.isfinite(cnt)] = 0
     cnt[np.nonzero(flag)] = 0

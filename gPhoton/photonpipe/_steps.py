@@ -30,12 +30,7 @@ from gPhoton.photonpipe._numbafied import (
     sum_corners
 )
 
-# TODO, IMPORTANT: flag 7 is intended to be for gaps >= 2s in aspect_data sol
-#  or actually-bad flags. in post-CSP aspect_data solutions, it's possible that
-#  all data has some flag that we should ignore; examine aspect_data solution for
-#  propagated flag.
-#  flag 12 is intended to be for gaps < 2s in aspect_data sol. we will (eventually)
-#  use 12 in photometry but not 7.
+
 from gPhoton.pretty import print_inline
 from gPhoton.sharing import (
     reference_shared_memory_arrays,
@@ -821,3 +816,79 @@ def load_cal_data(stims, band, eclipse):
         ]
     )
     return cal_data
+
+
+def flag_ghosts(leg_data):
+    """ Adds a flag for ghosts in post-CSP eclipses
+    using the concentration of low YA values as a ghost
+    indicator.
+
+    Not very fast, could use some work to speed it up.
+    """
+    from quickbin import bin2d
+
+    ra, dec, ya, col, row, flags = (
+        leg_data["ra"],
+        leg_data["dec"],
+        leg_data["ya"],
+        leg_data["col"],
+        leg_data["row"],
+        leg_data["flags"],
+    )
+
+    print("filtering")
+    valid_indices = (col >= 0) & (col <= 800) & (row >= 0) & (row <= 800)
+    # mask NaNs
+    nan_free_indices = valid_indices & ~np.isnan(ya) & ~np.isnan(ra) & ~np.isnan(dec)
+    ra_valid, dec_valid, ya_valid = ra[nan_free_indices],\
+                                    dec[nan_free_indices],\
+                                    ya[nan_free_indices]
+    print("binning")
+    n_bins = 1600
+    binned = bin2d(
+        ra_valid,
+        dec_valid,
+        ya_valid,
+        ('mean', 'count'),
+        n_bins=n_bins
+        )
+    filtered = (binned['mean'] < 6) & (binned['count'] > 15)
+
+    # get the ra/dec edges
+    ra_min, ra_max = np.min(ra_valid), np.max(ra_valid)
+    dec_min, dec_max = np.min(dec_valid), np.max(dec_valid)
+    ra_edges = np.linspace(ra_min, ra_max, n_bins + 1)
+    dec_edges = np.linspace(dec_min, dec_max, n_bins + 1)
+
+    # get flagged ra/dec
+    flagged_pixels = np.array(np.nonzero(filtered)).T
+    ra_flagged = (ra_edges[flagged_pixels[:, 0]] + ra_edges[flagged_pixels[:, 0] + 1]) / 2
+    dec_flagged = (dec_edges[flagged_pixels[:, 1]] + dec_edges[flagged_pixels[:, 1] + 1]) / 2
+
+    print("masking")
+    ra_bin_width = (ra_max - ra_min) / n_bins
+    dec_bin_width = (dec_max - dec_min) / n_bins
+
+    mask = np.zeros_like(ra, dtype=bool)
+
+    chunk_size = 100000
+    for start in range(0, len(ra), chunk_size):
+        end = min(start + chunk_size, len(ra))
+        ra_chunk = ra[start:end]
+        dec_chunk = dec[start:end]
+
+        # done twice?
+        valid_chunk_indices = ~np.isnan(ra_chunk) & ~np.isnan(dec_chunk)
+        ra_chunk = ra_chunk[valid_chunk_indices]
+        dec_chunk = dec_chunk[valid_chunk_indices]
+
+        if len(ra_chunk) > 0:
+            for r, d in zip(ra_flagged, dec_flagged):
+                ra_mask = (ra_chunk >= r - ra_bin_width / 2) & (ra_chunk < r + ra_bin_width / 2)
+                dec_mask = (dec_chunk >= d - dec_bin_width / 2) & (dec_chunk < d + dec_bin_width / 2)
+                combo_mask = ra_mask & dec_mask
+                mask[start:end][valid_chunk_indices] |= combo_mask
+
+    leg_data["flags"][mask] = 120
+
+    return leg_data
