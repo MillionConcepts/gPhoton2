@@ -24,7 +24,7 @@ select = [
     # "ANN",    # missing type annotations (TODO)
     # "ASYNC",  # only relevant to code using async I/O
     #"S",        # potential security issues
-    #"BLE",      # throwing away exceptions
+    "BLE",      # throwing away exceptions
     #"FBT",      # confusing boolean positional args
     #"B",        # probable bugs
     "A",        # shadowed built-in names

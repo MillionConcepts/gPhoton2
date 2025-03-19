@@ -207,7 +207,7 @@ def manage_networked_sql_request(
                 print("Domain did not resolve.")
             cnt += 1
             continue
-        except Exception as ex:
+        except Exception as ex:  # noqa: BLE001
             if verbose:
                 print(f"bad query? {query}: {type(ex)}: {ex}")
             cnt += 1
