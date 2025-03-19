@@ -146,11 +146,11 @@ def unfancy_distortion_component(
     # fixing...
     """PhotonPipe.py:262: RuntimeWarning: invalid value encountered in
                     less depth[((depth < 0)).nonzero()[0]] = 0.
-                    PhotonPipe.py:263: RuntimeWarning: invalid value 
+                    PhotonPipe.py:263: RuntimeWarning: invalid value
                     encountered in
-                    greater_equal depth[((depth >= cube_nd)).nonzero()[0]] = 
+                    greater_equal depth[((depth >= cube_nd)).nonzero()[0]] =
                     -1.
-                    ERROR: IndexError: index -9223372036854775808 is out of 
+                    ERROR: IndexError: index -9223372036854775808 is out of
                     bounds for
                     axis 0 with size 17 [PhotonPipe]
                     depth[((depth < 0)).nonzero()[0]] = 0.

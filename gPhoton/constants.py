@@ -18,5 +18,3 @@ FILL_VALUE = DETSIZE / (PIXEL_SIZE * PIXELS_PER_AXIS)
 # values for the post-CSP detector stim scaling
 # and detector constant corrections.
 Mx, Bx, My, By, STIMSEP = 1, 0, 1, 0, 0
-
-

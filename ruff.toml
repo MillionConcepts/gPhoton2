@@ -75,7 +75,7 @@ select = [
     "E7",       # more code that can be simplified,
     # "E8",     # there are no E8xx rules
     "E9",       # I/O errors while running ruff
-    #"W",        # mechanically correctible, invisible whitespace errors
+    "W",        # mechanically correctible, invisible whitespace errors
     # "DOC",    # missing information in docstrings (FUTURE: after API firms up)
     # "D",      # docstring quality issues (FUTURE: after API firms up)
     "F",        # more probable bugs and editing mistakes

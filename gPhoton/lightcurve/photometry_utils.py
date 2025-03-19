@@ -172,7 +172,7 @@ class LocalHIGHSlocal:
         return self.peaks
 
 
-# This is a copy of the 
+# This is a copy of the
 # photutils.segmentation.segmentation.SegmentationImage.outline_segments
 # from v1.7, after which it was deprecated without a functionally
 # identical replacement. The closest replacement,
@@ -264,7 +264,7 @@ def get_point_sources(cnt_image: np.ndarray, band: str, f_e_mask, exposure_time)
                                             progress_bar=False)
 
     del segment_map
-    
+
     outline_seg_map = outline_segments(deblended_segment_map)
 
     # can add more columns w/ outputs listed in photutils image seg documentation

@@ -231,4 +231,3 @@ def read_wcs_from_fits(*fits_paths: Pathlike) -> tuple[
     headers = [first_fits_header(path) for path in fits_paths]
     systems = [astropy.wcs.WCS(header) for header in headers]
     return headers, systems
-
