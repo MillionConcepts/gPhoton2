@@ -54,13 +54,8 @@ def aspect_tables(
         if not tables:
             tables = ALL_ASPECT_TABLES
 
-    if not filters:
-        if eclipse is None:
-            filters = None
-        else:
-            filters = [("eclipse", "=", eclipse)]
-
-    else:
+    assert "filters" not in kwargs
+    if filters is not None:
         if eclipse is not None:
             # adding a conjunctive clause to filters is too difficult,
             # given the variety of things filters could be, and the
@@ -72,11 +67,9 @@ def aspect_tables(
                 " with eclipse= (note: eclipse=N is shorthand for"
                 " filters=[('eclipse', '=', N)])"
             )
-
-    if filters is None:
-        del kwargs["filters"] # this should be impossible but just in case
-    else:
         kwargs["filters"] = filters
+    elif eclipse is not None:
+        kwargs["filters"] = [("eclipse", "=", eclipse)]
 
     return [
         parquet.read_table(aspect_dir / (table + ".parquet"), **kwargs)

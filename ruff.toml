@@ -82,8 +82,8 @@ select = [
     # "PGH",    # lints of lint annotations (TODO: with type annotations)
     "PLC",      # more code that can be simplified
     "PLE",      # more probable bugs
-    #"PLR",      # even more code that can be simplified
-    #"PLW",      # even more probable bugs
+    "PLR",      # even more code that can be simplified
+    "PLW",      # even more probable bugs
     #"UP",       # obsolete constructs
     #"FURB",     # even more code that can be simplified
     #"RUF",      # yet another group of probable bugs
@@ -103,6 +103,10 @@ ignore = [
     # better addressed by using fonts in which l/I/1 or 0/O are not
     # visually ambiguous
     "E741",
+    # don't want any hard upper limits on function complexity
+    "PLR09",
+    # "magic numbers"; too many hits, revisit later
+    "PLR2004",
     # stylistic rule lumped in with W
     "W505",
 ]

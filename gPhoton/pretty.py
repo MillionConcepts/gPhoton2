@@ -155,7 +155,6 @@ def print_inline(text, blanks=60):
     stdout.write(" "*blanks+"\r")
     stdout.write(str(str(text)+'\r'))
     stdout.flush()
-    return
 
 
 def record_and_yell(message: str, cache: MutableMapping, loud: bool = False):

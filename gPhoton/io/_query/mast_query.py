@@ -21,11 +21,8 @@ def has_nan(query):
 
     :type query: str
     """
-
     if "NaN" in query:
         raise RuntimeError("Malformed query: contains NaN values.")
-
-    return
 
 
 # not presently in use

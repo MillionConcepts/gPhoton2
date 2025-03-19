@@ -67,9 +67,8 @@ def get_raw_paths(eclipse: int, verbose: int = 0) -> dict[str, Optional[str]]:
             out[band] = f[2]
         elif band == "BOTH":  # misnamed scst path
             out["scst"] = f[2]
-        else:
-            if verbose > 1:
-                print(f"ignoring unrecognized band {band}")
+        elif verbose > 1:
+            print(f"ignoring unrecognized band {band}")
     return out
 
 
