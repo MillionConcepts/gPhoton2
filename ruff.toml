@@ -21,11 +21,11 @@ select = [
     # "ERA",    # we have some intentionally commented out code for docs
     # "FAST",   # only relevant for codebases using FastAPI
     "YTT",      # non-future-proof usage of sys.version(_info)
-    # "ANN",    # missing type annotations (TODO)
+    # "ANN",    # missing type annotations (TODO: with typing)
     # "ASYNC",  # only relevant to code using async I/O
     #"S",        # potential security issues
     "BLE",      # throwing away exceptions
-    #"FBT",      # confusing boolean positional args
+    # "FBT",    # confusing boolean positional args (TODO: with typing)
     #"B",        # probable bugs
     "A",        # shadowed built-in names
     # "COM",    # code formatting (comma placement)
@@ -45,7 +45,7 @@ select = [
     # "G",      # only relevant for codebases using the logging module (TODO)
     "INP",      # forbids "implicit namespace packages", an easy mistake
     "PIE",      # probable bugs and editing mistakes
-    # "T20",    # forbids use of "print" (TODO)
+    # "T20",    # forbids use of "print" (TODO: with logging)
     "PYI",      # common mistakes in defining interfaces
     # "PT",     # pytest-related common mistakes (FUTURE: when we have tests)
     # "Q",      # purely stylistic rules about quoted strings
@@ -56,7 +56,7 @@ select = [
     "SLOT",     # places where you probably forgot __slots__
     # "TID",    # purely stylistic rules about imports
     # "TD",     # nags you about todo comments
-    # "TC",     # type annotation-related mistakes (TODO)
+    # "TC",     # type annotation-related mistakes (TODO: with typing)
     # "ARG",    # nags you about unused arguments (FUTURE: after API firms up)
     # "PTH",    # enforces use of pathlib (TODO)
     "FLY",      # more cases where code can be simplified
@@ -79,7 +79,7 @@ select = [
     # "DOC",    # missing information in docstrings (FUTURE: after API firms up)
     # "D",      # docstring quality issues (FUTURE: after API firms up)
     "F",        # more probable bugs and editing mistakes
-    # "PGH",    # lints of lint annotations (TODO: with type annotations)
+    # "PGH",    # lints of lint annotations (TODO: with typing)
     "PLC",      # more code that can be simplified
     "PLE",      # more probable bugs
     "PLR",      # even more code that can be simplified
