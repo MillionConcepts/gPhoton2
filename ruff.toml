@@ -65,7 +65,7 @@ select = [
     "NPY",      # warns about deprecated NumPy APIs
     "PD",       # warns about deprecated Pandas APIs
     # "N",      # PEP8 naming conventions (FUTURE: after API firms up)
-    #"PERF",     # warns about surprisingly expensive operations
+    "PERF",     # warns about surprisingly expensive operations
     "E1",       # inconsistent indentation (stylistic but very important)
     # "E2",     # purely stylistic rules about whitespace around operators
     # "E3",     # purely stylistic rules about blank lines

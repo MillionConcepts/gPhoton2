@@ -293,13 +293,17 @@ def _cut_skyboxes_unthreaded(cut_plans):
 
 
 def _cut_skyboxes_threaded(cut_plans):
-    pool = Pool(cut_plans[0]["threads"])
-    cuts = []
-    for plan in cut_plans:
-        cuts.append(pool.apply_async(cut_skybox_from_file, kwds=plan))
-    pool.close()
-    pool.join()
-    return [cut_result.get() for cut_result in cuts]
+    with Pool(cut_plans[0]["threads"]) as pool:
+        # we don't use map() here because we need kwds=
+        cuts = [
+            pool.apply_async(cut_skybox_from_file, kwds=plan)
+            for plan in cut_plans
+        ]
+        # exiting a pool context calls terminate() but *doesn't*
+        # call either close() or join()
+        pool.close()
+        pool.join()
+        return [cut_result.get() for cut_result in cuts]
 
 
 def coadd_image_slices(
