@@ -52,7 +52,7 @@ select = [
     # "RSE",    # more purely stylistic rules related to exceptions
     "RET",      # missing return values
     # "SLF",    # rules about "private" members
-    #"SIM",      # code that can be simplified
+    "SIM",      # code that can be simplified
     "SLOT",     # places where you probably forgot __slots__
     # "TID",    # purely stylistic rules about imports
     # "TD",     # nags you about todo comments
@@ -93,6 +93,9 @@ select = [
 ignore = [
     # this would forbid use of 'assert'
     "S101",
+    # collapsing if-then-else blocks to ternary expressions often
+    # makes them harder to read
+    "SIM108",
     # stylistic rules lumped in with the RET group
     "RET505", "RET506", "RET507", "RET508",
     # stylistic rule lumped in with E5

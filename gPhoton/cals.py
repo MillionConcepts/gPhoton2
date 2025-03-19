@@ -96,14 +96,13 @@ def flat(band):
 
 def distortion(band, xy, eclipse, raw_stimsep):
     index = ""
-    if band == "NUV":
-        if eclipse > 37423:
-            if raw_stimsep < 5136.3:
-                index = "a"
-            elif raw_stimsep < 5137.25:
-                index = "b"
-            else:
-                index = "c"
+    if band == "NUV" and eclipse > 37423:
+        if raw_stimsep < 5136.3:
+            index = "a"
+        elif raw_stimsep < 5137.25:
+            index = "b"
+        else:
+            index = "c"
     fn = "{b}_distortion_cube_d{d}{i}.fits".format(
         b=check_band(band).lower(), d=check_xy(xy), i=index
     )

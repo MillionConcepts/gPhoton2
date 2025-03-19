@@ -168,18 +168,14 @@ def get_tbl_data(filename, comment='|'):
 
     :returns: numpy.ndarray -- The table data.
     """
-
-    f = open(filename)
-    lines = f.readlines()
-    tbl = []
-
-    for line in lines:
-        if line[0] != comment:
-            strarr = str.split(str(line))
-            if len(strarr) > 0:
-                tbl.append(strarr)
-
-    return np.array(tbl, dtype='float64')
+    with open(filename, "rt") as fp:
+        tbl = []
+        for line in fp:
+            if line and line[0] != comment:
+                fields = line.split()
+                if fields:
+                    tbl.append(fields)
+        return np.array(tbl, dtype='float64')
 
 
 # ------------------------------------------------------------------------------
@@ -205,15 +201,16 @@ def first_fits_header(path: Pathlike, header_records: int = 1):
     skimming metadata from large groups of FITS files
     """
     from isal import igzip
+    def open_fits(path):
+        if str(path).endswith("gz"):
+            return igzip.open(path)
+        else:
+            return open(path, "rb")
+    with open_fits(path) as stream:
+        if "rice" in str(path):
+            stream.seek(2880)
+            head = head_file(stream, 2880 * header_records)
 
-    if str(path).endswith("gz"):
-        stream = igzip.open(path)
-    else:
-        stream = open(path, "rb")
-    if "rice" in str(path):
-        stream.seek(2880)
-    head = head_file(stream, 2880 * header_records)
-    stream.close()
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")  # we know we truncated it, thank you
         return astropy.io.fits.open(head)[0].header

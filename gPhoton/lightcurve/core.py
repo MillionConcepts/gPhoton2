@@ -111,14 +111,14 @@ def make_lightcurves(sky_arrays: Mapping, ctx: PipeContext):
             sky_arrays["wcs"],
         )
         ctx.watch.click()
-        if sky_arrays['movie_dict'] is not None:
-            if len(sky_arrays['movie_dict']) > 0:
-                photometry_table = extract_photometry(
-                    sky_arrays["movie_dict"],
-                    photometry_table,
-                    apertures,
-                    ctx.threads
-                )
+        movie_dict = sky_arrays['movie_dict']
+        if movie_dict:
+            photometry_table = extract_photometry(
+                movie_dict,
+                photometry_table,
+                apertures,
+                ctx.threads
+            )
 
         photomfile = ctx(aperture=aperture_size)['photomfile']
         print(f"writing source table to {photomfile}")

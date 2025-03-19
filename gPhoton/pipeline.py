@@ -364,7 +364,7 @@ def execute_full_pipeline(ctx):
             print(message)
             errors.append(message)
             continue
-        if not ctx.stop_after == "moviemaker":
+        if ctx.stop_after != "moviemaker":
             from gPhoton.lightcurve import make_lightcurves
 
             photometry_result = make_lightcurves(results, leg_step)
@@ -392,13 +392,12 @@ def _look_for_raw6(ctx) -> Path:
     """
     if (raw6path := Path(ctx["raw6"])).exists():
         return raw6path
-    if ctx.remote is not None:
-        if (remoteraw6 := Path(ctx(remote=True)['raw6'])).exists():
-            print(
-                f"making temp local copy of raw6 file from remote: "
-                f"{remoteraw6}"
-            )
-            raw6path = Path(shutil.copy(remoteraw6, ctx.temp_path()))
+    if (
+        ctx.remote is not None
+        and (remoteraw6 := Path(ctx(remote=True)['raw6'])).exists()
+    ):
+        print("making temp local copy of raw6 file from remote:", remoteraw6)
+        raw6path = Path(shutil.copy(remoteraw6, ctx.temp_path()))
     if not raw6path.exists() and (ctx.download is True):
         from gPhoton.io.mast import retrieve_raw6
 

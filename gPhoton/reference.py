@@ -113,7 +113,7 @@ class Netstat:
         self.absolute = parseprocnetdev(self.rejects)
         for line in self.absolute:
             interface, bytes_ = line["interface"], line["bytes"]
-            if interface not in self.interval.keys():
+            if interface not in self.interval:
                 self.total[interface] = 0
                 self.interval[interface] = 0
                 self.last[interface] = bytes_

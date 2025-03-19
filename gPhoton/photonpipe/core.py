@@ -102,8 +102,8 @@ def execute_photonpipe(ctx: PipeContext, raw6file: Optional[Pathlike] = None):
         chunk_function = process_chunk_in_unshared_memory
     pool = None if ctx.threads is None else Pool(ctx.threads)
     results, addresses = {}, []
-    for leg_ix in legs.keys():
-        addresses += [(leg_ix, chunk_ix) for chunk_ix in legs[leg_ix].keys()]
+    for leg_ix, leg in legs.items():
+        addresses += [(leg_ix, chunk_ix) for chunk_ix in leg]
     for leg_ix, chunk_ix in addresses:
         infix = f" (leg {leg_ix}) " if len(legs) > 1 else ""
         title = f"{(chunk_ix + 1) * (leg_ix + 1)}{infix}/ {len(addresses)}: "
@@ -185,14 +185,14 @@ def execute_photonpipe(ctx: PipeContext, raw6file: Optional[Pathlike] = None):
 def retrieve_leg_results(results, share_memory):
     array_dict = {}
     if share_memory is True:
-        for name in results[0].keys():
+        for name in results[0]:
             array_dict[name] = get_column_from_shared_memory(
                 results, name, unlink=True
             )
     else:
         child_dicts = [results[ix] for ix in sorted(results.keys())]
         # TODO: this is memory-greedy.
-        for name in child_dicts[0].keys():
+        for name in child_dicts[0]:
             array_dict[name] = np.hstack(
                 [child_dict[name] for child_dict in child_dicts]
             )
@@ -211,8 +211,8 @@ def chunk_by_legs(aspect, chunksz, data, share_memory):
         end_ix = np.nonzero(data['t'][start:] <= times.iloc[-1])[0][-1]
         bounds.append((start + start_ix, start + end_ix))
         leg_data = {
-            field: data[field][start + start_ix:start + end_ix]
-            for field in data.keys()
+            field: value[start + start_ix:start + end_ix]
+            for field, value in data.items()
         }
         start += end_ix
         if share_memory is True:
