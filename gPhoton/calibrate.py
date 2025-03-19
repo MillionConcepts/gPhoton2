@@ -6,8 +6,8 @@
        calibration, including walk, wiggle, linearity, post-CSP, and stim
        scaling corrections.
 """
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 import numba
 from numba import njit

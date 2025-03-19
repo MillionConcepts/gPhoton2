@@ -1,6 +1,6 @@
 from itertools import product
 from statistics import mean
-from typing import Mapping
+from collections.abc import Mapping
 
 import numpy as np
 import pandas as pd

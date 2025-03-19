@@ -3,8 +3,9 @@ methods for retrieving aspect solution (meta)data from gPhoton 2's combined
 aspect solution tables
 """
 
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable, Literal, cast, get_args
+from typing import Any, Literal, cast, get_args
 
 import numpy as np
 import pandas as pd

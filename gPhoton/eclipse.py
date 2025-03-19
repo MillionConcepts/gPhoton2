@@ -3,11 +3,11 @@ shared parameters that depend on the eclipse and on how gphoton
 is being run but not on anything else
 """
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from functools import cache
 from math import modf
 from pathlib import Path
-from typing import Any, Callable, Literal, TYPE_CHECKING
+from typing import Any, Literal, TYPE_CHECKING
 if TYPE_CHECKING:
     from _typeshed import ConvertibleToFloat
 

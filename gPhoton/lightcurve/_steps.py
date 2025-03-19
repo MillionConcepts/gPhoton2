@@ -8,7 +8,7 @@ may not suitable for independent use.
 
 from multiprocessing import Pool
 from pathlib import Path
-from typing import Mapping
+from collections.abc import Mapping
 
 import astropy.wcs
 import numpy as np

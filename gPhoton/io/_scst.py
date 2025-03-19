@@ -5,7 +5,7 @@ consolidated tables in gPhoton/aspect. However, they remain useful for
 regression tests on and modifications to those tables.
 """
 
-from typing import Sequence
+from collections.abc import Sequence
 
 from astropy.io import fits as pyfits
 import numpy as np

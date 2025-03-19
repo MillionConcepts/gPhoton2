@@ -1,7 +1,7 @@
 """top-level handler module for gPhoton.moviemaker"""
 
 from multiprocessing import Pool
-from typing import Any, Optional, Union
+from typing import Any
 
 from dustgoggles.structures import NestingDict
 from more_itertools import windowed
@@ -27,7 +27,7 @@ def make_movies(
     map_ix_dict: dict,
     total_trange: tuple[int, int],
     imsz: tuple[int, int],
-    fixed_start_time: Optional[int] = None,
+    fixed_start_time: int | None = None,
 ) -> tuple[str, dict]:
     """
     :param ctx: PipeContext options handler
@@ -136,8 +136,8 @@ def write_moviemaker_results(results, ctx):
 def create_images_and_movies(
     ctx: PipeContext,
     photonfile: Pathlike,
-    fixed_start_time: Optional[int] = None
-) -> Union[dict, str]:
+    fixed_start_time: int | None = None
+) -> dict | str:
     print(f"making images from {photonfile}")
     print("indexing data and making WCS solution")
     movie_dict = {}

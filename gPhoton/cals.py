@@ -42,22 +42,29 @@ def enforce_native_byteorder(arr: np.ndarray) -> np.ndarray:
 
 
 def read_data(fn, dim=0):
+    # use >0 not >=0 because '.cshrc' does not have an extension
+    if (dot := fn.rfind(".")) > 0:
+        ext = fn[dot:]
+        if ext == ".gz" and (dot2 := fn[:dot].rfind(".")) > 0:
+            ext = fn[dot2:dot]
+    else:
+        ext = ''
     files = importlib.resources.files("gPhoton.cal_data")
     with importlib.resources.as_file(files / fn) as path:
-        if ".fits" in fn:
+        if ext == ".fits":
             data = get_fits_data(path, dim=dim)
             header = get_fits_header(path)
             return enforce_native_byteorder(data), header
-        elif ".tbl" in fn:
+        elif ext == ".tbl":
             return get_tbl_data(path)
         else:
-            raise ValueError("Unrecognized data type: {ext}"
-                             .format(ext=fn[-4:]))
+            raise ValueError(f"Unrecognized data type: {ext}")
 
 
 def wiggle(band, xy):
-    fn = "{b}_wiggle_{d}.fits".format(b=check_band(band), d=check_xy(xy))
-    return read_data(fn)
+    b = check_band(band)
+    d = check_xy(xy)
+    return read_data(f"{b}_wiggle_{d}")
 
 
 def wiggle2():
@@ -66,13 +73,15 @@ def wiggle2():
 
 
 def avgwalk(band, xy):
-    fn = "{b}_avgwalk_{d}.fits".format(b=check_band(band), d=check_xy(xy))
-    return read_data(fn)
+    b = check_band(band)
+    d = check_xy(xy)
+    return read_data(f"{b}_avgwalk_{d}.fits")
 
 
 def walk(band, xy):
-    fn = "{b}_walk_{d}.fits".format(b=check_band(band), d=check_xy(xy))
-    return read_data(fn)
+    b = check_band(band)
+    d = check_xy(xy)
+    return read_data(f"{b}_walk_{d}.fits")
 
 
 def walk2():
@@ -86,15 +95,19 @@ def clock2():
 
 
 def linearity(band, xy):
-    fn = "{b}_NLC_{d}_det2sky.fits".format(b=check_band(band), d=check_xy(xy))
-    return read_data(fn)
+    b = check_band(band)
+    d = check_xy(xy)
+    return read_data(f"{b}_NLC_{d}_det2sky.fits")
 
 
 def flat(band):
-    return read_data(f"{check_band(band)}_flat.fits")
+    b = check_band(band)
+    return read_data(f"{b}_flat.fits")
 
 
 def distortion(band, xy, eclipse, raw_stimsep):
+    b = check_band(band)
+    d = check_xy(xy)
     index = ""
     if band == "NUV" and eclipse > 37423:
         if raw_stimsep < 5136.3:
@@ -103,16 +116,14 @@ def distortion(band, xy, eclipse, raw_stimsep):
             index = "b"
         else:
             index = "c"
-    fn = "{b}_distortion_cube_d{d}{i}.fits".format(
-        b=check_band(band).lower(), d=check_xy(xy), i=index
-    )
-    return read_data(fn)
+    return read_data(f"{b}_distortion_cube_d{d}{index}.fits")
 
 
 def offset(xy):
-    fn = "fuv_d{d}_fdttdc_coef_0.tbl".format(d=check_xy(xy))
-    return read_data(fn)
+    d = check_xy(xy)
+    return read_data(f"fuv_d{d}_fdttdc_coef_0.tbl")
 
 
 def mask(band):
-    return read_data(f"{check_band(band)}_mask.fits")
+    b = check_band(band)
+    return read_data(f"{b}_mask.fits")

@@ -13,7 +13,7 @@
 import os
 import time
 from pathlib import Path
-from typing import Optional, Literal
+from typing import Literal
 
 import requests
 
@@ -49,7 +49,7 @@ def truncate(n: float):
     return str(n * TSCALE).split(".")[0]
 
 
-def get_raw_paths(eclipse: int, verbose: int = 0) -> dict[str, Optional[str]]:
+def get_raw_paths(eclipse: int, verbose: int = 0) -> dict[str, str|None]:
     """
     query MAST for URLs to the NUV and FUV raw6 (L0 telemetry) and scst
     (aspect solution) files associated with a particular eclipse.
@@ -60,7 +60,7 @@ def get_raw_paths(eclipse: int, verbose: int = 0) -> dict[str, Optional[str]]:
     response = manage_networked_sql_request(url)
     if response is None:
         raise RuntimeError(f"gave up trying to retrieve {url}")
-    out: dict[str, Optional[str]] = {"NUV": None, "FUV": None, "scst": None}
+    out: dict[str, str|None] = {"NUV": None, "FUV": None, "scst": None}
     for f in response.json()["data"]["Tables"][0]["Rows"]:
         band = f[1].strip()
         if band in ("NUV", "FUV", "scst"):
@@ -75,7 +75,7 @@ def get_raw_paths(eclipse: int, verbose: int = 0) -> dict[str, Optional[str]]:
 def download_data(
     eclipse: int,
     ftype: Literal["raw6", "scst"],
-    band: Optional[GalexBand] = None,
+    band: GalexBand | None = None,
     datadir: Pathlike = ".",
     verbose: int = 0,
 ) -> Path | None:
@@ -156,7 +156,7 @@ def manage_networked_sql_request(
     wait: int = 1,
     timeout: int = 60,
     verbose: int = 0
-) -> Optional[requests.Response]:
+) -> requests.Response | None:
     """
     Manage calls via `requests` to SQL servers behind HTTP endpoints,
     providing better feedback and making them more robust against network

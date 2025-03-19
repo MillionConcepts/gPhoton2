@@ -15,7 +15,8 @@ import warnings
 from pathlib import Path
 from time import time
 from types import MappingProxyType
-from typing import Optional, Sequence, Mapping, Literal
+from typing import Literal
+from collections.abc import Sequence, Mapping
 
 from cytoolz import identity, keyfilter
 from more_itertools import chunked
@@ -114,31 +115,31 @@ def execute_photometry_only(ctx: PipeContext):
 def execute_pipeline(
     eclipse: int,
     band: GalexBand,
-    depth: Optional[int] = None,
-    threads: Optional[int] = None,
+    depth: int | None = None,
+    threads: int | None = None,
     local_root: str = "test_data",
-    remote_root: Optional[str] = None,
+    remote_root: str | None = None,
     download: bool = True,
     recreate: bool = False,
     verbose: int = 2,
-    source_catalog_file: Optional[str] = None,
+    source_catalog_file: str | None = None,
     write: Mapping = MappingProxyType({"image": True, "movie": True}),
     aperture_sizes: Sequence[float] = (12.8,),
     lil: bool = True,
     coregister_lightcurves: bool = False,
-    stop_after: Optional[Literal["photonpipe", "moviemaker"]] = None,
+    stop_after: Literal["photonpipe", "moviemaker"] | None = None,
     compression: Literal["none", "gzip", "rice"] = "gzip",
     hdu_constructor_kwargs: Mapping = MappingProxyType({}),
-    min_exptime: Optional[float] = None,
+    min_exptime: float | None = None,
     photometry_only: bool = False,
     burst: bool = False,
     chunksz: int = 1000000,
-    share_memory: Optional[bool] = None,
+    share_memory: bool | None = None,
     extended_photonlist: bool = False,
     extended_flagging: bool = False,
     aspect: Literal['aspect', 'aspect2'] = 'aspect',
     override_eclipse_limits: bool = False,
-    suffix: Optional[str] = None,
+    suffix: str | None = None,
     aspect_dir: None | str | Path = None,
     ftype: str = "csv",
 ) -> str:
@@ -467,7 +468,7 @@ def parse_photonpipe_error(value_error: ValueError) -> str:
     raise value_error
 
 
-def check_fixed_start_time(ctx: PipeContext) -> Optional[str]:
+def check_fixed_start_time(ctx: PipeContext) -> str | None:
     if (ctx.coregister_lightcurves is not True) or (ctx.depth is None):
         return None
     other = "NUV" if ctx.band == "FUV" else "FUV"

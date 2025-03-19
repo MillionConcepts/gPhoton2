@@ -84,7 +84,7 @@ select = [
     "PLE",      # more probable bugs
     "PLR",      # even more code that can be simplified
     "PLW",      # even more probable bugs
-    #"UP",       # obsolete constructs
+    "UP",       # obsolete constructs
     "FURB",     # even more code that can be simplified
     "RUF",      # yet another group of probable bugs
     "TRY",      # yet another group of code that can be simplified
@@ -107,6 +107,8 @@ ignore = [
     "PLR09",
     # "magic numbers"; too many hits, revisit later
     "PLR2004",
+    # stylistic rule lumped with UP; I actually want the *exact opposite*
+    "UP015",
     # Wants us to define custom exception classes rather than giving
     # detailed messages in Value/RuntimeError constructors.  Unclear
     # whether this is appropriate for us.  Revisit later.

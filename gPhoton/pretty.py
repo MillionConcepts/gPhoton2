@@ -10,7 +10,7 @@ from functools import reduce
 from math import floor
 from operator import add
 from sys import stdout
-from typing import MutableMapping, Callable
+from collections.abc import MutableMapping, Callable
 
 import rich
 from cytoolz import first

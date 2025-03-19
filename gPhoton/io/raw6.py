@@ -2,7 +2,8 @@
 .. module:: raw6
    :synopsis: Methods for reading GALEX L0 telemetry ("raw6") files
 """
-from typing import Optional, Literal, Mapping, cast
+from collections.abc import Mapping
+from typing import Literal, cast
 
 from astropy.io import fits as pyfits
 import fitsio
@@ -41,7 +42,7 @@ def load_raw6(raw6file: Pathlike, verbose: int):
 
 
 def get_eclipse_from_header(
-    raw6file: Pathlike, eclipse: Optional[int] = None
+    raw6file: Pathlike, eclipse: int | None = None
 ):
     # note that astropy is much faster than fitsio for the specific purpose of
     # skimming a FITS header from a compressed FITS file

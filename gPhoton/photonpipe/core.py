@@ -4,8 +4,6 @@ import time
 import warnings
 from multiprocessing import Pool
 from sys import stdout
-from typing import Optional
-
 import numpy as np
 import pyarrow
 from pyarrow import parquet
@@ -34,7 +32,7 @@ from gPhoton.sharing import (
 from gPhoton.types import Pathlike
 
 
-def execute_photonpipe(ctx: PipeContext, raw6file: Optional[Pathlike] = None):
+def execute_photonpipe(ctx: PipeContext, raw6file: Pathlike | None = None):
     """
     Apply static and sky calibrations to -raw6 GALEX data, producing fully
         aspect_data-corrected and time-tagged photon list files.

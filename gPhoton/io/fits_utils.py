@@ -6,7 +6,7 @@ TODO: these are somewhat repetitive/redundant, tossed around inconsistently,
 """
 
 import warnings
-from typing import Sequence
+from collections.abc import Sequence
 
 import astropy.io.fits
 import astropy.wcs

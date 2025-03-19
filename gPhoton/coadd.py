@@ -3,8 +3,10 @@ from functools import reduce
 from itertools import product
 from multiprocessing import Pool
 from operator import or_
+
+from collections.abc import Mapping, Sequence, Callable
 from pathlib import Path
-from typing import Mapping, Sequence, Union, Optional, Literal, Callable
+from typing import Literal
 
 import astropy.wcs
 import fast_histogram as fh
@@ -111,11 +113,11 @@ def flag_mask(cnt, flag):
 #  inefficient. needs to be juiced up.
 # TODO: update for everything-has-four-HDUs
 def project_to_shared_wcs(
-    fits_path: Union[str, Path],
+    fits_path: str | Path,
     shared_wcs: astropy.wcs.WCS,
     hdu_offset: Literal[0, 1] = 0,
     nonzero: bool = True,
-    system: Optional[astropy.wcs.WCS] = None,
+    system: astropy.wcs.WCS | None = None,
 ):
     """
     fits_path: path to fits file
@@ -250,10 +252,10 @@ def cut_skybox_from_file(
     path: Pathlike,
     ra: float,
     dec: float,
-    ra_x: Optional[float] = None,
-    dec_x: Optional[float] = None,
-    system: Optional[astropy.wcs.WCS] = None,
-    loader: Optional[Callable] = None,
+    ra_x: float | None = None,
+    dec_x: float | None = None,
+    system: astropy.wcs.WCS | None = None,
+    loader: Callable | None = None,
     hdu_indices: tuple[int] = (0,),
     **_,
 ):

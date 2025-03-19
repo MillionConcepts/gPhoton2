@@ -5,7 +5,7 @@
 from itertools import product
 import math
 from operator import add, sub
-from typing import Sequence
+from collections.abc import Sequence
 
 import astropy.wcs
 import numpy as np

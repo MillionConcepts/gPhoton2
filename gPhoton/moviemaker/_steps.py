@@ -4,7 +4,8 @@
    processes. generally should not be called on their own.
 """
 from pathlib import Path
-from typing import Mapping, Sequence, Literal
+from collections.abc import Mapping, Sequence
+from typing import Literal
 import warnings
 
 import fitsio
@@ -337,7 +338,7 @@ def populate_fits_header(band, wcs, tranges, exptimes, key, ctx):
     header["CRVAL1"], header["CRVAL2"] = wcs.wcs.crval
     header["EQUINOX"], header["EPOCH"] = 2000.0, 2000.0
     header["BAND"] = 1 if band == "NUV" else 2
-    header["VERSION"] = "v{v}".format(v=__version__)
+    header["VERSION"] = f"v{__version__}"
     header["EXPSTART"] = np.array(tranges).min()
     header["EXPEND"] = np.array(tranges).max()
     header["EXPTIME"] = sum(t1 - t0 for (t0, t1) in tranges)
@@ -346,9 +347,9 @@ def populate_fits_header(band, wcs, tranges, exptimes, key, ctx):
         header["HARDEDGE"] = ctx.narrow_edge_thresh
         header["SOFTEDGE"] = ctx.wide_edge_thresh
     for i, trange in enumerate(tranges):
-        header["T0_{i}".format(i=i)] = trange[0]
-        header["T1_{i}".format(i=i)] = trange[1]
-        header["EXPT_{i}".format(i=i)] = exptimes[i]
+        header[f"T0_{i}"] = trange[0]
+        header[f"T1_{i}"] = trange[1]
+        header[f"EXPT_{i}"] = exptimes[i]
     return header
 
 
