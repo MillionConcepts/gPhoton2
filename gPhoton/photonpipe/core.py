@@ -168,7 +168,7 @@ def execute_photonpipe(ctx: PipeContext, raw6file: Optional[Pathlike] = None):
         outfiles.append(leg_ctx['photonfile'])
     stopt = time.time()
     print_inline("")
-    print("")
+    print()
     if ctx.verbose:
         seconds = stopt - startt
         rate = nphots / seconds
