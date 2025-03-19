@@ -177,7 +177,7 @@ def execute_photonpipe(ctx: PipeContext, raw6file: Optional[Pathlike] = None):
             f" runtime		=	{round(seconds, 2)} sec. "
             f"= ({round(seconds/60, 2)} min.)"
         )
-        print(f"  processed	   =   {str(proc_count)} of {str(nphots)} events.")
+        print(f"  processed	   =   {proc_count} of {nphots} events.")
         print(f"rate		=	{round(rate, 2)} photons/sec.\n")
     return outfiles
 

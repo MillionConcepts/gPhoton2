@@ -753,7 +753,7 @@ def unpack_data_chunk(data, chunkbeg, chunkend, copy=True):
 
 
 def chunk_data(chunksz, data, copy=True):
-    length = len(data[tuple(data.keys())[0]])
+    length = len(next(data.values()))
     chunk_slices = []
     for chunk_ix in range(int(length / chunksz) + 1):
         chunkbeg, chunkend = chunk_ix * chunksz, (chunk_ix + 1) * chunksz

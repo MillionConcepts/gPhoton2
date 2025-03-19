@@ -86,7 +86,7 @@ select = [
     "PLW",      # even more probable bugs
     #"UP",       # obsolete constructs
     "FURB",     # even more code that can be simplified
-    #"RUF",      # yet another group of probable bugs
+    "RUF",      # yet another group of probable bugs
     "TRY",      # yet another group of code that can be simplified
 ]
 # Keep this list sorted by lint group.

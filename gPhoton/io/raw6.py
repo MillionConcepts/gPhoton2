@@ -78,7 +78,7 @@ def unpack_raw6(raw6hdulist: fitsio.FITS) -> dict[
     """
     print_inline("Unpacking raw6 data...")
     photonbyte_cols = [f"phb{byte + 1}" for byte in range(5)]
-    table_data = raw6hdulist[1][:][["t"] + photonbyte_cols]
+    table_data = raw6hdulist[1][:][["t", *photonbyte_cols]]
     photonbytes_as_short = table_data[photonbyte_cols].astype(
         [(col, np.int16) for col in photonbyte_cols]
     )
