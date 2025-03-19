@@ -202,7 +202,7 @@ def format_source_catalog(source_table, wcs):
     positions = np.vstack(
         [
             wcs.wcs_world2pix([position], 1, ra_dec_order=True)
-            for position in source_table[["ra", "dec"]].values
+            for position in source_table[["ra", "dec"]].to_numpy()
         ]
     )
     source_table[["xcentroid", "ycentroid"]] = positions

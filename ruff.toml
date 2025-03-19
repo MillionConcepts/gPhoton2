@@ -63,7 +63,7 @@ select = [
     # "I",      # more purely stylistic rules about imports
     # "C90",    # don't even get me started about McCabe complexity
     "NPY",      # warns about deprecated NumPy APIs
-    #"PD",       # warns about deprecated Pandas APIs
+    "PD",       # warns about deprecated Pandas APIs
     # "N",      # PEP8 naming conventions (FUTURE: after API firms up)
     #"PERF",     # warns about surprisingly expensive operations
     "E1",       # inconsistent indentation (stylistic but very important)
