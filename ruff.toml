@@ -87,7 +87,7 @@ select = [
     #"UP",       # obsolete constructs
     "FURB",     # even more code that can be simplified
     #"RUF",      # yet another group of probable bugs
-    #"TRY",      # yet another group of code that can be simplified
+    "TRY",      # yet another group of code that can be simplified
 ]
 # Keep this list sorted by lint group.
 ignore = [
@@ -107,6 +107,10 @@ ignore = [
     "PLR09",
     # "magic numbers"; too many hits, revisit later
     "PLR2004",
+    # Wants us to define custom exception classes rather than giving
+    # detailed messages in Value/RuntimeError constructors.  Unclear
+    # whether this is appropriate for us.  Revisit later.
+    "TRY003",
     # stylistic rule lumped in with W
     "W505",
 ]

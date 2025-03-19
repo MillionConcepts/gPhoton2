@@ -61,7 +61,7 @@ def get_photonlists(ctx: PipeContext, raise_errors: bool = True):
         return execute_photonpipe(ctx, str(raw6path))
     except ValueError as value_error:
         if raise_errors:
-            raise value_error
+            raise
         return parse_photonpipe_error(value_error)
 
 
