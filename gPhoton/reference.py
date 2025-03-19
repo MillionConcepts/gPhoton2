@@ -10,7 +10,6 @@ deal of complexity.
 # intent, but there's a ton of complexity it potentially reduces
 """
 import functools
-import subprocess
 import time
 from functools import cache
 from inspect import getmodule
@@ -79,39 +78,39 @@ PROC_NET_DEV_FIELDS = (
 )
 
 
-def catprocnetdev():
-    return subprocess.run(
-        ("cat", "/proc/net/dev"), stdout=subprocess.PIPE
-    ).stdout.decode()
-
-
-def parseprocnetdev(procnetdev, rejects=("lo",)):
-    interface_lines = filter(
-        lambda l: ":" in l[:12], map(str.strip, procnetdev.split("\n"))
-    )
-    entries = []
-    for interface, values in map(lambda l: l.split(":"), interface_lines):
-        if interface in rejects:
-            continue
-        records = {
-            field: int(number)
-            for field, number in zip(
-                PROC_NET_DEV_FIELDS, filter(None, values.split(" "))
-            )
-        }
-        entries.append({"interface": interface} | records)
-    return entries
+def parseprocnetdev(rejects=("lo",)):
+    records = []
+    with open("/proc/net/dev", "rt") as fp:
+        for line in fp:
+            try:
+                interface, values = line.split(":", maxsplit=1)
+            except ValueError:
+                continue
+            interface = interface.strip()
+            if interface in rejects:
+                continue
+            values = values.split()
+            record = {
+                field: int(number)
+                for field, number in zip(PROC_NET_DEV_FIELDS, values)
+            }
+            record["interface"] = interface
+            records.append(record)
+    return records
 
 
 class Netstat:
     # TODO: monitor TX as well as RX, etc.
     def __init__(self, rejects=("lo",)):
         self.rejects = rejects
-        self.absolute, self.last, self.interval, self.total = None, {}, {}, {}
+        self.absolute = None
+        self.last = {}
+        self.interval = {}
+        self.total = {}
         self.update()
 
     def update(self):
-        self.absolute = parseprocnetdev(catprocnetdev(), self.rejects)
+        self.absolute = parseprocnetdev(self.rejects)
         for line in self.absolute:
             interface, bytes_ = line["interface"], line["bytes"]
             if interface not in self.interval.keys():
