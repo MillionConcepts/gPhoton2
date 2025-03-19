@@ -26,7 +26,7 @@ GPHOTON_PROGRESS = Progress(console=GPHOTON_CONSOLE)
 
 
 def stamp() -> str:
-    return f"{dt.datetime.utcnow().isoformat()[:-7]}: "
+    return dt.datetime.now().strftime("%Y-%m-%dT%H:%M:%S: ")
 
 
 def console_and_log(message, level="info", style=None):
