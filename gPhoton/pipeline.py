@@ -43,7 +43,7 @@ def get_photonlists(ctx: PipeContext, raise_errors: bool = True):
     create_local_paths(ctx)
     if ctx.recreate is False:
         photonpaths = find_photonfiles(ctx)
-        if all([path.exists() for path in photonpaths]):
+        if all(path.exists() for path in photonpaths):
             print(
                 f"using existing photon list(s): "
                 f"{[str(path) for path in photonpaths]}"
@@ -72,7 +72,7 @@ def find_photonfiles(context: PipeContext):
             Path(leg(remote=True)['photonfile'])
             for leg in context.explode_legs()
         ]
-        if all([path.exists() for path in r_photpaths]):
+        if all(path.exists() for path in r_photpaths):
             print(
                 f"making temp local copies of photon file(s) from remote: "
                 f"{[p.name for p in r_photpaths]}"

@@ -71,7 +71,7 @@ def send_to_shared_memory(array_dict):
 
 
 def slice_into_shared_chunks(chunksz, data):
-    names = [key for key in data.keys()]
+    names = list(data.keys())
     chunk_slices = make_chunk_slices(chunksz, len(data[names[0]]))
     total_chunks = len(chunk_slices)
     block_directory = {}
@@ -107,12 +107,7 @@ def slice_chunk_into_memory(
     ]
     if names is None:
         names = tuple(data.keys())
-    block_info = send_to_shared_memory(
-        {
-            variable_name: array
-            for variable_name, array in zip(names, arrays)
-        }
-    )
+    block_info = send_to_shared_memory(dict(zip(names, arrays)))
     block_directory[chunk_ix] = block_info
     return block_directory
 

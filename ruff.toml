@@ -29,7 +29,7 @@ select = [
     #"B",        # probable bugs
     "A",        # shadowed built-in names
     # "COM",    # code formatting (comma placement)
-    #"C4",       # inefficient use of comprehensions
+    "C4",       # inefficient use of comprehensions
     # "CPY",    # code formatting (copyright notices)
     # "DTZ",    # only relevant to code that does math on datetime objects
     "T10",      # checked-in pdb breakpoints

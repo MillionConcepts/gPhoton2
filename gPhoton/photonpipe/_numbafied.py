@@ -174,8 +174,8 @@ def unfancy_distortion_component(
 #     return wig_xy[xya_ix, floor_xy] * (1 - blt_u) \
 #            + wig_xy[xya_ix, floor_xy + 1] * blt_u
 def float_between_wiggled_points(blt_u, floor_xy, wig_xy, xya_ix):
-    wigix = list()
-    wigix1 = list()
+    wigix = []
+    wigix1 = []
     for npix in range(len(xya_ix)):
         wigix.append(wig_xy[xya_ix[npix], floor_xy[npix]])
         wigix1.append(wig_xy[xya_ix[npix], floor_xy[npix] + 1])
