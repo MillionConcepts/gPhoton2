@@ -115,8 +115,7 @@ def _filter_data(data, kernel, mode="constant", fill_value=0.0):
     # TODO: should they not be doing this?
     if np.issubdtype(data.dtype, np.integer):
         data = data.astype(float)
-    result = ndimage.convolve(data, kernel, mode=mode, cval=fill_value)
-    return result
+    return ndimage.convolve(data, kernel, mode=mode, cval=fill_value)
 
 
 # noinspection PyProtectedMember
@@ -388,8 +387,7 @@ def dao_handler(cnt_image: np.ndarray, exposure_time):
     threshold = np.multiply(np.power(exposure_time, -0.86026), 3)
     dao_sources1 = dao_finder(cnt_image, threshold=threshold, fwhm=5)
     dao_sources2 = dao_finder(cnt_image,threshold=threshold, fwhm=3)
-    dao_sources = pd.concat([dao_sources1, dao_sources2])
-    return dao_sources
+    return pd.concat([dao_sources1, dao_sources2])
 
 
 def dao_finder(cnt_image: np.ndarray, threshold: float = 0.01,
@@ -399,8 +397,7 @@ def dao_finder(cnt_image: np.ndarray, threshold: float = 0.01,
         fwhm=fwhm, sigma_radius=sigma_radius,
         threshold=threshold, ratio=ratio, theta=theta
     )
-    dao_sources = daofind.find_peaks(cnt_image)
-    return dao_sources
+    return daofind.find_peaks(cnt_image)
 
 
 def get_extended(dao_sources: pd.DataFrame, band: str):

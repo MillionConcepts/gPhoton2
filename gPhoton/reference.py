@@ -54,7 +54,9 @@ class Stopwatch(FakeStopwatch):
 
     def click(self):
         if self.last_time is None:
-            return self.start()
+            self.start()
+            return
+
         if self.silent is False:
             print(f"{self.peek()} elapsed seconds, restarting timer")
         self.last_time = time.time()

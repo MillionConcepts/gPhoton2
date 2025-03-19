@@ -119,7 +119,7 @@ def retrieve_aspect(eclipse, retries=20, quiet=False):
         print("		Located " + str(n) + " aspect_data entries.")
         if not n:
             print("No aspect_data entries for eclipse " + str(eclipse))
-            return
+            return None
     ra, dec, twist, time, flags = [], [], [], [], []
     ra0, dec0, twist0 = [], [], []
     for i in range(n):

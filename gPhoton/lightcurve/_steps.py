@@ -68,6 +68,7 @@ def check_empty_image(eclipse:int, band:GalexBand, image_dict):
         # realistically it probably means there's something wrong
         # with the observation
         return f"{eclipse} appears to contain nothing in {band}."
+    return None
 
 
 def extract_frame(frame, apertures, key):

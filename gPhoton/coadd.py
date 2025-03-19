@@ -149,14 +149,13 @@ def project_to_shared_wcs(
 
 
 def bin_projected_weights(x, y, weights, imsz):
-    binned = fh.histogram2d(
+    return fh.histogram2d(
         y - 0.5,
         x - 0.5,
         bins=imsz,
         range=([[0, imsz[0]], [0, imsz[1]]]),
         weights=weights,
     )
-    return binned
 
 
 def get_full_frame_coadd_layer(gphoton_fits, shared_wcs, hdu_offset=0):
@@ -273,7 +272,7 @@ def cut_skybox_from_file(
         )
     except ValueError as ve:
         if ("NaN" in str(ve)) or ("negative dimensions" in str(ve)):
-            return
+            return None
         raise
 
 

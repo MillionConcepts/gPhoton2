@@ -53,8 +53,7 @@ def get_eclipse_from_header(
             f"Warning: eclipse mismatch {eclipse} vs. "
             f"{hdr['eclipse']} (header)"
         )
-    eclipse = hdr["eclipse"]
-    return eclipse
+    return hdr["eclipse"]
 
 
 def decode_telemetry(

@@ -84,13 +84,12 @@ def make_corners(floor_x, floor_y, fptrx, fptry, ok_indices):
     blu = (fptry - floor_y)[ok_indices]
     inv_blt = 1 - blt
     inv_blu = 1 - blu
-    corners = (
+    return (
         inv_blt * inv_blu,
         blt * inv_blu,
         inv_blt * blu,
         blt * blu,
     )
-    return corners
 
 
 def sum_corners(cal_data, cal_ix0, cal_ix1, cal_ix2, cal_ix3, corners):

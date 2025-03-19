@@ -50,7 +50,7 @@ select = [
     # "PT",     # pytest-related common mistakes (FUTURE: when we have tests)
     # "Q",      # purely stylistic rules about quoted strings
     # "RSE",    # more purely stylistic rules related to exceptions
-    #"RET",      # missing return values
+    "RET",      # missing return values
     # "SLF",    # rules about "private" members
     #"SIM",      # code that can be simplified
     "SLOT",     # places where you probably forgot __slots__

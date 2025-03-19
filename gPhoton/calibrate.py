@@ -267,9 +267,7 @@ def rtaph_yap(ya, yb, yamc):
     ix1 = ((ya[ix] == 1) & (yamc[ix] > -10)).nonzero()[0]
     yap[ix[ix1]] += 32
 
-    yap = np.array(yap, dtype="int64") % 32
-
-    return yap
+    return np.array(yap, dtype="int64") % 32
 
 
 # ------------------------------------------------------------------------------
@@ -308,9 +306,7 @@ def rtaph_yac(yactbl, ya, yb, yamc, eclipse):
 
     yap = rtaph_yap(ya, yb, yamc)
 
-    yac = yactbl[yap, yb]
-
-    return yac
+    return yactbl[yap, yb]
 
 
 # ------------------------------------------------------------------------------
@@ -567,8 +563,7 @@ def compute_shutter(timeslice, flagslice, trange, shutgap=0.05):
     ix = np.where(flagslice == 0)
     t = np.hstack([trange[0], np.unique(timeslice[ix]), trange[1]])
     ix = np.where(t[1:] - t[:-1] >= shutgap)
-    shutter = np.array(t[1:] - t[:-1])[ix].sum()
-    return shutter
+    return np.array(t[1:] - t[:-1])[ix].sum()
 
 
 def compute_exptime(

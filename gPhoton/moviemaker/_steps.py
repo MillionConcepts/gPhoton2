@@ -174,8 +174,7 @@ def combine_artifacts(event_table, wide_edge_thresh, narrow_edge_thresh):
     # hard coded narrow (360) and wide (340) edge setting in ctx
     wide_edge_bit = (event_table['detrad'].to_numpy() > wide_edge_thresh) * 4
     narrow_edge_bit = (event_table['detrad'].to_numpy() > narrow_edge_thresh) * 8
-    artifacts = mask_bit | flag_bit | wide_edge_bit | narrow_edge_bit
-    return artifacts
+    return mask_bit | flag_bit | wide_edge_bit | narrow_edge_bit
 
 
 def generate_indexed_values(foc, artifact_ix, artifact_flags, t, weights):
@@ -197,7 +196,7 @@ def slice_frame_into_memory(
     # 0-count exposure times have 'None' entries assigned in
     # slice_exposure_into_memory
     if exposure_directory[frame_ix] is None:
-        return
+        return None
     frame_time_ix = between(map_ix_dict[map_name]["t"], *trange)[0]
     if len(frame_time_ix) == 0:
         return None
