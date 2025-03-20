@@ -107,7 +107,7 @@ def slice_chunk_into_memory(
     ]
     if names is None:
         names = tuple(data.keys())
-    block_info = send_to_shared_memory(dict(zip(names, arrays)))
+    block_info = send_to_shared_memory(dict(zip(names, arrays, strict=True)))
     block_directory[chunk_ix] = block_info
     return block_directory
 

@@ -656,7 +656,7 @@ def apply_stim_distortion_correction(
         )
     except ValueError as value_error:
         if "invalid entry in coordinates array" in str(value_error):
-            raise ValueError("bad distortion correction solution. Quitting.")
+            raise ValueError("bad distortion correction solution. Quitting.") from None
         raise
     xshift[ok_indices] = distortion["x"].ravel()[raveled_ix]
     yshift[ok_indices] = distortion["y"].ravel()[raveled_ix]
@@ -875,7 +875,7 @@ def flag_ghosts(leg_data):
         dec_chunk = dec_chunk[valid_chunk_indices]
 
         if len(ra_chunk) > 0:
-            for r, d in zip(ra_flagged, dec_flagged):
+            for r, d in zip(ra_flagged, dec_flagged, strict=True):
                 ra_mask = (ra_chunk >= r - ra_bin_width / 2) & (ra_chunk < r + ra_bin_width / 2)
                 dec_mask = (dec_chunk >= d - dec_bin_width / 2) & (dec_chunk < d + dec_bin_width / 2)
                 combo_mask = ra_mask & dec_mask

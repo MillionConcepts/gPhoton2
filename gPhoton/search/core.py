@@ -152,7 +152,8 @@ def filter_galex_eclipses(eclipse_type=None, filters=None, as_pandas=True,
      }
     if (filters is not None) and (eclipse_type is not None):
         warnings.warn(
-            "Both eclipse_type and filters passed; ignoring eclipse_type"
+            "Both eclipse_type and filters passed; ignoring eclipse_type",
+            stacklevel=2
         )
     if filters is not None:
         eclipse_filters = filters

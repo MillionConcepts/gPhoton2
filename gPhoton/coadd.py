@@ -216,7 +216,8 @@ def _check_oob(bounds, shape):
     ):
         return
     warnings.warn(
-        f"{bounds} larger than array ({shape}) output will be clipped"
+        f"{bounds} larger than array ({shape}) output will be clipped",
+        stacklevel=2,
     )
 
 
@@ -355,7 +356,7 @@ def coadd_image_slices(
         coadd = np.mean(
             [
                 bim / im['exptime']
-                for bim, im in zip(binned_images, image_slices)
+                for bim, im in zip(binned_images, image_slices, strict=True)
             ],
             axis=0
         )

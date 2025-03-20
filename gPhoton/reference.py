@@ -93,7 +93,10 @@ def parseprocnetdev(rejects=("lo",)):
             values = values.split()
             record = {
                 field: int(number)
-                for field, number in zip(PROC_NET_DEV_FIELDS, values)
+                # intentionally throwing away the values after the end of
+                # PROC_NET_DEV_FIELDS
+                for field, number in zip(PROC_NET_DEV_FIELDS, values,
+                                         strict=False)
             }
             record["interface"] = interface
             records.append(record)

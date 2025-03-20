@@ -188,12 +188,12 @@ def load_source_catalog(
         else:
             sources = _load_parquet_catalog(source_catalog_file, eclipse)
         sources = sources[['ra', 'dec']]
-    except KeyError:
+    except KeyError as e:
         raise ValueError(
             "The source catalog file must specify source positions in "
             "columns named 'ra' and 'dec' with a reference column named "
             "'eclipse'."
-        )
+        ) from e
     return sources[~sources.duplicated()].reset_index(drop=True)
 
 

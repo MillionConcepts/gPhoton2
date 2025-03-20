@@ -28,7 +28,7 @@ ALL_ASPECT_TABLES = \
 def aspect_tables(
     eclipse: None | int,
     tables: None | ASPECT_TABLE_TYPE | Iterable[ASPECT_TABLE_TYPE] =
-        ["aspect", "boresight", "metadata"],
+        ("aspect", "boresight", "metadata"),
     # The type specification for pyarrow filter expressions is too
     # complicated (and probably variable depending on pyarrow version)
     # to replicate.  It might be worth revisiting this after pyarrow

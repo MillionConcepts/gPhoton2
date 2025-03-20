@@ -52,7 +52,8 @@ def execute_photonpipe(ctx: PipeContext, raw6file: Pathlike | None = None):
     if (share_memory is True) and (ctx.threads is None):
         warnings.warn(
             "Using shared memory without multithreading. "
-            "This incurs a performance cost to no end."
+            "This incurs a performance cost to no end.",
+            stacklevel=2
         )
     startt = time.time()
     # download raw6 if local file is not passed

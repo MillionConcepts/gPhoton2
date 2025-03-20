@@ -179,15 +179,17 @@ def combine_artifacts(event_table, wide_edge_thresh, narrow_edge_thresh):
 
 
 def generate_indexed_values(foc, artifact_ix, artifact_flags, t, weights):
+    # TODO This probably doesn't need to be a NestingDict after creation...
     indexed = NestingDict()
-    for value, value_name in zip((t, foc, weights), ("t", "foc", "weights")):
-        for map_ix, map_name in zip(
-            (artifact_ix, slice(None)), ("flag", "cnt")
-        ):
-            if map_name == "flag" and value_name == "weights":
-                    indexed[map_name][value_name] = artifact_flags[map_ix]
-            else:
-                indexed[map_name][value_name] = value[map_ix]
+
+    indexed["flag"]["t"] = t[artifact_ix]
+    indexed["flag"]["foc"] = foc[artifact_ix]
+    indexed["flag"]["weights"] = artifact_flags[artifact_ix]
+
+    indexed["cnt"]["t"] = t[:]
+    indexed["cnt"]["foc"] = foc[:]
+    indexed["cnt"]["weights"] = weights[:]
+
     return indexed
 
 

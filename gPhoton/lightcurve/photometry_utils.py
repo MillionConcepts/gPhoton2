@@ -64,7 +64,7 @@ def find_peaks(data, threshold, box_size=3, footprint=None):
     )
     y_peaks, x_peaks = peak_goodmask.nonzero()
     if len(x_peaks) == 0:
-        warnings.warn("No local peaks were found.")
+        warnings.warn("No local peaks were found.", stacklevel=1)
         return None
     return pd.DataFrame(
         np.array([x_peaks, y_peaks, data[y_peaks, x_peaks]]).T,
@@ -468,7 +468,8 @@ def get_hull_path(group, group_id: int):
 
     xypos = np.transpose([group['y_0'], group['x_0']]) # switched x and y
     hull = ConvexHull(xypos)
-    hull_verts = tuple(zip(xypos[hull.vertices, 0], xypos[hull.vertices, 1]))
+    hull_verts = tuple(zip(xypos[hull.vertices, 0], xypos[hull.vertices, 1],
+                           strict=True))
 
     hull_data_dict = {'id': group_id, 'hull_area': hull.area,
                       'num_dao_points': hull.npoints, 'hull_vertices': hull_verts}

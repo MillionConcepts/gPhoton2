@@ -26,7 +26,7 @@ select = [
     # "S",      # potential security issues (TODO: MAST access overhaul?)
     "BLE",      # throwing away exceptions
     # "FBT",    # confusing boolean positional args (TODO: with typing)
-    #"B",        # probable bugs
+    "B",        # probable bugs
     "A",        # shadowed built-in names
     # "COM",    # code formatting (comma placement)
     "C4",       # inefficient use of comprehensions

@@ -234,7 +234,8 @@ def execute_pipeline(
     if not lil:
         warnings.warn(
             "lil=False no longer has any effect."
-            " The `lil` argument will be removed in a future release."
+            " The `lil` argument will be removed in a future release.",
+            stacklevel=2
         )
     if aspect not in ("aspect", "aspect2"):
         print(f"Invalid aspect argument {aspect}, bailing out.")
@@ -338,7 +339,7 @@ def execute_full_pipeline(ctx):
         create_images_and_movies, write_moviemaker_results,
     )
     errors = []
-    for leg_step, path in zip(ctx.explode_legs(), leg_paths):
+    for leg_step, path in zip(ctx.explode_legs(), leg_paths, strict=True):
         if path is False:
             print(f"skipping bad leg {leg_step.leg + 1}")
             continue
@@ -524,7 +525,7 @@ def unpack_movie(movie_file, compression, lil):
     else:
         constructor = identity
 
-    for hdu, plane in zip(hdus, planes):
+    for hdu, plane in zip(hdus, planes, strict=True):
         array = hdu.data
         for frame_ix in range(len(results['exptimes'])):
             cut = array[frame_ix]
