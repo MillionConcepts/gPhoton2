@@ -23,7 +23,7 @@ select = [
     "YTT",      # non-future-proof usage of sys.version(_info)
     # "ANN",    # missing type annotations (TODO: with typing)
     # "ASYNC",  # only relevant to code using async I/O
-    #"S",        # potential security issues
+    # "S",      # potential security issues (TODO: MAST access overhaul?)
     "BLE",      # throwing away exceptions
     # "FBT",    # confusing boolean positional args (TODO: with typing)
     #"B",        # probable bugs
