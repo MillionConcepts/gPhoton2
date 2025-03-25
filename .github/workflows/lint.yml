@@ -11,3 +11,24 @@ jobs:
               uses: astral-sh/ruff-action@v3
               with:
                   version: "latest"
+
+            # cribbed from the sample action in mypy's official repo
+            # with considerable simplification and specialization for us
+            - name: Type checks
+              shell: bash
+              run: |
+                  set -euo pipefail
+                  echo ::group::Installing mypy...
+                  export PIP_DISABLE_PIP_VERSION_CHECK=1
+                  python3 -m venv .mypy-venv
+                  source .mypy-venv/bin/activate
+                  pip install mypy
+                  echo ::endgroup::
+
+                  echo ::group::Installing project dependencies...
+                  pip install -e '.[cli,gzip,hulls,search,tests,typecheck]'
+                  echo ::endgroup::
+
+                  echo ::group::Running mypy...
+                  mypy
+                  echo ::endgroup::
