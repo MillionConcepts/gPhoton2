@@ -497,7 +497,7 @@ def load_array_file(array_file, compression):
         hdul = AgnosticHDUL(pyfits_open_igzip(array_file))
     else:
         hdul = AgnosticHDUL(fitsio.FITS(array_file))
-    cnt_hdu, flag_hdu, edge_hdu = (hdul[i + 1] for i in range(3))
+    cnt_hdu, flag_hdu = (hdul[i + 1] for i in range(2))
     headerdict = dict(cnt_hdu.header)
     tranges = keyfilter(lambda k: re.match(r"T[01]", k), headerdict)
     tranges = tuple(chunked(tranges.values(), 2))
@@ -506,12 +506,12 @@ def load_array_file(array_file, compression):
     )
     wcs = astropy.wcs.WCS(cnt_hdu.header)
     results = {"exptimes": exptimes, "tranges": tranges, "wcs": wcs}
-    return (cnt_hdu, edge_hdu, flag_hdu), results
+    return (cnt_hdu, flag_hdu), results
 
 
 def unpack_movie(movie_file, compression, lil):
     hdus, results = load_array_file(movie_file, compression)
-    planes = ([], [], [])
+    planes = ([], [])
     if lil is True:
         import scipy.sparse
 
@@ -525,12 +525,12 @@ def unpack_movie(movie_file, compression, lil):
         for frame_ix in range(len(results['exptimes'])):
             cut = array[frame_ix]
             plane.append(constructor(cut))
-    return results | {"cnt": planes[0], "flag": planes[1], "edge": planes[2]}
+    return results | {"cnt": planes[0], "flag": planes[1]}
 
 
 def unpack_image(image_file, compression):
     hdus, results = load_array_file(image_file, compression)
     planes = {
-        "cnt": hdus[0].data, "flag": hdus[1].data, "edge": hdus[2].data
+        "cnt": hdus[0].data, "flag": hdus[1].data
     }
     return results | planes

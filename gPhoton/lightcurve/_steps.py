@@ -34,14 +34,14 @@ def count_full_depth_image(
     positions = source_table[["xcentroid", "ycentroid"]].to_numpy()
     apertures = CircularAperture(positions, r=aperture_size)
     phot_table = aperture_photometry(image_dict["cnt"], apertures).to_pandas()
-    flag_table = aperture_photometry(image_dict["flag"], apertures).to_pandas()
-    edge_table = aperture_photometry(image_dict["edge"], apertures).to_pandas()
     source_table = pd.concat(
         [source_table, phot_table[["xcenter", "ycenter", "aperture_sum"]]],
         axis=1,
     )
-    source_table["aperture_sum_flag"] = flag_table["aperture_sum"]
-    source_table["aperture_sum_edge"] = edge_table["aperture_sum"]
+    source_table["artifact_flag"] = bitwise_aperture_photometry(
+        image_dict["flag"],
+        apertures)
+
     # TODO: this isn't necessary for specified catalog positions. but
     #  should we do a sanity check?
     if "ra" not in source_table.columns:
@@ -54,6 +54,18 @@ def count_full_depth_image(
     return source_table, apertures
 
 
+def bitwise_aperture_photometry(artifact_map: np.ndarray, apertures):
+    """ Run aperture photometry on each bit in artifact flag backplane.
+    Non-zero results mean that bit is flagged. Only 4 bits set rn. """
+    bitmask_column= np.zeros(len(apertures), dtype=np.uint8)
+    # add check to see if there are any bits in the map?
+    for bit in range(4):
+        bit_image = (artifact_map & (1 << bit)) > 0
+        bit_flag_table = aperture_photometry(bit_image.astype(int), apertures).to_pandas()
+        bitmask_column |= (bit_flag_table["aperture_sum"].to_numpy() > 0).astype(np.uint8) << bit
+    return bitmask_column
+
+
 def check_empty_image(eclipse:int, band:GalexBand, image_dict):
     if not image_dict["cnt"].max():
         print(f"{eclipse} appears to contain nothing in {band}.")
@@ -63,27 +75,29 @@ def check_empty_image(eclipse:int, band:GalexBand, image_dict):
         return f"{eclipse} appears to contain nothing in {band}."
 
 
-def extract_frame(frame, apertures):
+def extract_frame(frame, apertures, key):
     if isinstance(frame, scipy.sparse.spmatrix):
         frame = frame.toarray()
+    if key == "flag":
+        return bitwise_aperture_photometry(frame, apertures)
     return aperture_photometry(frame, apertures)["aperture_sum"].data
 
 
-def _extract_photometry_unthreaded(movie, apertures):
+def _extract_photometry_unthreaded(movie, apertures, key):
     photometry = {}
     for ix, frame in enumerate(movie):
         print_inline(f"extracting frame {ix}")
-        photometry[ix] = extract_frame(frame, apertures)
+        photometry[ix] = extract_frame(frame, apertures, key)
     return photometry
 
 
 # it's foolish to run this multithreaded unless you _are_ unpacking sparse
 # matrices, but I won't stop you.
-def _extract_photometry_threaded(movie, apertures, threads):
+def _extract_photometry_threaded(movie, apertures, threads, key):
     pool = Pool(threads)
     photometry = {}
     for ix, frame in enumerate(movie):
-        photometry[ix] = pool.apply_async(extract_frame, (frame, apertures))
+        photometry[ix] = pool.apply_async(extract_frame, (frame, apertures, key))
     pool.close()
     pool.join()
     return {ix: result.get() for ix, result in photometry.items()}
@@ -91,20 +105,20 @@ def _extract_photometry_threaded(movie, apertures, threads):
 
 def extract_photometry(movie_dict, source_table, apertures, threads):
     photometry_tables = []
-    for key in ["cnt", "flag", "edge"]:
+    for key in ["cnt", "flag"]:
         title = "primary movie" if key == "cnt" else f"{key} map"
         print(f"extracting photometry from {title}")
         if threads is None:
             photometry = _extract_photometry_unthreaded(
-                movie_dict[key], apertures
+                movie_dict[key], apertures, key
             )
         else:
             photometry = _extract_photometry_threaded(
-                movie_dict[key], apertures, threads
+                movie_dict[key], apertures, threads, key
             )
         frame_indices = sorted(photometry.keys())
-        if key in ("edge", "flag"):
-            column_prefix = f"aperture_sum_{key}"
+        if key in ("flag"):
+            column_prefix = f"artifact_flag"
         else:
             column_prefix = "aperture_sum"
         photometry = {

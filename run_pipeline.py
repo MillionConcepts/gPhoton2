@@ -20,16 +20,15 @@ if __name__ == "__main__":
         coregister_lightcurves=False,
         # photonpipe, moviemaker, None (default None)
         stop_after=None,
-        photometry_only=True,
-        # None, "gzip", "rice"
+        photometry_only=False,
+        # "none", "gzip", "rice"
         compression="rice",
         # use array sparsification on movie frames?
         lil=True,
         # write movie frames as separate files
         burst=False,
         extended_photonlist=True,
-        extended_flagging=True,
-        # aspect file, don't need to set unless need to use alt
-        # file, 'aspect2.parquet'
+        extended_flagging=False,
+        verbose=2
         #source_catalog_file="test_data/e00775/e00775-nd-f0120-b01-movie-photom-12_8.csv"
     )

@@ -32,7 +32,7 @@ def make_movies(
     """
     :param ctx: PipeContext options handler
     :param exposure_array: t and flags, _including_ off-detector, for exptime
-    :param map_ix_dict: cnt, edge, and mask indices for weights, t, and foc
+    :param map_ix_dict: cnt and mask indices for weights, t, and foc
     :param total_trange: (time minimum, time maximum) for on-detector events
     :param imsz: size of each frame, as given by upstream WCS object
     :param fixed_start_time: externally-defined time for start of first frame,
@@ -89,10 +89,10 @@ def make_movies(
         pool.join()
         results = {task: result.get() for task, result in results.items()}
     frame_indices = sorted(results.keys())
-    movies: dict[str, list[Any]] = {"cnt": [], "flag": [], "edge": []}
+    movies: dict[str, list[Any]] = {"cnt": [], "flag": []}
     exptimes = []
     for frame_ix in frame_indices:
-        for map_name in ("cnt", "flag", "edge"):
+        for map_name in ("cnt", "flag"):
             movies[map_name].append(results[frame_ix][map_name])
         exptimes.append(results[frame_ix]["exptime"])
         del results[frame_ix]
@@ -109,13 +109,11 @@ def make_full_depth_image(
     trange = np.arange(total_trange[0], total_trange[1] + interval, interval)
     exptime = unshared_compute_exptime(exposure_array, band, trange)
     output_dict = {"tranges": [trange], "exptimes": [exptime]}
-    for map_name in ("cnt", "edge"):
-        output_dict[map_name] = make_frame(
-            map_ix_dict[map_name]["foc"],
-            map_ix_dict[map_name]["weights"],
-            imsz,
-            booleanize=map_name =='edge'
-        )
+    output_dict["cnt"] = make_frame(
+            map_ix_dict["cnt"]["foc"],
+            map_ix_dict["cnt"]["weights"],
+            imsz
+    )
     output_dict["flag"] = make_mask_frame(
         map_ix_dict['flag']["foc"],
         map_ix_dict['flag']["weights"],
@@ -140,12 +138,16 @@ def create_images_and_movies(
     photonfile: Pathlike,
     fixed_start_time: Optional[int] = None,
     edge_threshold: int = 350,
+    boresight: tuple = (0, 0)
 ) -> Union[dict, str]:
     print(f"making images from {photonfile}")
     print("indexing data and making WCS solution")
+    movie_dict = {}
     status = "started"
     exposure_array, map_ix_dict, total_trange, wcs = prep_image_inputs(
-        photonfile, edge_threshold
+        photonfile,
+        edge_threshold,
+        boresight
     )
     imsz = (
         int((wcs.wcs.crpix[1] - 0.5) * 2), int((wcs.wcs.crpix[0] - 0.5) * 2)

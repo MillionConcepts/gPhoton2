@@ -11,11 +11,11 @@ import fitsio
 import pyarrow
 from astropy.io import fits as pyfits
 from dustgoggles.structures import NestingDict
-import fast_histogram as fh
 import numpy as np
 from pyarrow import parquet
 import scipy.sparse
 import sh
+from quickbin import bin2d
 
 from gPhoton import __version__
 from gPhoton.calibrate import compute_exptime
@@ -59,15 +59,22 @@ def make_frame(
     :param booleanize: reduce this to "boolean" (uint8 valued as 0 or 1)?
     :return: ndarray containing single image made from 2D histogram of inputs
     """
-    frame = fh.histogram2d(
-        foc[:, 1] - 0.5,
-        foc[:, 0] - 0.5,
-        bins=imsz,
-        range=([[0, imsz[0]], [0, imsz[1]]]),
-        weights=weights,
-    )
-    if booleanize:
-        return booleanize_for_fits(frame)
+    frame = np.zeros(imsz, dtype=np.uint8)
+    # less than 0 foc values break bin2d
+    cut = np.all(foc >= 0, axis=1)
+    foc = foc[cut]
+    weights = weights[cut]
+    if len(foc) > 0:
+        frame = bin2d(
+                foc[:, 1] - 0.5,
+                foc[:, 0] - 0.5,
+                weights,
+                "sum",
+                n_bins=imsz,
+                bbounds=([[0, imsz[0]], [0, imsz[1]]])
+            )
+        if booleanize:
+            return booleanize_for_fits(frame)
     return frame.astype("f4")
 
 
@@ -80,21 +87,23 @@ def make_mask_frame(
     make a mask / bitmap by calling mask_frame on diff bit values
     and then combining
     :param foc: 2-column array containing positions in detector space
-    :param weights: 1-D array containing counts at each position
+    :param weights: 1-D array containing artifact flags at each position
     :param imsz: x/y dimensions of output image
     :return: ndarray containing single image made from 2D histogram of inputs
     """
     frame = np.zeros(imsz, dtype=np.uint8)
     weights = np.array(weights, dtype=np.int64)
-    # 15 max if flag 0, 1, 2, and 3 are set
-    for i in range(16):
-        if np.any(weights & (1 << i)):
-            bit_mask = (weights & (1 << i)) >> i
-            valid_indices = bit_mask > 0
-            filtered_foc = foc[valid_indices]
-            filtered_bit_mask = weights[valid_indices]
-            mask_frame = make_frame(filtered_foc, filtered_bit_mask, imsz, booleanize=True)
-            frame |= (mask_frame > 0).astype(np.uint8) << i
+    for bit in range(4):
+        bit_mask = ((weights & (1 << bit)) > 0).astype(int)
+        valid_indices = bit_mask > 0
+        filtered_foc = foc[valid_indices]
+        filtered_bit_mask = weights[valid_indices]
+        if len(filtered_foc) > 0:
+            mask_frame = make_frame(filtered_foc,
+                                    filtered_bit_mask,
+                                    imsz,
+                                    booleanize=True)
+            frame |= (mask_frame > 0).astype(np.uint8) << bit
     return frame
 
 
@@ -135,47 +144,50 @@ def select_on_detector(
     )
 
 
-def prep_image_inputs(photonfile, edge_threshold):
+def prep_image_inputs(photonfile, edge_threshold, boresight):
     event_table, exposure_array = load_image_tables(photonfile)
     foc, wcs = generate_wcs_components(event_table)
     with warnings.catch_warnings():
         # don't bother us about divide-by-zero errors
         warnings.simplefilter("ignore")
         weights = 1.0 / event_table["response"].to_numpy()
-
-    # combining flag and mask into 8 bit mask
-    # 7 & 12: off-detector or aspect flags
-    # 120: ghost flag
-    flag_to_bit = {7: 0, 12: 1, 120: 2}
-    # mask is for hotspots / cold spots
-    mask_bit = 3
-    mask_array = event_table["mask"].to_numpy().astype(np.uint8)
-    flags_array = event_table["flags"].to_numpy().astype(np.uint8)
-    mask_ix = np.zeros_like(flags_array, dtype=np.uint8)
-    for flag, bit in flag_to_bit.items():
-        mask_ix |= ((flags_array & flag) == flag).astype(np.uint8) << bit
-    mask_ix |= (mask_array != 0).astype(np.uint8) << mask_bit
-
-    edge_ix = np.where(event_table["detrad"].to_numpy() > edge_threshold)
+    # combine flag, mask, edge into "artifacts"
+    artifact_flags = combine_artifacts(event_table, edge_threshold, boresight)
+    artifact_ix = np.where(artifact_flags!= 0)
     t = event_table["t"].to_numpy()
-    map_ix_dict = generate_indexed_values(edge_ix, foc, mask_ix, t, weights)
+    map_ix_dict = generate_indexed_values(foc, artifact_ix, artifact_flags, t, weights)
     total_trange = (t.min(), t.max())
     return exposure_array, map_ix_dict, total_trange, wcs
 
 
-def generate_indexed_values(edge_ix, foc, mask_ix, t, weights):
+def combine_artifacts(event_table, edge_threshold, boresight):
+    """ combines flag, mask, and edge flags into 8 bit mask values
+    to eventually create a single artifact backplane. Only propagated
+     flag is 120 (ghost) because 7 and 12 do not have valid aspect
+     solutions. """
+    mask_bit = (event_table['mask'].to_numpy() == 1) * 1
+    flag_bit = (event_table['flags'].to_numpy() == 120) * 2
+    wide_edge_bit = (event_table['detrad'].to_numpy() > edge_threshold) * 4
+    with warnings.catch_warnings():
+        # don't bother us about divide-by-zero errors
+        warnings.simplefilter("ignore")
+        ra_center = (np.nanmin(event_table['ra']) + np.nanmax(event_table['ra'])) / 2
+        dec_center = (np.nanmin(event_table['dec']) + np.nanmax(event_table['dec'])) / 2
+        proj_rad= np.sqrt((event_table['ra'] - ra_center) ** 2 +
+                          (event_table['dec'] - dec_center) ** 2)
+        narrow_edge_bit = (proj_rad > .9* np.nanmax(proj_rad)) * 8
+    artifacts = mask_bit | flag_bit | wide_edge_bit | narrow_edge_bit
+    return artifacts
+
+
+def generate_indexed_values(foc, artifact_ix, artifact_flags, t, weights):
     indexed = NestingDict()
     for value, value_name in zip((t, foc, weights), ("t", "foc", "weights")):
         for map_ix, map_name in zip(
-            (edge_ix, mask_ix, slice(None)), ("edge", "flag", "cnt")
+            (artifact_ix, slice(None)), ("flag", "cnt")
         ):
-            if map_name == "flag":
-                if value_name == "weights":
-                    indexed[map_name][value_name] = mask_ix
-                if  value_name == "foc":
-                    indexed[map_name][value_name] = foc
-                if value_name == "t":
-                    indexed[map_name][value_name] = t
+            if map_name == "flag" and value_name == "weights":
+                    indexed[map_name][value_name] = artifact_flags[map_ix]
             else:
                 indexed[map_name][value_name] = value[map_ix]
     return indexed
@@ -213,7 +225,7 @@ def sm_compute_movie_frame(
     print_inline(headline)
     if exposure_block_info is None:
         exptime = 0
-        cntmap, edgemap, flagmap = zero_frame(imsz, lil)
+        cntmap, flagmap = zero_frame(imsz, lil)
     else:
         exptime = shared_compute_exptime(exposure_block_info, band, trange)
         # todo: make this cleaner...?
@@ -223,13 +235,12 @@ def sm_compute_movie_frame(
         expblock["exposure"].unlink()
         expblock["exposure"].close()
         # noinspection PyTypeChecker
-        cntmap, flagmap, edgemap = sm_make_maps(map_block_info, imsz, lil)
+        cntmap, flagmap = sm_make_maps(map_block_info, imsz, lil)
         unlink_nested_block_dict(map_block_info)
         # TODO: slice this into shared memory to reduce serialization cost?
         #  not worth doing if they're sparse
     return {
         "cnt": cntmap,
-        "edge": edgemap,
         "flag": flagmap,
         "exptime": exptime,
     }
@@ -252,8 +263,7 @@ def slice_exposure_into_memory(exposure_array, tranges):
 def zero_frame(imsz, lil=False):
     maps = (
         np.zeros(imsz),
-        np.zeros(imsz, dtype="uint8"),
-        np.zeros(imsz, dtype="uint8"),
+        np.zeros(imsz, dtype="uint8")
     )
     if lil is True:
         return [scipy.sparse.coo_matrix(moviemap) for moviemap in maps]
@@ -268,7 +278,7 @@ def sm_make_maps(block_directory, imsz, lil=False):
     """
     maps = [
         sm_make_map(block_directory, map_name, imsz)
-        for map_name in ("cnt", "flag", "edge")
+        for map_name in ("cnt", "flag")
     ]
     if lil is True:
         return [scipy.sparse.coo_matrix(moviemap) for moviemap in maps]
@@ -281,24 +291,23 @@ def sm_make_map(block_directory, map_name, imsz):
     transform it into a "map" by taking its 2-D hstogram
     """
     if block_directory[map_name] is None:
-        dtype = np.uint8 if map_name in ("edge", "flag") else np.float64
+        dtype = np.uint8 if map_name in ("flag") else np.float64
         return np.zeros(imsz, dtype)
     _, map_arrays = reference_shared_memory_arrays(block_directory[map_name])
+    if map_name == "flag":
+        return make_mask_frame(
+            map_arrays["foc"],
+            map_arrays["weights"],
+            imsz)
     return make_frame(
         map_arrays["foc"],
         map_arrays["weights"],
-        imsz,
-        booleanize= map_name == "edge")
+        imsz)
 
 
 def generate_wcs_components(event_table):
     wcs = make_bounding_wcs(parquet_to_ndarray(event_table, ["ra", "dec"]))
-    # This is a bottleneck, so only do it once.
-    # TODO: do we actually want these 1-indexed?
-    # TODO: are we supposed to have SIP correction? we don't appear to.
-    foc = wcs.sip_pix2foc(
-        wcs.wcs_world2pix(parquet_to_ndarray(event_table, ["ra", "dec"]), 1), 1
-    )
+    foc = wcs.wcs_world2pix(parquet_to_ndarray(event_table, ["ra", "dec"]), 1)
     return foc, wcs
 
 
@@ -366,7 +375,7 @@ def write_fits_array(
     outpaths = []
     # TODO: write names / descriptions into the headers
     if (ctx.burst is True) and (is_movie is True):
-        # burst mode writes each frame as a separate file w/cnt, flag, and edge
+        # burst mode writes each frame as a separate file w/cnt, flag
         for frame in range(len(arraymap["cnt"])):
             start = arraymap['tranges'][frame][0] - ctx.start_time
             array_path = ctx(start=start)["movie"]
@@ -374,7 +383,7 @@ def write_fits_array(
                 array_path = array_path.with_suffix("")
             print(f"writing {array_name} frame {frame} to {array_path}")
             initialize_fits_file(array_path)
-            for key in ["cnt", "flag", "edge"]:
+            for key in ["cnt", "flag"]:
                 print(f"writing frame {frame} {key} map")
                 header = populate_fits_header(
                     ctx.band, wcs, arraymap["tranges"], arraymap["exptimes"]
@@ -394,7 +403,7 @@ def write_fits_array(
             array_path = array_path.with_suffix("")
         print(f"writing {array_name} to {array_path}")
         initialize_fits_file(array_path)
-        for key in ["cnt", "flag", "edge"]:
+        for key in ["cnt", "flag"]:
             print(f"writing {key} map")
             header = populate_fits_header(
                 ctx.band, wcs, arraymap["tranges"], arraymap["exptimes"]

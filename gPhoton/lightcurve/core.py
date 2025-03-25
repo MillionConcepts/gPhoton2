@@ -15,7 +15,7 @@ from gPhoton.lightcurve.photometry_utils import (
     check_point_in_extended,
     mask_for_extended_sources)
 from gPhoton.reference import FakeStopwatch, PipeContext
-from gPhoton.coadd import (zero_flag_and_edge, flag_and_edge_mask)
+from gPhoton.coadd import (zero_flag, flag_mask)
 
 
 def make_lightcurves(sky_arrays: Mapping, ctx: PipeContext):
@@ -32,17 +32,16 @@ def make_lightcurves(sky_arrays: Mapping, ctx: PipeContext):
         warnings.simplefilter("ignore")
         # preparing images for source finding
         exptime = image_dict["exptimes"][0]
-        masked_cnt_image = zero_flag_and_edge(
+        masked_cnt_image = zero_flag(
             image_dict["cnt"],
             image_dict["flag"],
-            image_dict["edge"],
             copy=True
         ) / exptime
         masked_cnt_image = masked_cnt_image.astype(np.float32)
-        flag_edge_mask = flag_and_edge_mask(
+        flag_edge_mask = flag_mask(
             image_dict["cnt"],
-            image_dict["flag"],
-            image_dict["edge"])
+            image_dict["flag"]
+        )
 
     if ctx.source_catalog_file is not None:
         # for input point source catalog

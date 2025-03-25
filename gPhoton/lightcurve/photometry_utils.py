@@ -247,7 +247,10 @@ def get_point_sources(cnt_image: np.ndarray, band: str, f_e_mask, exposure_time)
     # but also more spurious looking ones..
     print("Segmenting and deblending point sources.")
     segment_map = detect_sources(
-        convolved_data, threshold, npixels=4, mask=f_e_mask
+        convolved_data,
+        threshold,
+        npixels=4,
+        mask=f_e_mask
     )
     del threshold, kernel
     #gc.collect()
@@ -277,11 +280,11 @@ def get_point_sources(cnt_image: np.ndarray, band: str, f_e_mask, exposure_time)
     seg_sources = seg_sources.set_index("label", drop=True).dropna(axis=0, how='any')
 
     # for source finding troubleshooting purposes:
-    #from astropy.io import fits
-    #deblended_data = deblended_segment_map.data.astype(np.int32)
-    #hdu = fits.PrimaryHDU(deblended_data)
-    #hdul = fits.HDUList([hdu])
-    #hdul.writeto('deblended_segmentation.fits', overwrite=True)
+    # from astropy.io import fits
+    # deblended_data = deblended_segment_map.data.astype(np.int32)
+    # hdu = fits.PrimaryHDU(deblended_data)
+    # hdul = fits.HDUList([hdu])
+    # hdul.writeto('deblended_segmentation.fits', overwrite=True)
 
     return outline_seg_map, seg_sources
 
