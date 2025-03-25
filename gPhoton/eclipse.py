@@ -3,7 +3,7 @@ shared parameters that depend on the eclipse and on how gphoton
 is being run but not on anything else
 """
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from functools import cache
 from math import modf
 from pathlib import Path
@@ -192,7 +192,7 @@ def photomfile_path(
     suffix: str | None = None,
     emoji: bool = False,
     ftype: str = "csv",
-):
+) -> Path:
     leg = format_leg(leg, emoji)
     start = format_start(start, depth, emoji)
     depth = format_depth(depth, emoji)
@@ -213,7 +213,7 @@ def movie_path(
     start: float | None = None,
     compression: str = "fits",
     emoji: bool = False,
-):
+) -> Path:
     if depth is None:
         raise ValueError("movies must have a depth")
     leg = format_leg(leg, emoji)
@@ -234,7 +234,7 @@ def expfile_path(
     depth: int,
     start: float | None = None,
     emoji: bool = False,
-):
+) -> Path:
     if depth is None:
         raise ValueError("expfiles must have a depth")
     leg = format_leg(leg, emoji)
@@ -244,7 +244,7 @@ def expfile_path(
     return d / f"{p}-{depth}-{leg}-{start}-exptime.csv"
 
 
-class EclipsePaths(Mapping):
+class EclipsePaths(Mapping[str, Path]):
     """lazy mapping that constructs paths for a specific eclipse's
     data files"""
     def __init__(
@@ -279,47 +279,47 @@ class EclipsePaths(Mapping):
         self._emoji = emoji
         self._ftype = ftype
 
-        def raw6():
+        def raw6() -> Path:
             s = self
             return raw6_path(s._eclipse, s._band, s._mode,
                              emoji=s._emoji)
 
-        def photonfile():
+        def photonfile() -> Path:
             s = self
             return photonfile_path(s._eclipse, s._leg, s._band, s._mode,
                                    emoji=s._emoji)
 
-        def image():
+        def image() -> Path:
             s = self
             return image_path(s._eclipse, s._leg, s._band, s._mode,
                               compression=s._compression,
                               emoji=s._emoji)
 
-        def extended_shapes():
+        def extended_shapes() -> Path:
             s = self
             return extended_shapes_path(s._eclipse, s._leg, s._band, s._mode,
                                         emoji=s._emoji)
 
 
-        def extended_catalog():
+        def extended_catalog() -> Path:
             s = self
             return extended_catalog_path(s._eclipse, s._leg, s._band, s._mode,
                                          emoji=s._emoji)
 
-        def photomfile():
+        def photomfile() -> Path:
             s = self
             return photomfile_path(s._eclipse, s._leg, s._band, s._mode,
                                    depth=s._depth, start=s._start,
                                    aperture=s._aperture, suffix=s._suffix,
                                    emoji=s._emoji, ftype=s._ftype)
 
-        def movie():
+        def movie() -> Path:
             s = self
             return movie_path(s._eclipse, s._leg, s._band, s._mode,
                               depth=s._depth, start=s._start,
                               compression=s._compression, emoji=s._emoji)
 
-        def expfile():
+        def expfile() -> Path:
             s = self
             return expfile_path(s._eclipse, s._leg, s._band, s._mode,
                                 depth=s._depth, start=s._start, emoji=s._emoji)
@@ -351,13 +351,13 @@ class EclipsePaths(Mapping):
             self._paths[key] = lazy_path
         return lazy_path
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[str]:
         return iter(self._paths)
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self._paths)
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool:
         # equality is based only on the input parameters, not the
         # paths we may or may not have emitted yet (all of which are
         # pure functions of the input parameters, anyway)
