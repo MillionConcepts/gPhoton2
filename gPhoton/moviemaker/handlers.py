@@ -12,7 +12,7 @@ from gPhoton.moviemaker._steps import (
     slice_frame_into_memory,
     sm_compute_movie_frame,
     unshared_compute_exptime,
-    make_frame,
+    make_hist_frame,
     make_mask_frame,
     write_fits_array,
     prep_image_inputs,
@@ -109,7 +109,7 @@ def make_full_depth_image(
     trange = np.arange(total_trange[0], total_trange[1] + interval, interval)
     exptime = unshared_compute_exptime(exposure_array, band, trange)
     output_dict = {"tranges": [trange], "exptimes": [exptime]}
-    output_dict["cnt"] = make_frame(
+    output_dict["cnt"] = make_hist_frame(
             map_ix_dict["cnt"]["foc"],
             map_ix_dict["cnt"]["weights"],
             imsz
@@ -140,7 +140,7 @@ def create_images_and_movies(
 ) -> dict | str:
     print(f"making images from {photonfile}")
     print("indexing data and making WCS solution")
-    movie_dict = {}
+
     status = "started"
     exposure_array, map_ix_dict, total_trange, wcs = prep_image_inputs(
         photonfile,
@@ -171,11 +171,18 @@ def create_images_and_movies(
                 f"< min_exptime {ctx.min_exptime}"
             )
         }
-    if (ctx.depth is not None) and status.startswith("success"):
-        print(f"making {ctx.depth}-second depth movies")
-        status, movie_dict = make_movies(
-            ctx, fixed_start_time=fixed_start_time, **render_kwargs,
-        )
+    if ctx.depth is None or not status.startswith("success"):
+        return {
+            "wcs": wcs,
+            "movie_dict": {},
+            "image_dict": image_dict,
+            "status": status,
+        }
+
+    print(f"making {ctx.depth}-second depth movies")
+    status, movie_dict = make_movies(
+        ctx, fixed_start_time=fixed_start_time, **render_kwargs,
+    )
     return {
         "wcs": wcs,
         "movie_dict": movie_dict,

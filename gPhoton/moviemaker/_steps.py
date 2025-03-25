@@ -13,6 +13,7 @@ import pyarrow
 from astropy.io import fits as pyfits
 from dustgoggles.structures import NestingDict
 import numpy as np
+from numpy.typing import ArrayLike, NDArray
 from pyarrow import parquet
 import scipy.sparse
 import sh
@@ -34,7 +35,7 @@ from gPhoton.types import Pathlike
 from gPhoton.vorpal import between, slice_between
 
 
-def booleanize_for_fits(array: np.ndarray) -> np.ndarray:
+def booleanize_for_fits(array: ArrayLike) -> NDArray[np.uint8]:
     """
     many things in FITS arrays are too big. it would be nice if FITS had a
     1-bit data type. It does not. Furthermore, astropy.io.fits will not even
@@ -43,48 +44,75 @@ def booleanize_for_fits(array: np.ndarray) -> np.ndarray:
     :param array: numpy array to faux-booleanize
     :return: faux-booleanized array
     """
-    mask = array.astype(bool)
-    return np.ones(shape=array.shape, dtype=np.uint8) * mask
+    # note: np.not_equal(array, 0, dtype=np.uint8) would be more efficient
+    # if it worked, but it crashes with an error about "no loop matching
+    # the specified signature and casting" as of numpy 1.26
+    return np.not_equal(array, 0).astype(np.uint8)
 
 
-def make_frame(
+def make_bool_frame(
     foc: np.ndarray,
     weights: np.ndarray,
     imsz: tuple[int, int],
-    booleanize: bool = False,
-) -> np.ndarray:
+) -> NDArray[np.uint8]:
     """
     :param foc: 2-column array containing positions in detector space
     :param weights: 1-D array containing counts at each position
     :param imsz: x/y dimensions of output image
-    :param booleanize: reduce this to "boolean" (uint8 valued as 0 or 1)?
-    :return: ndarray containing single image made from 2D histogram of inputs
+    :return: ndarray containing single image made from 2D histogram of inputs,
+             reduced to one bit (0 = histogram cell was empty, 1 = it wasn't).
+             The dtype of this array is uint8 for FITS compatibility, see
+             booleanize_for_fits.
     """
-    frame = np.zeros(imsz, dtype=np.uint8)
     # less than 0 foc values break bin2d, greater than imsz values do too
     min_max = np.min([imsz[0],imsz[1]])
     cut = np.all((foc >= .5) & (foc <= min_max+.5), axis=1)
     foc = foc[cut]
-    weights = weights[cut]
-    if len(foc) > 0:
-        frame = bin2d(
-                foc[:, 1] - 0.5,
-                foc[:, 0] - 0.5,
-                weights,
-                "sum",
-                n_bins=imsz,
-                bbounds=([[0, imsz[0]], [0, imsz[1]]])
-            )
-        if booleanize:
-            return booleanize_for_fits(frame)
-    return frame.astype("f4")
+    if len(foc) == 0:
+        return np.zeros(imsz, dtype=np.uint8)
+
+    return booleanize_for_fits(bin2d(
+        foc[:, 1] - 0.5,
+        foc[:, 0] - 0.5,
+        weights[cut],
+        "sum",
+        n_bins=imsz,
+        bbounds=([[0, imsz[0]], [0, imsz[1]]])
+    ))
+
+
+def make_hist_frame(
+    foc: np.ndarray,
+    weights: np.ndarray,
+    imsz: tuple[int, int],
+) -> NDArray[np.float32]:
+    """
+    :param foc: 2-column array containing positions in detector space
+    :param weights: 1-D array containing counts at each position
+    :param imsz: x/y dimensions of output image
+    :return: ndarray containing single image made from 2D histogram of inputs
+    """
+    # less than 0 foc values break bin2d
+    cut = np.all(foc >= 0, axis=1)
+    foc = foc[cut]
+    if len(foc) == 0:
+        return np.zeros(imsz, dtype=np.float32)
+
+    return bin2d(
+        foc[:, 1] - 0.5,
+        foc[:, 0] - 0.5,
+        weights[cut],
+        "sum",
+        n_bins=imsz,
+        bbounds=([[0, imsz[0]], [0, imsz[1]]])
+    ).astype(np.float32)
 
 
 def make_mask_frame(
     foc: np.ndarray,
     weights: np.ndarray,
     imsz: tuple[int, int],
-) -> np.ndarray:
+) -> NDArray[np.uint8]:
     """
     make a mask / bitmap by calling mask_frame on diff bit values
     and then combining
@@ -94,18 +122,20 @@ def make_mask_frame(
     :return: ndarray containing single image made from 2D histogram of inputs
     """
     frame = np.zeros(imsz, dtype=np.uint8)
-    weights = np.array(weights, dtype=np.int64)
     for bit in range(4):
-        bit_mask = ((weights & (1 << bit)) > 0).astype(int)
-        valid_indices = bit_mask > 0
-        filtered_foc = foc[valid_indices]
-        filtered_bit_mask = weights[valid_indices]
-        if len(filtered_foc) > 0:
-            mask_frame = make_frame(filtered_foc,
-                                    filtered_bit_mask,
-                                    imsz,
-                                    booleanize=True)
-            frame |= (mask_frame > 0).astype(np.uint8) << bit
+        bit_mask = (weights & (1 << bit)) > 0
+        if np.any(bit_mask):
+            filtered_foc = foc[bit_mask]
+            # we don't care what the values of filtered_bits are
+            # because make_bool_frame only cares about whether each
+            # histogram cell had at least one nonzero value in it
+            filtered_bits = np.ones_like(filtered_foc, dtype=np.uint8)
+            mask_frame = make_bool_frame(filtered_foc, filtered_bits, imsz)
+            # numpy's promotion rules have no exception for shifts,
+            # so we need to cast 'bit' to uint8 to get the shifted
+            # mask_frame's dtype to be compatible (according to mypy)
+            # with frame's dtype
+            frame |= mask_frame << np.uint8(bit)
     return frame
 
 
@@ -299,7 +329,7 @@ def sm_make_map(block_directory, map_name, imsz):
             map_arrays["foc"],
             map_arrays["weights"],
             imsz)
-    return make_frame(
+    return make_hist_frame(
         map_arrays["foc"],
         map_arrays["weights"],
         imsz)
