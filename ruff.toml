@@ -109,6 +109,8 @@ ignore = [
     "PLR2004",
     # stylistic rule lumped with UP; I actually want the *exact opposite*
     "UP015",
+    # stylistic rule lumped in with RUF
+    "RUF022",
     # Wants us to define custom exception classes rather than giving
     # detailed messages in Value/RuntimeError constructors.  Unclear
     # whether this is appropriate for us.  Revisit later.
