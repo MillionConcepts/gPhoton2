@@ -5,8 +5,11 @@
     numba just-in-time compiler to accelerate the very large number of
     vectorized trig operations involved.
 """
-from numba import njit
+
 import numpy as np
+
+from gPhoton.numba_utilz import jit
+from gPhoton.types import NDArray, NFloat
 
 
 # being obvious is helpful to numba.
@@ -14,10 +17,17 @@ R2D = 180/np.pi
 
 
 # ------------------------------------------------------------------------------
-@njit(cache=True)
+@jit
 def gnomrev_simple(
-    xi, eta, ra0, dec0, crota, cdelt, cenpix0, cenpix1
-):
+    xi: NDArray[NFloat],
+    eta: NDArray[NFloat],
+    ra0: NFloat,
+    dec0: NFloat,
+    crota: NFloat,
+    cdelt: NFloat,
+    cenpix0: NFloat,
+    cenpix1: NFloat
+) -> tuple[NDArray[NFloat], NDArray[NFloat]]:
     """
     A reverse gnomonic projection.
 
@@ -94,8 +104,16 @@ def gnomrev_simple(
 
 
 # ------------------------------------------------------------------------------
-@njit(cache=True)
-def gnomfwd_simple(ra, dec, ra0, dec0, crota, cdelt, cenpix):
+@jit
+def gnomfwd_simple(
+    ra: NDArray[NFloat],
+    dec: NDArray[NFloat],
+    ra0: NFloat,
+    dec0: NFloat,
+    crota: NFloat,
+    cdelt: NFloat,
+    cenpix: NFloat,
+) -> tuple[NDArray[NFloat], NDArray[NFloat]]:
     """
     A forward gnomonic projection.
 
