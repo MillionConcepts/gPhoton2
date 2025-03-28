@@ -1,32 +1,51 @@
+"""
+Computational primitives used by photonpipe._steps and accelerated
+via the numba JIT.
+"""
+
+# Caution: Some of the functions in this file are written strangely
+# in order to type-check correctly and get efficient code generation
+# from numba at the same time.
+
 import numba as nb
 import numpy as np
 
 import gPhoton.constants as c
+from gPhoton.numba_utilz import jit
+from gPhoton.types import GalexBand, NDArray, NFloat, NInt
 
 
+@jit
 def interpolate_aspect_solutions(
-    aspect_slice, asptime, t, eta_vec, xi_vec, ok_indices
-):
-    dxi, deta = np.zeros(len(t)), np.zeros(len(t))
+    aspect_slice: NDArray[NFloat],
+    asptime: NDArray[NFloat],
+    t: NDArray[NFloat],
+    eta_vec: NDArray[NFloat],
+    xi_vec: NDArray[NFloat],
+    ok_indices: NDArray[np.intp],
+) -> tuple[NDArray[NFloat], NDArray[NFloat]]:
     aspect_ratio = t[ok_indices] - asptime[aspect_slice] / (
         asptime[aspect_slice + 1] - asptime[aspect_slice]
     )
+    dxi = np.zeros_like(t)
     dxi[ok_indices] = (
         xi_vec[aspect_slice + 1] - xi_vec[aspect_slice]
     ) * aspect_ratio
+    deta = np.zeros_like(t)
     deta[ok_indices] = (
         eta_vec[aspect_slice + 1] - eta_vec[aspect_slice]
     ) * aspect_ratio
     return deta, dxi
 
 
+@jit
 def find_null_indices(
-    aspflags: np.ndarray,
-    aspect_slice: np.ndarray,
-    asptime: np.ndarray,
-    flags: np.ndarray,
-    ok_indices: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray]:
+    aspflags: NDArray[NFloat],
+    aspect_slice: NDArray[NFloat],
+    asptime: NDArray[NFloat],
+    flags: NDArray[NInt],
+    ok_indices: NDArray[np.intp],
+) -> tuple[NDArray[NFloat], NDArray[NInt]]:
     flag_slice = flags[ok_indices]
     cut = (
         ((asptime[aspect_slice + 1] - asptime[aspect_slice]) == 1)
@@ -46,9 +65,23 @@ def find_null_indices(
     return null_ix, flags
 
 
+@jit
 def unfancy_detector_coordinates(
-    band, dx, dy, flags, xp_as, xshift, yp_as, yshift
-):
+    band: GalexBand,
+    dx: NDArray[NFloat],
+    dy: NDArray[NFloat],
+    flags: NDArray[NInt],
+    xp_as: NDArray[NFloat],
+    xshift: NDArray[NFloat],
+    yp_as: NDArray[NFloat],
+    yshift: NDArray[NFloat],
+) -> tuple[
+    NDArray[NFloat],
+    NDArray[NFloat],
+    NDArray[NFloat],
+    NDArray[NFloat],
+    NDArray[NInt],
+]:
     flip = {"NUV": 1, "FUV": -1}[band]
     # TODO: is xi always 0? so can half of this be removed?
     #  probably? go look at the C code
@@ -70,7 +103,11 @@ def unfancy_detector_coordinates(
     return xi, eta, col, row, flags
 
 
-def xi_eta_to_col_row(xi, eta):
+@jit
+def xi_eta_to_col_row(
+    xi: NDArray[NFloat],
+    eta: NDArray[NFloat],
+) -> tuple[NDArray[NFloat], NDArray[NFloat]]:
     half_det = nb.f4(c.DETSIZE / 2)
     fill = nb.f4(c.FILL_VALUE)
     half_pix = nb.f4(c.PIXELS_PER_AXIS / 2)
@@ -79,7 +116,19 @@ def xi_eta_to_col_row(xi, eta):
     return col, row
 
 
-def make_corners(floor_x, floor_y, fptrx, fptry, ok_indices):
+@jit
+def make_corners(
+    floor_x: NDArray[NFloat],
+    floor_y: NDArray[NFloat],
+    fptrx: NDArray[NFloat],
+    fptry: NDArray[NFloat],
+    ok_indices: NDArray[np.intp],
+) -> tuple[
+    NDArray[NFloat],
+    NDArray[NFloat],
+    NDArray[NFloat],
+    NDArray[NFloat],
+]:
     blt = (fptrx - floor_x)[ok_indices]
     blu = (fptry - floor_y)[ok_indices]
     inv_blt = 1 - blt
@@ -92,24 +141,56 @@ def make_corners(floor_x, floor_y, fptrx, fptry, ok_indices):
     )
 
 
-def sum_corners(cal_data, cal_ix0, cal_ix1, cal_ix2, cal_ix3, corners):
+@jit
+def sum_corners(
+    cal_data: NDArray[NFloat],
+    cal_ix0: NDArray[np.intp],
+    cal_ix1: NDArray[np.intp],
+    cal_ix2: NDArray[np.intp],
+    cal_ix3: NDArray[np.intp],
+    corners: tuple[NDArray[NFloat], NDArray[NFloat],
+                   NDArray[NFloat], NDArray[NFloat]],
+) -> NDArray[NFloat]:
     wr = cal_data.ravel()
-    return (
-        corners[0] * wr[cal_ix0]
-        + corners[1] * wr[cal_ix1]
-        + corners[2] * wr[cal_ix2]
-        + corners[3] * wr[cal_ix3]
-    )
+    rv = corners[0] * wr[cal_ix0]
+    rv += corners[1] * wr[cal_ix1]
+    rv += corners[2] * wr[cal_ix2]
+    rv += corners[3] * wr[cal_ix3]
+    return rv
 
 
-def or_reduce_minus_999(walk, walk_ix, x):
-    if x is None:
-        return walk[walk_ix] != -999
-    return x | (walk[walk_ix] != -999)
+@jit
+def or_reduce_minus_999(
+    walk: NDArray[NFloat],
+    walk_ix: NDArray[np.intp],
+    x: NDArray[np.bool_] | None
+) -> NDArray[np.bool_]:
+    y = np.not_equal(walk[walk_ix], -999)
+    if x is not None:
+        return y | x
+    return y
 
-
-def init_wiggle_arrays(floor_x, floor_y, fptrx, fptry, ix, xa, ya):
-    wigx, wigy = np.zeros_like(fptrx), np.zeros_like(fptrx)
+@jit
+def init_wiggle_arrays(
+    floor_x: NDArray[NFloat],
+    floor_y: NDArray[NFloat],
+    fptrx: NDArray[NFloat],
+    fptry: NDArray[NFloat],
+    ix: NDArray[np.intp],
+    xa: NDArray[NFloat],
+    ya: NDArray[NFloat],
+) -> tuple[
+    NDArray[NFloat],
+    NDArray[NFloat],
+    NDArray[NFloat],
+    NDArray[NFloat],
+    NDArray[NFloat],
+    NDArray[NFloat],
+    NDArray[NFloat],
+    NDArray[NFloat],
+]:
+    wigx = np.zeros_like(fptrx)
+    wigy = np.zeros_like(fptry)
     blt = (fptrx - floor_x)[ix]
     blu = (fptry - floor_y)[ix]
     floor_x = floor_x[ix]
@@ -119,42 +200,52 @@ def init_wiggle_arrays(floor_x, floor_y, fptrx, fptry, ix, xa, ya):
     return blt, blu, floor_x, floor_y, wigx, wigy, xa_ix, ya_ix
 
 
+@jit
 def unfancy_distortion_component(
-    cube_x0,
-    cube_dx,
-    cube_y0,
-    cube_dy,
-    cube_d0,
-    cube_dd,
-    cube_nc,
-    cube_nr,
-    flags,
-    ok_indices,
-    stim_coefficients,
-    t,
-    xp_as,
-    yp_as,
-):
+    cube_x0: NDArray[NFloat],
+    cube_dx: NDArray[NFloat],
+    cube_y0: NDArray[NFloat],
+    cube_dy: NDArray[NFloat],
+    cube_d0: NDArray[NFloat],
+    cube_dd: NDArray[NFloat],
+    cube_nc: NDArray[NFloat],
+    cube_nr: NDArray[NFloat],
+    flags: NDArray[NInt],
+    ok_indices: NDArray[np.intp],
+    stim_coefficients: NDArray[NFloat], # this one is Nx2
+    t: NDArray[NFloat],
+    xp_as: NDArray[NFloat],
+    yp_as: NDArray[NFloat],
+) -> tuple[
+    NDArray[NFloat],
+    NDArray[NFloat],
+    NDArray[np.intp],
+    NDArray[NFloat],
+    NDArray[NFloat],
+    NDArray[NFloat],
+]:
     ss = stim_coefficients[0] + (t * stim_coefficients[1])  # stim separation
-    col, row, depth = np.zeros(len(t)), np.zeros(len(t)), np.zeros(len(t))
+    col = np.zeros_like(t)
     col[ok_indices] = (xp_as[ok_indices] - cube_x0) / cube_dx
+
+    row = np.zeros_like(t)
     row[ok_indices] = (yp_as[ok_indices] - cube_y0) / cube_dy
+
+    depth = np.zeros_like(t)
     depth[ok_indices] = (ss[ok_indices] - cube_d0) / cube_dd
+
     # TODO: does this still happen?
-    # [Future]: This throws an error sometimes like the following, may need
-    # fixing...
-    """PhotonPipe.py:262: RuntimeWarning: invalid value encountered in
-                    less depth[((depth < 0)).nonzero()[0]] = 0.
-                    PhotonPipe.py:263: RuntimeWarning: invalid value
-                    encountered in
-                    greater_equal depth[((depth >= cube_nd)).nonzero()[0]] =
-                    -1.
-                    ERROR: IndexError: index -9223372036854775808 is out of
-                    bounds for
-                    axis 0 with size 17 [PhotonPipe]
-                    depth[((depth < 0)).nonzero()[0]] = 0.
-                    depth[((depth >= cube_nd)).nonzero()[0]] = -1.
-                    """
+    # [Future]: This throws an error sometimes like the following,
+    # may need fixing...
+    #     PhotonPipe.py:262: RuntimeWarning: invalid value encountered in
+    #         less depth[((depth < 0)).nonzero()[0]] = 0.
+    #     PhotonPipe.py:263: RuntimeWarning: invalid value encountered in
+    #         greater_equal depth[((depth >= cube_nd)).nonzero()[0]] = -1.
+    #     ERROR: IndexError: index -9223372036854775808 is out of bounds for
+    #         axis 0 with size 17 [PhotonPipe]
+    #     depth[((depth < 0)).nonzero()[0]] = 0.
+    #     depth[((depth >= cube_nd)).nonzero()[0]] = -1.
+
     cut = (
         (col > -1)
         & (col < cube_nc)
@@ -165,7 +256,8 @@ def unfancy_distortion_component(
     )
     flags[~cut] = 11
     ok_indices = np.nonzero(cut)[0]
-    xshift, yshift = np.zeros(len(t)), np.zeros(len(t))
+    xshift = np.zeros_like(t)
+    yshift = np.zeros_like(t)
     return col, depth, ok_indices, row, xshift, yshift
 
 
@@ -173,13 +265,18 @@ def unfancy_distortion_component(
 # def float_between_wiggled_points(blt_u, floor_xy, wig_xy, xya_ix):
 #     return wig_xy[xya_ix, floor_xy] * (1 - blt_u) \
 #            + wig_xy[xya_ix, floor_xy + 1] * blt_u
-def float_between_wiggled_points(blt_u, floor_xy, wig_xy, xya_ix):
+@jit
+def float_between_wiggled_points(
+    blt_u: NDArray[NFloat],
+    floor_xy: NDArray[NFloat],
+    wig_xy: NDArray[NFloat],
+    xya_ix: NDArray[np.intp]
+) -> NDArray[NFloat]:
     wigix = []
     wigix1 = []
     for npix in range(len(xya_ix)):
         wigix.append(wig_xy[xya_ix[npix], floor_xy[npix]])
         wigix1.append(wig_xy[xya_ix[npix], floor_xy[npix] + 1])
-    return np.array(wigix) * (1 - blt_u) + np.array(wigix1) * blt_u
-
-
-nb.jit_module(nopython=True, cache=True)
+    rv = np.array(wigix, dtype=np.float32) * (1 - blt_u)
+    rv += np.array(wigix1, dtype=np.float32) * blt_u
+    return rv
