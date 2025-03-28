@@ -205,6 +205,8 @@ class PipeContext:
         suffix: Optional[str] = None,
         aspect_dir: None | str | Path = None,
         ftype: str = "csv",
+        wide_edge_thresh: int = 340,
+        narrow_edge_thresh: int = 360
     ):
         self.eclipse = eclipse
         self.band = band
@@ -240,6 +242,8 @@ class PipeContext:
         self.suffix = suffix
         self.aspect_dir = aspect_dir
         self.ftype = ftype
+        self.wide_edge_thresh = wide_edge_thresh
+        self.narrow_edge_thresh = narrow_edge_thresh
 
     def __repr__(self):
         params = [ f"{k}={v!r}" for k,v in self.__dict__ ]

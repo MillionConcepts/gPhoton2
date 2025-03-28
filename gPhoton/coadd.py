@@ -95,13 +95,16 @@ def zero_flag(cnt, flag, copy=False):
     if copy is True:
         cnt = cnt.copy()
     cnt[~np.isfinite(cnt)] = 0
-    cnt[np.nonzero(flag)] = 0
+    # mask narrow edge and hotspots
+    cnt[(flag & 0b0001) != 0] = 0
+    cnt[(flag & 0b1000) != 0] = 0
     return cnt
 
 def flag_mask(cnt, flag):
     mask = np.full_like(cnt, False, dtype=bool)
     mask[~np.isfinite(cnt)] = True
-    mask[np.nonzero(flag)] = True
+    # mask narrow edge and hotspots
+    mask |= ((flag & 0b0001) != 0) | ((flag & 0b1000) != 0)
     return mask
 
 # TODO: this version is compatible with RICE compression, but is relatively

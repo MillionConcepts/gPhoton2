@@ -144,7 +144,7 @@ def select_on_detector(
     )
 
 
-def prep_image_inputs(photonfile, edge_threshold, boresight):
+def prep_image_inputs(photonfile, ctx):
     event_table, exposure_array = load_image_tables(photonfile)
     foc, wcs = generate_wcs_components(event_table)
     with warnings.catch_warnings():
@@ -152,7 +152,10 @@ def prep_image_inputs(photonfile, edge_threshold, boresight):
         warnings.simplefilter("ignore")
         weights = 1.0 / event_table["response"].to_numpy()
     # combine flag, mask, edge into "artifacts"
-    artifact_flags = combine_artifacts(event_table, edge_threshold, boresight)
+    artifact_flags = combine_artifacts(
+        event_table,
+        ctx.wide_edge_thresh,
+        ctx.narrow_edge_thresh)
     artifact_ix = np.where(artifact_flags!= 0)
     t = event_table["t"].to_numpy()
     map_ix_dict = generate_indexed_values(foc, artifact_ix, artifact_flags, t, weights)
@@ -160,22 +163,16 @@ def prep_image_inputs(photonfile, edge_threshold, boresight):
     return exposure_array, map_ix_dict, total_trange, wcs
 
 
-def combine_artifacts(event_table, edge_threshold, boresight):
+def combine_artifacts(event_table, wide_edge_thresh, narrow_edge_thresh):
     """ combines flag, mask, and edge flags into 8 bit mask values
     to eventually create a single artifact backplane. Only propagated
      flag is 120 (ghost) because 7 and 12 do not have valid aspect
      solutions. """
     mask_bit = (event_table['mask'].to_numpy() == 1) * 1
     flag_bit = (event_table['flags'].to_numpy() == 120) * 2
-    wide_edge_bit = (event_table['detrad'].to_numpy() > edge_threshold) * 4
-    with warnings.catch_warnings():
-        # don't bother us about divide-by-zero errors
-        warnings.simplefilter("ignore")
-        ra_center = (np.nanmin(event_table['ra']) + np.nanmax(event_table['ra'])) / 2
-        dec_center = (np.nanmin(event_table['dec']) + np.nanmax(event_table['dec'])) / 2
-        proj_rad= np.sqrt((event_table['ra'] - ra_center) ** 2 +
-                          (event_table['dec'] - dec_center) ** 2)
-        narrow_edge_bit = (proj_rad > .9* np.nanmax(proj_rad)) * 8
+    # hard coded narrow (360) and wide (340) edge setting in ctx
+    wide_edge_bit = (event_table['detrad'].to_numpy() > wide_edge_thresh) * 4
+    narrow_edge_bit = (event_table['detrad'].to_numpy() > narrow_edge_thresh) * 8
     artifacts = mask_bit | flag_bit | wide_edge_bit | narrow_edge_bit
     return artifacts
 
@@ -328,7 +325,7 @@ def load_image_tables(
     return event_table, exposure_array
 
 
-def populate_fits_header(band, wcs, tranges, exptimes):
+def populate_fits_header(band, wcs, tranges, exptimes, key, ctx):
     """
     create an astropy.io.fits.Header object containing our canonical
     metadata values
@@ -345,6 +342,9 @@ def populate_fits_header(band, wcs, tranges, exptimes):
     header["EXPEND"] = np.array(tranges).max()
     header["EXPTIME"] = sum(t1 - t0 for (t0, t1) in tranges)
     header["N_FRAME"] = len(tranges)
+    if key == "flag":
+        header["HARDEDGE"] = ctx.narrow_edge_thresh
+        header["SOFTEDGE"] = ctx.wide_edge_thresh
     for i, trange in enumerate(tranges):
         header["T0_{i}".format(i=i)] = trange[0]
         header["T1_{i}".format(i=i)] = trange[1]
@@ -386,7 +386,7 @@ def write_fits_array(
             for key in ["cnt", "flag"]:
                 print(f"writing frame {frame} {key} map")
                 header = populate_fits_header(
-                    ctx.band, wcs, arraymap["tranges"], arraymap["exptimes"]
+                    ctx.band, wcs, arraymap["tranges"], arraymap["exptimes"], key, ctx
                 )
                 header['EXTNAME'] = key.upper()
                 add_array_to_fits_file(
@@ -406,7 +406,7 @@ def write_fits_array(
         for key in ["cnt", "flag"]:
             print(f"writing {key} map")
             header = populate_fits_header(
-                ctx.band, wcs, arraymap["tranges"], arraymap["exptimes"]
+                ctx.band, wcs, arraymap["tranges"], arraymap["exptimes"], key, ctx
             )
             header['EXTNAME'] = key.upper()
             add_array_to_fits_file(

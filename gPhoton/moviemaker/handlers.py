@@ -136,9 +136,7 @@ def write_moviemaker_results(results, ctx):
 def create_images_and_movies(
     ctx: PipeContext,
     photonfile: Pathlike,
-    fixed_start_time: Optional[int] = None,
-    edge_threshold: int = 350,
-    boresight: tuple = (0, 0)
+    fixed_start_time: Optional[int] = None
 ) -> Union[dict, str]:
     print(f"making images from {photonfile}")
     print("indexing data and making WCS solution")
@@ -146,8 +144,7 @@ def create_images_and_movies(
     status = "started"
     exposure_array, map_ix_dict, total_trange, wcs = prep_image_inputs(
         photonfile,
-        edge_threshold,
-        boresight
+        ctx
     )
     imsz = (
         int((wcs.wcs.crpix[1] - 0.5) * 2), int((wcs.wcs.crpix[0] - 0.5) * 2)
