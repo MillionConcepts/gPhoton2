@@ -60,8 +60,9 @@ def make_frame(
     :return: ndarray containing single image made from 2D histogram of inputs
     """
     frame = np.zeros(imsz, dtype=np.uint8)
-    # less than 0 foc values break bin2d
-    cut = np.all(foc >= 0, axis=1)
+    # less than 0 foc values break bin2d, greater than imsz values do too
+    min_max = np.min([imsz[0],imsz[1]])
+    cut = np.all((foc >= .5) & (foc <= min_max+.5), axis=1)
     foc = foc[cut]
     weights = weights[cut]
     if len(foc) > 0:

@@ -348,8 +348,9 @@ def execute_full_pipeline(ctx):
             results = create_images_and_movies(
                 ctx, path, fixed_start_time=fixed_start_time
             )
-        except ValueError:
+        except ValueError as e:
             print(f"failed to create images and movies for leg {leg_step.leg}")
+            print(f"Error: {e}")
             continue
         ctx.watch.click()
         if not (results["status"].startswith("successful")):
