@@ -8,18 +8,14 @@ import logging
 import threading
 from math import floor
 from sys import stdout
-from collections.abc import MutableMapping, Callable, Iterable
+from collections.abc import Iterable
 from typing import Any
 from pathlib import Path
 
 import rich
-from cytoolz import first
-from dustgoggles.func import zero
 from rich.progress import Progress, TextColumn, Task
 from rich.spinner import Spinner
 from rich.text import Text
-
-from gPhoton.reference import Netstat, Stopwatch
 
 GPHOTON_CONSOLE = rich.console.Console()
 GPHOTON_PROGRESS = Progress(console=GPHOTON_CONSOLE)
@@ -177,82 +173,3 @@ def print_inline(text: str, blanks: int = 60) -> None:
     stdout.write(" "*blanks+"\r")
     stdout.write(text+'\r')
     stdout.flush()
-
-
-def record_and_yell(message: str, cache: MutableMapping, loud: bool = False):
-    """
-    place message into a cache object with a timestamp; optionally print it
-    """
-    if loud is True:
-        print(message)
-    cache[dt.datetime.now().isoformat()] = message
-
-
-def notary(cache):
-
-    def note(message, loud: bool = False, eject: bool = False):
-        if eject is True:
-            return cache
-        return record_and_yell(message, cache, loud)
-    return note
-
-
-def print_stats(watch, netstat):
-    watch.start(), netstat.update()
-
-    def printer(total=False, eject=False):
-        netstat.update()
-        if eject is True:
-            return watch, netstat
-        if total is True:
-            text = (
-                f"{watch.total()} total s,"
-                f"{mb(round(first(netstat.total.values())))} total MB"
-            )
-        else:
-            text = (
-                f"{watch.peek()} s,"
-                f"{mb(round(first(netstat.interval.values())))} MB"
-            )
-            watch.click()
-        return text
-    return printer
-
-
-def make_monitors(
-    fake: bool = False, silent: bool = True, round_to: int | None = None
-) -> tuple[Callable, Callable]:
-    if fake:
-        return zero, zero
-
-    stat = print_stats(Stopwatch(silent=silent, digits=round_to), Netstat())
-    note = notary({})
-    return stat, note
-
-
-# class PHOTONLIGHTER(RegexHighlighter):
-#     base_style = "GPHOTON."
-#     highlights = [
-#         r"(?P<missing>(skipping))",
-#         r"(?P<prep>(loaded|generated|found|converted))",
-#         r"(?P<output>(wrote|completed))",
-#         r"(?<=[Z _])(?P<id>[R|L]\d[RGB]?)",
-#         r"(?P<id>(zcam|ZCAM)\d\d\d\d\d)",
-#         r"(?P<id>(sol|SOL)\d{2,4})",
-#         r"(?P<selection>\(\d{1,3}\))",
-#         r"(?P<marslab>(-roi.fits)|(-marslab.*csv))",
-#     ]
-#
-#
-# PHOTONTHEME = Theme(
-#     {
-#         "GPHOTON.output": "green1",
-#         "GPHOTON.prep": "aquamarine3",
-#         "GPHOTON.id": "dark_turquoise",
-#         "GPHOTON.selection": "bold",
-#         "GPHOTON.missing": "purple4",
-#         "GPHOTON.marslab": "italic orchid1",
-#         "FORBIDDEN": "hot_pink on black",
-#         "FORBIDDEN.warning": "slate_blue1 on black",
-#     }
-# )

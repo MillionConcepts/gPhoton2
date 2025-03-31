@@ -79,57 +79,6 @@ PROC_NET_DEV_FIELDS = (
 )
 
 
-def parseprocnetdev(rejects=("lo",)):
-    records = []
-    with open("/proc/net/dev", "rt") as fp:
-        for line in fp:
-            try:
-                interface, values = line.split(":", maxsplit=1)
-            except ValueError:
-                continue
-            interface = interface.strip()
-            if interface in rejects:
-                continue
-            values = values.split()
-            record = {
-                field: int(number)
-                # intentionally throwing away the values after the end of
-                # PROC_NET_DEV_FIELDS
-                for field, number in zip(PROC_NET_DEV_FIELDS, values,
-                                         strict=False)
-            }
-            record["interface"] = interface
-            records.append(record)
-    return records
-
-
-class Netstat:
-    # TODO: monitor TX as well as RX, etc.
-    def __init__(self, rejects=("lo",)):
-        self.rejects = rejects
-        self.absolute = None
-        self.last = {}
-        self.interval = {}
-        self.total = {}
-        self.update()
-
-    def update(self):
-        self.absolute = parseprocnetdev(self.rejects)
-        for line in self.absolute:
-            interface, bytes_ = line["interface"], line["bytes"]
-            if interface not in self.interval:
-                self.total[interface] = 0
-                self.interval[interface] = 0
-                self.last[interface] = bytes_
-            else:
-                self.interval[interface] = bytes_ - self.last[interface]
-                self.total[interface] += self.interval[interface]
-                self.last[interface] = bytes_
-
-    def __repr__(self):
-        return str(self.absolute)
-
-
 def crudely_find_library(obj: Any) -> str:
     if isinstance(obj, functools.partial):
         if obj.args and callable(obj.args[0]):
