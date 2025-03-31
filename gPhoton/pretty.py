@@ -6,11 +6,11 @@
 import datetime as dt
 import logging
 import threading
-from functools import reduce
 from math import floor
-from operator import add
 from sys import stdout
-from collections.abc import MutableMapping, Callable
+from collections.abc import MutableMapping, Callable, Iterable
+from typing import Any
+from pathlib import Path
 
 import rich
 from cytoolz import first
@@ -24,53 +24,75 @@ from gPhoton.reference import Netstat, Stopwatch
 GPHOTON_CONSOLE = rich.console.Console()
 GPHOTON_PROGRESS = Progress(console=GPHOTON_CONSOLE)
 
+MEGA_BYTES = 1024 * 1024
+
 
 def stamp() -> str:
     return dt.datetime.now().strftime("%Y-%m-%dT%H:%M:%S: ")
 
 
-def console_and_log(message, level="info", style=None):
+def console_and_log(
+    message: str,
+    level: str = "info",
+    style: str | None = None,
+) -> None:
     GPHOTON_CONSOLE.print(message, style=style)
     getattr(logging, level)(message)
 
 
-def mb(b, round_to=2):
-    return round(int(b) / 1024 ** 2, round_to)
+def mb(b: float | str, round_to: int = 2) -> float:
+    return round(float(b) / MEGA_BYTES, round_to)
 
 
-def render_spinners(spinners, task):
-    return reduce(
-        add, [spinner.render(task.get_time()) for spinner in spinners]
-    )
+def render_spinners(spinners: Iterable[Spinner], task: Task) -> Text:
+    rendered = Text()
+    time = task.get_time()
+    for spinner in spinners:
+        match spinner.render(time):
+            case str() as s:
+                rendered.append(s)
+            case Text() as s:
+                rendered.append_text(s)
+            case other:
+                # spinner.render() can theoretically return an
+                # arbitrary RenderableType, which includes things
+                # which are neither str nor Text.  As far as I can
+                # tell, there is no way to append those things to a
+                # Text instance, and the only reason the previous
+                # version of this function worked is that, as used
+                # in this file, spinner.render() always does return
+                # either a str or a Text.
+                raise NotImplementedError(
+                    f"Don't know how to append {other!r} to a rich.Text"
+                )
+    return rendered
 
 
 class SpinTextColumn(TextColumn):
     def __init__(
         self,
         text_format: str,
-        spinner_names=None,
-        postspinner_names=None,
-        style="none",
+        spinner_names: Iterable[str] | None = None,
+        postspinner_names: Iterable[str] | None = None,
+        style: str = "none",
         speed: float = 1.0,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         super().__init__(text_format, style, **kwargs)
-        if spinner_names:
-            self.spinners = [
-                Spinner(spinner_name, style=style, speed=speed)
-                for spinner_name in spinner_names
-            ]
-        else:
-            self.spinners = []
-        if postspinner_names:
-            self.postspinners = [
-                Spinner(spinner_name, style=style, speed=speed)
-                for spinner_name in postspinner_names
-            ]
-        else:
-            self.postspinners = []
+        if not spinner_names:
+            spinner_names = []
+        if not postspinner_names:
+            postspinner_names = []
+        self.spinners = [
+            Spinner(spinner_name, style=style, speed=speed)
+            for spinner_name in spinner_names
+        ]
+        self.postspinners = [
+            Spinner(spinner_name, style=style, speed=speed)
+            for spinner_name in postspinner_names
+        ]
 
-    def render(self, task: Task):
+    def render(self, task: Task) -> Text:
         _text = self.text_format.format(task=task)
         if self.markup:
             text = Text.from_markup(
@@ -100,11 +122,11 @@ GPHOTON_PROGRESS_SPIN = Progress(
 class LogMB:
     def __init__(
         self,
-        progress=False,
-        chunk_size=25,
-        file_size=None,
-        filename=None,
-        log=False,
+        progress: bool = False,
+        chunk_size: int = 25,
+        file_size: float | None = None,
+        filename: str | Path | None = None,
+        log: bool = False,
     ):
         self._seen_so_far = 0
         self._lock = threading.Lock()
@@ -124,14 +146,14 @@ class LogMB:
             self._task_id = self.progress_object.add_task(description)
         self.log = log
 
-    def _advance(self, n_bytes):
+    def _advance(self, n_bytes: int) -> None:
         if self.log is True:
             console_and_log(
                 stamp() + f"transferred {mb(n_bytes)}MB", style="blue"
             )
         self.progress_object.advance(self._task_id)
 
-    def __call__(self, bytes_amount):
+    def __call__(self, bytes_amount: int) -> None:
         with self._lock:
             extra = self._seen_so_far + bytes_amount
             if mb(extra - self._seen_so_far) >= self._chunk_size:
@@ -139,7 +161,7 @@ class LogMB:
             self._seen_so_far = extra
 
 
-def print_inline(text, blanks=60):
+def print_inline(text: str, blanks: int = 60) -> None:
     """
     For updating text in place without a carriage return.
 
@@ -153,7 +175,7 @@ def print_inline(text, blanks=60):
     """
 
     stdout.write(" "*blanks+"\r")
-    stdout.write(str(str(text)+'\r'))
+    stdout.write(text+'\r')
     stdout.flush()
 
 
