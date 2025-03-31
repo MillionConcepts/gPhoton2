@@ -5,22 +5,24 @@
 from itertools import product
 import math
 from operator import add, sub
-from collections.abc import Sequence
+from collections.abc import Sequence, Mapping
+from typing import Any
 
 import astropy.wcs
 import numpy as np
 
 import gPhoton.constants as c
+from gPhoton.types import NDArray, NFloat
 
 
 # ------------------------------------------------------------------------------
 
 
 def make_wcs(
-    skypos: Sequence,
+    skypos: Sequence[float],
     pixsz: float = 0.000416666666666667,
     imsz: Sequence[int] = (3200, 3200),
-    proj=("RA---TAN", "DEC--TAN")
+    proj: Sequence[str] = ("RA---TAN", "DEC--TAN")
 ) -> astropy.wcs.WCS:
     """
     makes a WCS object from passed center ra/dec, scale, and image size
@@ -37,7 +39,7 @@ def make_wcs(
 
 
 def make_bounding_wcs(
-    radec: np.ndarray,
+    radec: NDArray[NFloat],
     pixsz: float = c.DEGPERPIXEL,
     proj: Sequence[str] = ("RA---TAN", "DEC--TAN")
 ) -> astropy.wcs.WCS:
@@ -70,7 +72,7 @@ def make_bounding_wcs(
     return make_wcs((ra0, dec0), imsz=imsz, pixsz=pixsz, proj=proj)
 
 
-def translate_pc_keyword(keyword: str):
+def translate_pc_keyword(keyword: str) -> str:
     """
     convert old-style fits wcs transformation keywords. this is not strictly
     necessary for any GALEX products, but is useful for some data fusion
@@ -84,7 +86,7 @@ def translate_pc_keyword(keyword: str):
     return keyword.replace("PC00", "PC").replace("00", "_")
 
 
-def extract_wcs_keywords(header):
+def extract_wcs_keywords(header: Mapping[str, Any]) -> dict[str, Any]:
     """
     header formatting and WCS keyword handling can make astropy.wcs upset,
     it handles validation and fixes gracefully, but not quickly. faster
@@ -106,24 +108,39 @@ def extract_wcs_keywords(header):
     return not_z | un_zd
 
 
-def corners_of_a_rectangle(ra, dec, ra_x=None, dec_x=None):
+def corners_of_a_rectangle(
+    ra: float,
+    dec: float,
+    ra_x: float | None = None,
+    dec_x: float | None = None,
+) -> list[tuple[float, float]]:
     """
     corners of a rectangle centered at ra, dec with side lengths ra_x, dec_x.
+    at least one of ra_x and dec_x must be passed.
     if only one of ra_x or dec_x is passed, will cut a square.
     returns coordinates in the order:
     upper right, lower right, upper left, lower left
     """
-    if (ra_x is None) and (dec_x is None):
-        raise ValueError("at least one extent must be specified.")
-    ra_x = ra_x if ra_x is not None else dec_x
-    dec_x = dec_x if dec_x is not None else ra_x
+
+    # this has to be written this way for mypy to understand that
+    # afterward neither ra_x nor dec_x can be None
+    if ra_x is None:
+        if dec_x is None:
+            raise ValueError("at least one extent must be specified.")
+        ra_x = dec_x
+    elif dec_x is None:
+        dec_x = ra_x
+
     return [
         (op1(ra, ra_x / 2), op2(dec, dec_x / 2))
         for op1, op2 in product((add, sub), (add, sub))
     ]
 
 
-def sky_box_to_image_box(corners, system):
+def sky_box_to_image_box(
+    corners: NDArray[NFloat],
+    system: astropy.wcs.WCS,
+) -> tuple[float, float, float, float]:
     """
     get image coordinates that correspond to a sky-coordinate square with
     specified corners (in whatever units wcs axes 1 and 2 are in, most likely
@@ -132,7 +149,9 @@ def sky_box_to_image_box(corners, system):
     cuts = system.world_to_pixel_values(
         np.array(corners)[:, 0], np.array(corners)[:, 1]
     )
-    rounded_index_map = map(
-        round, (cuts[0].min(), cuts[0].max(), cuts[1].min(), cuts[1].max())
+    return (
+        round(cuts[0].min()),
+        round(cuts[0].max()),
+        round(cuts[1].min()),
+        round(cuts[1].max()),
     )
-    return tuple(rounded_index_map)
