@@ -10,8 +10,18 @@ from collections.abc import Sequence
 from astropy.io import fits as pyfits
 import numpy as np
 
+from gPhoton.types import NDArray, NFloat
 
-def load_aspect_files(aspfiles: Sequence[str]):
+def load_aspect_files(
+    aspfiles: Sequence[str]
+) -> tuple[
+    NDArray[NFloat],
+    NDArray[NFloat],
+    NDArray[NFloat],
+    NDArray[NFloat],
+    dict[str, NDArray[NFloat]],
+    NDArray[NFloat],
+]:
     """
     Loads a set of aspect_data files into a bunch of arrays.
 
@@ -24,10 +34,16 @@ def load_aspect_files(aspfiles: Sequence[str]):
         header are returned as np.ndarrays. The header is returned as a dict
         containing the RA, DEC, and roll from the headers of the files.
     """
-    ra, dec = np.array([]), np.array([])
-    twist, time, aspflags = np.array([]), np.array([]), np.array([])
-
-    header = {"RA": np.array([]), "DEC": np.array([]), "ROLL": np.array([])}
+    ra = np.array([])
+    dec = np.array([])
+    twist = np.array([])
+    time = np.array([])
+    aspflags = np.array([])
+    header = {
+        "RA": np.array([]),
+        "DEC": np.array([]),
+        "ROLL": np.array([])
+    }
     for aspfile in aspfiles:
         print("         ", aspfile)
         hdulist = pyfits.open(aspfile, memmap=1)
