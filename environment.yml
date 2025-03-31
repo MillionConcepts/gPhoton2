@@ -31,3 +31,4 @@ dependencies:
   - astroquery
   # optional, only required for tests
   - pytest
+  - quickbin

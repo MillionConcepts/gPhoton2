@@ -36,6 +36,7 @@ dependencies = [
     "scikit-image >= 0.20",
     "scipy",
     "sh",
+    "quickbin",
 ]
 
 [project.optional-dependencies]
