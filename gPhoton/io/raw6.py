@@ -3,7 +3,7 @@
    :synopsis: Methods for reading GALEX L0 telemetry ("raw6") files
 """
 from collections.abc import Mapping
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 from astropy.io import fits as pyfits
 import fitsio
@@ -11,10 +11,14 @@ import numpy as np
 
 from gPhoton.calibrate import center_and_scale
 from gPhoton.pretty import print_inline
-from gPhoton.types import Pathlike, GalexBand
+from gPhoton.types import Pathlike, GalexBand, NDArray
 
 
-def load_raw6(raw6file: Pathlike, verbose: int):
+def load_raw6(raw6file: Pathlike, verbose: int = 0) -> tuple[
+    dict[Literal['q', 't', 'x', 'xa', 'xamc', 'xb', 'y', 'ya', 'yamc', 'yb'],
+         NDArray[Any]],
+    int
+]:
     """
     open and decode a GALEX raw telemetry (.raw6) file and return it as a
     DataFrame. This function replicates mission-standard L0 data processing.
@@ -43,23 +47,25 @@ def load_raw6(raw6file: Pathlike, verbose: int):
 
 def get_eclipse_from_header(
     raw6file: Pathlike, eclipse: int | None = None
-):
+) -> int:
     # note that astropy is much faster than fitsio for the specific purpose of
     # skimming a FITS header from a compressed FITS file
-    hdulist = pyfits.open(raw6file)
-    hdr = hdulist[0].header
-    hdulist.close()
-    if eclipse and (eclipse != hdr["eclipse"]):  # just a consistency check
+    with pyfits.open(raw6file) as hdulist:
+        h_eclipse = hdulist[0].header["eclipse"]
+    assert isinstance(h_eclipse, int)
+
+    if eclipse is not None and eclipse != h_eclipse: # just a consistency check
         print(
             f"Warning: eclipse mismatch {eclipse} vs. "
-            f"{hdr['eclipse']} (header)"
+            f"{h_eclipse} (header)"
         )
-    return hdr["eclipse"]
+    return h_eclipse
 
 
 def decode_telemetry(
     band: GalexBand, eclipse: int, raw6hdulist: fitsio.FITS
-):
+) -> dict[Literal['q', 't', 'x', 'xa', 'xamc', 'xb', 'y', 'ya', 'yamc', 'yb'],
+          NDArray[Any]]:
     """"""
     data = bitwise_decode_photonbytes(unpack_raw6(raw6hdulist))
     data = center_and_scale(band, data, eclipse)
@@ -68,7 +74,7 @@ def decode_telemetry(
 
 
 def unpack_raw6(raw6hdulist: fitsio.FITS) -> dict[
-    Literal["t", 1, 2, 3, 4, 5], np.ndarray
+    Literal["t", 1, 2, 3, 4, 5], NDArray[Any]
 ]:
     """
     GALEX raw6 files are stored in a complex binary format. This function
@@ -85,16 +91,16 @@ def unpack_raw6(raw6hdulist: fitsio.FITS) -> dict[
     )
     # mypy can't see that `for byte in range(5)` returns values that
     # satisfy the Literal spec on the return value
-    photonbytes: dict[str | int, np.ndarray] = {}
+    photonbytes: dict[str | int, NDArray[Any]] = {}
     for byte in range(5):
         photonbytes[byte + 1] = photonbytes_as_short[photonbyte_cols[byte]]
     photonbytes["t"] = table_data["t"]
-    return cast(dict[Literal["t", 1, 2, 3, 4, 5], np.ndarray], photonbytes)
+    return cast(dict[Literal["t", 1, 2, 3, 4, 5], NDArray[Any]], photonbytes)
 
 
 def bitwise_decode_photonbytes(
-    photonbytes: Mapping[Literal['t', 1, 2, 3, 4, 5], np.ndarray]
-) -> dict[Literal["t", "xb", "xamc", "yb", "yamc", "q", "xa"], np.ndarray]:
+    photonbytes: Mapping[Literal['t', 1, 2, 3, 4, 5], NDArray[Any]]
+) -> dict[Literal["t", "xb", "xamc", "yb", "yamc", "q", "xa"], NDArray[Any]]:
     """
     GALEX photon events are stored in a packed binary format in the
     'photonbyte' (phb1 - phb6, though phb6 is unused) columns of raw6 files.

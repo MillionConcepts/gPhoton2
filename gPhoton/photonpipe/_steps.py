@@ -1,9 +1,9 @@
 from itertools import product
 from statistics import mean
 from collections.abc import Mapping
+from typing import Any, Literal
 
 import numpy as np
-import pandas as pd
 from cytoolz import keyfilter
 from dustgoggles.structures import NestingDict
 
@@ -36,7 +36,7 @@ from gPhoton.sharing import (
     reference_shared_memory_arrays,
     send_to_shared_memory,
 )
-from gPhoton.types import GalexBand
+from gPhoton.types import GalexBand, NDArray
 
 
 # variables actually used later in the pipeline
@@ -565,8 +565,14 @@ def perform_yac_correction(
     band: GalexBand,
     eclipse: int,
     stims: Mapping[int, Mapping],
-    data: pd.DataFrame,
-) -> pd.DataFrame:
+    data: dict[
+        Literal['q', 't', 'x', 'xa', 'xamc', 'xb', 'y', 'ya', 'yamc', 'yb'],
+        NDArray[Any]
+    ]
+) -> dict[
+    Literal['q', 't', 'x', 'xa', 'xamc', 'xb', 'y', 'ya', 'yamc', 'yb'],
+    NDArray[Any]
+]:
     """
     perform y-axis corrections to raw detector positions.
     :param band: "NUV" or "FUV:
