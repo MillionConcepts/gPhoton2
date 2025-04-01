@@ -12,6 +12,7 @@
 
 import os
 import time
+from math import floor
 from pathlib import Path
 from typing import Literal
 
@@ -36,7 +37,7 @@ MCAT_DB = "GR6Plus7.dbo"
 FORMAT_URL = f" -- {TIME_ID}&format=extjs"
 
 
-def truncate(n: float):
+def truncate(n: float) -> str:
     """
     The photon event timestamps are stored in MAST's database at the level of
     SQL's BIGINT in order to save space. This is accomplished by
@@ -46,7 +47,7 @@ def truncate(n: float):
     extra precision does not matter for science. For consistency with the
     database, we truncate times at 1ms for queries.
     """
-    return str(n * TSCALE).split(".")[0]
+    return str(floor(n * TSCALE))
 
 
 def get_raw_paths(eclipse: int, verbose: int = 0) -> dict[str, str|None]:
@@ -118,7 +119,7 @@ def download_data(
 
 
 # -----------------------------------------------------------------------------
-def raw_data_paths(eclipse):
+def raw_data_paths(eclipse: int) -> str:
     """
     Construct a URL that will retrieve a data structure containing MAST
     download paths for raw6 and scst files.

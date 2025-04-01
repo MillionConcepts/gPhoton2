@@ -9,10 +9,12 @@ import numpy as np
 from gPhoton.io.mast import (
     manage_networked_sql_request, mast_url, download_data, MCAT_DB
 )
-from gPhoton.types import Pathlike
+
+from gPhoton.types import Pathlike, NDArray, NFloat
+from typing import Any
 
 
-def has_nan(query):
+def assert_no_nans(query: str) -> None:
     """
     Check if there is NaN in a query (or any string) and, if so, raise an
         exception -- NaNs probably indicate that something has gone wrong.
@@ -26,7 +28,7 @@ def has_nan(query):
 
 
 # not presently in use
-def get_array(query, verbose=0, retries=100):
+def get_array(query: str, verbose: int = 0, retries: int = 100) -> Any:
     """
     Manage a database call which returns an array of values.
 
@@ -46,7 +48,7 @@ def get_array(query, verbose=0, retries=100):
         query does not receive a response, returns None.
     """
 
-    has_nan(query)
+    assert_no_nans(query)
 
     out = manage_networked_sql_request(query, maxcnt=retries, verbose=verbose)
 
@@ -66,7 +68,7 @@ def get_array(query, verbose=0, retries=100):
 
 
 # not presently in use
-def obstype(objid):
+def obstype(objid: int) -> str:
     """
     Get the dither pattern type based on the object id. Not currently in use.
 
@@ -87,7 +89,18 @@ def obstype(objid):
 
 
 # ------------------------------------------------------------------------------
-def retrieve_aspect(eclipse, retries=20, quiet=False):
+def retrieve_aspect(
+    eclipse: int,
+    retries: int = 20,
+    quiet: bool = False
+) -> tuple[
+    NDArray[NFloat],
+    NDArray[NFloat],
+    NDArray[NFloat],
+    NDArray[NFloat],
+    dict[str, NDArray[NFloat]],
+    NDArray[NFloat],
+] | None:
     """
     Grabs and organizes aspect data from MAST databases based on eclipse.
     Use in pipeline is deprecated by consolidated aspect tables, but may be
@@ -116,7 +129,7 @@ def retrieve_aspect(eclipse, retries=20, quiet=False):
         print("		Located " + str(n) + " aspect_data entries.")
         if not n:
             print("No aspect_data entries for eclipse " + str(eclipse))
-            return None
+            return None # FIXME should probably be an exception
     ra, dec, twist, time, flags = [], [], [], [], []
     ra0, dec0, twist0 = [], [], []
     for i in range(n):
@@ -150,7 +163,7 @@ def retrieve_aspect(eclipse, retries=20, quiet=False):
     )
 
 
-def aspect_ecl(eclipse):
+def aspect_ecl(eclipse: int) -> str:
     """
     Return aspect information for a given eclipse.
 
