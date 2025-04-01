@@ -74,9 +74,15 @@ packages = "gPhoton"
 exclude = [
    # experimental code with dependencies not listed above
    '_dev/profile\.py$',
+   # not used by main library; uses DataFrame in type-unfriendly fashion
+   'search/core\.py$',
+   # bitrotted tests
+   'tests/test_pipeline_regression\.py$',
+   'tests/test_pipeline_regression_quick\.py$',
 ]
 # things like 'leg = str(leg)' are idiomatic in this codebase
 allow_redefinition = true
+plugins = "numpy.typing.mypy_plugin"
 
 [[tool.mypy.overrides]]
 # dependencies that currently (2025-01-17) don't have type annotations
