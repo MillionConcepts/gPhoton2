@@ -27,7 +27,6 @@ from gPhoton.pretty import print_inline
 from gPhoton.reference import PipeContext
 from gPhoton.sharing import (
     reference_shared_memory_arrays,
-    slice_into_memory,
     unlink_nested_block_dict,
     send_to_shared_memory,
 )
@@ -234,9 +233,9 @@ def slice_frame_into_memory(
     if len(frame_time_ix) == 0:
         return None
     try:
-        return slice_into_memory(
+        return send_to_shared_memory(
             {k: v for k, v in map_ix_dict[map_name].items() if k != "t"},
-            (frame_time_ix.min(), frame_time_ix.max()),
+            slice(frame_time_ix.min(), frame_time_ix.max()),
         )
     except ValueError as error:
         # case in which there are no events for this map in this
