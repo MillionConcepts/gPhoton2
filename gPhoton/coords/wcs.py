@@ -10,6 +10,7 @@ from typing import Any
 
 import astropy.wcs
 import numpy as np
+from numpy.typing import ArrayLike
 
 import gPhoton.constants as c
 from gPhoton.types import NDArray, NFloat
@@ -138,9 +139,9 @@ def corners_of_a_rectangle(
 
 
 def sky_box_to_image_box(
-    corners: NDArray[NFloat],
+    corners: ArrayLike,
     system: astropy.wcs.WCS,
-) -> tuple[float, float, float, float]:
+) -> tuple[int, int, int, int]:
     """
     get image coordinates that correspond to a sky-coordinate square with
     specified corners (in whatever units wcs axes 1 and 2 are in, most likely

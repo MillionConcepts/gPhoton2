@@ -1,12 +1,9 @@
 import warnings
-from functools import reduce
-from itertools import product
 from multiprocessing import Pool
-from operator import or_
 
-from collections.abc import Mapping, Sequence, Callable
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal, cast
 
 import astropy.wcs
 import fast_histogram as fh
@@ -25,10 +22,14 @@ from gPhoton.io.fits_utils import (
     AgnosticHDU,
 )
 from gPhoton.eclipse import eclipse_to_paths
-from gPhoton.types import Pathlike
+from gPhoton.types import Pathlike, NDArray, NFloat
 
 
-def get_image_fns(*eclipses, band="NUV", root="test_data"):
+def get_image_fns(
+    *eclipses: int,
+    band: Literal["NUV", "FUV"] = "NUV",
+    root: Pathlike = "test_data"
+) -> list[Path]:
     """
     Construct list of filenames for a series of eclipse images.
     Args:
@@ -45,7 +46,7 @@ def get_image_fns(*eclipses, band="NUV", root="test_data"):
     ]
 
 
-def wcs_imsz(system: astropy.wcs.WCS):
+def wcs_imsz(system: astropy.wcs.WCS) -> tuple[int, int]:
     """
     image size associated with a WCS object. WARNING: not universally
     applicable! works if and only if the reference pixel is at the center of
@@ -57,7 +58,9 @@ def wcs_imsz(system: astropy.wcs.WCS):
     )
 
 
-def wcs_ra_dec_corners(wcs_system):
+def wcs_ra_dec_corners(
+    wcs_system: astropy.wcs.WCS
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """
     corners, in sky coordinates, of the image associated with a WCS object.
     WARNING: not universally applicable! works if and only if the reference
@@ -65,34 +68,51 @@ def wcs_ra_dec_corners(wcs_system):
     """
     imsz = wcs_imsz(wcs_system)
     ymax, xmax = imsz[1], imsz[0]
-    return wcs_system.pixel_to_world_values(
-        (0, ymax, ymax, 0), (0, xmax, 0, xmax)
+    # astropy isn't fully typed
+    return cast(
+        tuple[NDArray[np.float64], NDArray[np.float64]],
+        wcs_system.pixel_to_world_values(
+            (0, ymax, ymax, 0), (0, xmax, 0, xmax)
+        )
     )
 
 
-def bounds_from_corners(corners):
-    extremes = []
-    for pred, coord in product((np.max, np.min), np.arange(len(corners[0]))):
-        local_extrema = map(pred, [corner[coord] for corner in corners])
-        extremes.append(pred(tuple(local_extrema)))
-    return extremes
+def bounds_from_corners(
+    corners: Iterable[tuple[NDArray[NFloat], NDArray[NFloat]]]
+) -> tuple[float, float, float, float]:
+
+    ra_maxes = []
+    ra_mins = []
+    dec_maxes = []
+    dec_mins = []
+
+    for corner in corners:
+        ra_maxes.append(corner[0].max())
+        ra_mins.append(corner[0].min())
+        dec_maxes.append(corner[1].max())
+        dec_mins.append(corner[1].min())
+
+    return (min(ra_mins), min(dec_mins), max(ra_maxes), max(dec_maxes))
 
 
-def make_shared_wcs(wcs_sequence):
+def make_shared_wcs(wcs_sequence: Iterable[astropy.wcs.WCS]) -> astropy.wcs.WCS:
     """
     WARNING: not universally applicable! works if and only if the reference
     pixels of the WCS objects in wcs_sequence are at the center of the images.
     if this is not relevant to your use case, explicitly construct
     sky-coordinate bounds and feed them to make_bounding_wcs.
     """
-    corners = tuple(map(wcs_ra_dec_corners, wcs_sequence))
-    ra_min, dec_min, ra_max, dec_max = map(
-        np.float32, bounds_from_corners(corners)
+    ra_min, dec_min, ra_max, dec_max = bounds_from_corners(
+        wcs_ra_dec_corners(system) for system in wcs_sequence
     )
     return make_bounding_wcs(np.array([[ra_min, dec_min], [ra_max, dec_max]]))
 
 
-def zero_flag(cnt, flag, copy=False):
+def zero_flag(
+    cnt: NDArray[NFloat],
+    flag: NDArray[np.uint8],
+    copy: bool = False
+) -> NDArray[NFloat]:
     # copy is for making masked cnt for lightcurve use
     if copy is True:
         cnt = cnt.copy()
@@ -102,23 +122,28 @@ def zero_flag(cnt, flag, copy=False):
     cnt[(flag & 0b1000) != 0] = 0
     return cnt
 
-def flag_mask(cnt, flag):
-    mask = np.full_like(cnt, False, dtype=bool)
-    mask[~np.isfinite(cnt)] = True
+
+def flag_mask(
+    cnt: NDArray[NFloat],
+    flag: NDArray[np.uint8]
+) -> NDArray[np.bool_]:
+    # ~np.isfinite(cnt) is typed as Any for some reason (bug in numpy 1.26?)
+    mask = cast(NDArray[np.bool_], ~np.isfinite(cnt))
     # mask narrow edge and hotspots
     mask |= ((flag & 0b0001) != 0) | ((flag & 0b1000) != 0)
     return mask
+
 
 # TODO: this version is compatible with RICE compression, but is relatively
 #  inefficient. needs to be juiced up.
 # TODO: update for everything-has-four-HDUs
 def project_to_shared_wcs(
-    fits_path: str | Path,
+    fits_path: Pathlike,
     shared_wcs: astropy.wcs.WCS,
     hdu_offset: Literal[0, 1] = 0,
     nonzero: bool = True,
     system: astropy.wcs.WCS | None = None,
-):
+) -> dict[Literal["x", "y", "weight", "exptime"], Any]:
     """
     fits_path: path to fits file
     shared_wcs: WCS object
@@ -150,17 +175,26 @@ def project_to_shared_wcs(
     }
 
 
-def bin_projected_weights(x, y, weights, imsz):
-    return fh.histogram2d(
+def bin_projected_weights(
+    x: NDArray[NFloat],
+    y: NDArray[NFloat],
+    weights: NDArray[NFloat],
+    imsz: tuple[float, float],
+) -> NDArray[NFloat]:
+    return cast(NDArray[NFloat], fh.histogram2d(
         y - 0.5,
         x - 0.5,
         bins=imsz,
         range=([[0, imsz[0]], [0, imsz[1]]]),
         weights=weights,
-    )
+    ))
 
 
-def get_full_frame_coadd_layer(gphoton_fits, shared_wcs, hdu_offset=0):
+def get_full_frame_coadd_layer(
+    gphoton_fits: Pathlike,
+    shared_wcs: astropy.wcs.WCS,
+    hdu_offset: Literal[0, 1] = 0
+) -> NDArray[NFloat]:
     projection = project_to_shared_wcs(gphoton_fits, shared_wcs, hdu_offset)
     return bin_projected_weights(
         projection["x"],
@@ -170,7 +204,7 @@ def get_full_frame_coadd_layer(gphoton_fits, shared_wcs, hdu_offset=0):
     )
 
 
-def coadd_image_files(image_files):
+def coadd_image_files(image_files: Iterable[Pathlike]) -> NDArray[np.float64]:
     headers, systems = read_wcs_from_fits(*image_files)
     shared_wcs = make_shared_wcs(systems)
     coadd = np.zeros(wcs_imsz(shared_wcs), dtype=np.float64)
@@ -183,8 +217,12 @@ def coadd_image_files(image_files):
 
 
 def project_slice_to_shared_wcs(
-    values, individual_wcs, shared_wcs, ra_min, dec_min
-):
+    values: NDArray[NFloat],
+    individual_wcs: astropy.wcs.WCS,
+    shared_wcs: astropy.wcs.WCS,
+    ra_min: float,
+    dec_min: float,
+) -> dict[Literal["x", "y", "weight"], Any]:
     """
     Args:
         values: sliced values from source image
@@ -204,24 +242,27 @@ def project_slice_to_shared_wcs(
     }
 
 
-def _check_oob(bounds, shape):
-    if not reduce(
-        or_,
-        (
-            bounds[2] < 0,
-            bounds[3] > shape[0],
-            bounds[0] < 0,
-            bounds[1] > shape[1],
-        ),
+def _check_oob(bounds: Sequence[float], shape: Sequence[float]) -> None:
+    if (
+           bounds[0] < 0
+        or bounds[1] > shape[1]
+        or bounds[2] < 0
+        or bounds[3] > shape[0]
     ):
-        return
-    warnings.warn(
-        f"{bounds} larger than array ({shape}) output will be clipped",
-        stacklevel=2,
-    )
+        warnings.warn(
+            f"{bounds} larger than array ({shape}) output will be clipped",
+            stacklevel=2,
+        )
 
 
-def cut_skybox(hdus, ra, dec, ra_x=None, dec_x=None, system=None):
+def cut_skybox(
+    hdus: AgnosticHDU | Collection[AgnosticHDU],
+    ra: float,
+    dec: float,
+    ra_x: float | None = None,
+    dec_x: float | None = None,
+    system: astropy.wcs.WCS | None = None
+) -> dict[Literal["arrays", "corners", "coords", "ra", "dec"], Any]:
     """
     assumes all hdus are spatially coregistered. if not, call the function
     once for each cluster of spatially-coregistered hdus.
@@ -256,18 +297,17 @@ def cut_skybox_from_file(
     ra_x: float | None = None,
     dec_x: float | None = None,
     system: astropy.wcs.WCS | None = None,
-    loader: Callable | None = None,
+    loader: Callable[[Pathlike], Any] | None = None,
     hdu_indices: tuple[int] = (0,),
-    **_,
-):
+) -> dict[Literal["arrays", "corners", "coords", "ra", "dec"], Any] | None:
     """
     assumes all hdus are spatially coregistered. if not, call the function
     multiple times.
     """
     if loader is None:
         import fitsio
-
         loader = fitsio.FITS
+
     hdul = AgnosticHDUL(loader(path))
     try:
         return cut_skybox(
@@ -282,23 +322,35 @@ def cut_skybox_from_file(
 # TODO, maybe: granular logging here -- maybe because Netstat is basically
 #  useless on this level if cuts are parallelized, and diagnostics would
 #  probably be better done on fake data using other workflows
-def cut_skyboxes(plans, **kwargs):
-    if kwargs.get("threads") is not None:
-        cuts = _cut_skyboxes_threaded([p | kwargs for p in plans])
+def cut_skyboxes(
+    plans: list[dict[str, Any]],
+    threads: int | None = None,
+    **kwargs: Any
+) -> list[dict[Literal["arrays", "corners", "coords", "ra", "dec"], Any]]:
+    if threads is not None and threads > 0:
+        return _cut_skyboxes_threaded(threads, (p | kwargs for p in plans))
     else:
-        cuts = _cut_skyboxes_unthreaded([p | kwargs for p in plans])
-    # None results are cuts that edged out of the WCS or image bounds
-    return list(filter(None, cuts))
+        return _cut_skyboxes_unthreaded(p | kwargs for p in plans)
 
 
-def _cut_skyboxes_unthreaded(cut_plans):
-    return [cut_skybox_from_file(**plan) for plan in cut_plans]
+def _cut_skyboxes_unthreaded(
+    cut_plans: Iterable[dict[str, Any]]
+) -> list[dict[Literal["arrays", "corners", "coords", "ra", "dec"], Any]]:
+    # yes, you can do this! i was surprised too
+    return [
+        cut
+        for plan in cut_plans
+        if (cut := cut_skybox_from_file(**plan)) is not None
+    ]
 
 
-def _cut_skyboxes_threaded(cut_plans):
-    with Pool(cut_plans[0]["threads"]) as pool:
+def _cut_skyboxes_threaded(
+    threads: int,
+    cut_plans: Iterable[dict[str, Any]]
+) -> list[dict[Literal["arrays", "corners", "coords", "ra", "dec"], Any]]:
+    with Pool(threads) as pool:
         # we don't use map() here because we need kwds=
-        cuts = [
+        cut_futures = [
             pool.apply_async(cut_skybox_from_file, kwds=plan)
             for plan in cut_plans
         ]
@@ -306,18 +358,24 @@ def _cut_skyboxes_threaded(cut_plans):
         # call either close() or join()
         pool.close()
         pool.join()
-        return [cut_result.get() for cut_result in cuts]
+
+        return [
+            cut
+            for fut in cut_futures
+            if (cut := fut.get()) is not None
+        ]
 
 
 def coadd_image_slices(
-    image_slices: Sequence[Mapping],
-    scale='unweighted'
-):
+    image_slices: Sequence[Mapping[str, Any]],
+    scale: str = 'unweighted'
+) -> tuple[Any, Any, Any]:
     """
     operates on records output by get_galex_cutouts() or routines w/
     similar signatures.
 
-    TODO: not fully integrated yet.
+    TODO: not fully integrated yet.  Type signature is left vague as
+    there are currently no callers.
     """
     if len(image_slices) == 1:
         solo = image_slices[0]
