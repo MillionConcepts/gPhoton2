@@ -9,10 +9,8 @@ deal of complexity.
 # TODO: the leg count lookup I've added militates against the 'free to import'
 # intent, but there's a ton of complexity it potentially reduces
 """
-import functools
 import time
 from functools import cache
-from inspect import getmodule
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Literal
@@ -77,17 +75,6 @@ PROC_NET_DEV_FIELDS = (
     "compressed",
     "multicast",
 )
-
-
-def crudely_find_library(obj: Any) -> str:
-    if isinstance(obj, functools.partial):
-        if obj.args and callable(obj.args[0]):
-            return crudely_find_library(obj.args[0])
-        return crudely_find_library(obj.func)
-    mod = getmodule(obj)
-    if mod is None:
-        raise ImportError("could not find a library for " + repr(obj))
-    return mod.__name__.split(".")[0]
 
 
 @cache
