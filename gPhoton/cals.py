@@ -1,25 +1,27 @@
 """utilities that retrieve and yield GALEX cal files / objects."""
 
 import importlib.resources
+from typing import Any, Literal
 
 import numpy as np
+from astropy.io.fits.header import Header as FITSHeader
 
-from gPhoton.io.fits_utils import get_fits_data, get_fits_header, get_tbl_data
+from gPhoton.io.fits_utils import pyfits_open_igzip, get_tbl_data
+from gPhoton.types import NDArray, GalexBand
 
-
-def check_band(band):
-    if band not in ["NUV", "FUV"]:
+def check_band(band: str) -> str:
+    if band not in ("NUV", "FUV"):
         raise ValueError("Band must be NUV or FUV")
     return band
 
 
-def check_xy(xy):
-    if xy not in ["x", "y"]:
+def check_xy(xy: str) -> str:
+    if xy not in ("x", "y"):
         raise ValueError("xy must be x or y.")
     return xy
 
 
-def enforce_native_byteorder(arr: np.ndarray) -> np.ndarray:
+def enforce_native_byteorder(arr: NDArray[Any]) -> NDArray[Any]:
     # NOTE: I'm not sure if np.dtype.isnative's behavior for structured data
     #  types is consistent across versions, so it would be nice if we could do
     #  a single check here in that case, but I don't know that we can
@@ -37,76 +39,83 @@ def enforce_native_byteorder(arr: np.ndarray) -> np.ndarray:
             swapped_dtype.append((name, field[0]))
         else:
             # NOTE: should never happen here
-            swapped_dtype.append((name, "O"))
+            swapped_dtype.append((name, np.dtype("O")))
     return arr.astype(swapped_dtype)
 
 
-def read_data(fn, dim=0):
-    # use >0 not >=0 because '.cshrc' does not have an extension
-    if (dot := fn.rfind(".")) > 0:
-        ext = fn[dot:]
-        if ext == ".gz" and (dot2 := fn[:dot].rfind(".")) > 0:
-            ext = fn[dot2:dot]
-    else:
-        ext = ''
+def read_cal_fits(fn: str, dim: int = 0) -> tuple[NDArray[Any], FITSHeader]:
     files = importlib.resources.files("gPhoton.cal_data")
     with importlib.resources.as_file(files / fn) as path:
-        if ext == ".fits":
-            data = get_fits_data(path, dim=dim)
-            header = get_fits_header(path)
+        with pyfits_open_igzip(path, memmap=1) as hdulist:
+            data = hdulist[dim].data
+            # Should this be hdulist[dim].header?
+            header = hdulist[0].header
             return enforce_native_byteorder(data), header
-        elif ext == ".tbl":
-            return get_tbl_data(path)
-        else:
-            raise ValueError(f"Unrecognized data type: {ext}")
 
 
-def wiggle(band, xy):
+def read_cal_tbl(fn: str) -> NDArray[Any]:
+    files = importlib.resources.files("gPhoton.cal_data")
+    with importlib.resources.as_file(files / fn) as path:
+        return get_tbl_data(path)
+
+
+def wiggle(
+    band: GalexBand,
+    xy: Literal["x", "y"]
+) -> tuple[NDArray[np.float32], FITSHeader]:
     b = check_band(band)
     d = check_xy(xy)
-    return read_data(f"{b}_wiggle_{d}")
+    return read_cal_fits(f"{b}_wiggle_{d}.fits")
 
 
-def wiggle2():
+# actual dtype for this one is a mess:
+# [('YA', '<i2'), ('YB', '<i2'), ('XB', '<i2'), ('yy', '<i2'), ('ycor', '<f8')]
+def wiggle2() -> tuple[NDArray[Any], FITSHeader]:
     """The post-CSP wiggle file."""
-    return read_data("WIG2_Sep2010.fits", dim=1)
+    return read_cal_fits("WIG2_Sep2010.fits", dim=1)
 
 
-def avgwalk(band, xy):
+def walk(
+    band: GalexBand,
+    xy: Literal["x", "y"]
+) -> tuple[NDArray[np.float32], FITSHeader]:
     b = check_band(band)
     d = check_xy(xy)
-    return read_data(f"{b}_avgwalk_{d}.fits")
+    return read_cal_fits(f"{b}_walk_{d}.fits")
 
 
-def walk(band, xy):
-    b = check_band(band)
-    d = check_xy(xy)
-    return read_data(f"{b}_walk_{d}.fits")
-
-
-def walk2():
+# [('Q', '<i2'), ('YB', '<i2'), ('yy', '<i2'), ('ycor', '<f8')]
+def walk2() -> tuple[NDArray[Any], FITSHeader]:
     """The post-CSP walk file."""
-    return read_data("WLK2_Sep2010.fits", dim=1)
+    return read_cal_fits("WLK2_Sep2010.fits", dim=1)
 
-
-def clock2():
+# [('YB', '<i2'), ('yy', '<i2'), ('ycor', '<f8')]
+def clock2() -> tuple[NDArray[Any], FITSHeader]:
     """The post-CSP clock file."""
-    return read_data("CLK2_Sep2010.fits", dim=1)
+    return read_cal_fits("CLK2_Sep2010.fits", dim=1)
 
 
-def linearity(band, xy):
+def linearity(
+    band: GalexBand,
+    xy: Literal["x", "y"]
+) -> tuple[NDArray[np.float32], FITSHeader]:
     b = check_band(band)
     d = check_xy(xy)
-    return read_data(f"{b}_NLC_{d}_det2sky.fits")
+    return read_cal_fits(f"{b}_NLC_{d}_det2sky.fits")
 
 
-def flat(band):
+def flat(band: GalexBand) -> tuple[NDArray[np.float32], FITSHeader]:
     b = check_band(band)
-    return read_data(f"{b}_flat.fits")
+    return read_cal_fits(f"{b}_flat.fits")
 
 
-def distortion(band, xy, eclipse, raw_stimsep):
-    b = check_band(band)
+def distortion(
+    band: GalexBand,
+    xy: Literal["x", "y"],
+    eclipse: int,
+    raw_stimsep: float,
+) -> tuple[NDArray[np.float32], FITSHeader]:
+    b = check_band(band).lower()
     d = check_xy(xy)
     index = ""
     if band == "NUV" and eclipse > 37423:
@@ -116,14 +125,14 @@ def distortion(band, xy, eclipse, raw_stimsep):
             index = "b"
         else:
             index = "c"
-    return read_data(f"{b}_distortion_cube_d{d}{index}.fits")
+    return read_cal_fits(f"{b}_distortion_cube_d{d}{index}.fits")
 
 
-def offset(xy):
+def offset(xy: Literal["x", "y"]) -> NDArray[np.float64]:
     d = check_xy(xy)
-    return read_data(f"fuv_d{d}_fdttdc_coef_0.tbl")
+    return read_cal_tbl(f"fuv_d{d}_fdttdc_coef_0.tbl")
 
 
-def mask(band):
+def mask(band: GalexBand) -> tuple[NDArray[np.float32], FITSHeader]:
     b = check_band(band)
-    return read_data(f"{b}_mask.fits")
+    return read_cal_fits(f"{b}_mask.fits")

@@ -96,6 +96,8 @@ ignore = [
     # collapsing if-then-else blocks to ternary expressions often
     # makes them harder to read
     "SIM108",
+    # similarly for collapsing nested with statements
+    "SIM117",
     # stylistic rules lumped in with the RET group
     "RET505", "RET506", "RET507", "RET508",
     # stylistic rule lumped in with E5
