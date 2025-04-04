@@ -3,8 +3,23 @@ import warnings
 import numpy as np
 import pandas as pd
 
+from typing import Any, Literal, TYPE_CHECKING, cast
+from numpy.typing import ArrayLike, NDArray
+from gPhoton.types import GalexBand
+from astropy.convolution import Kernel2D
+from photutils.segmentation import SegmentationImage, SourceCatalog
 
-def find_peaks(data, threshold, box_size=3, footprint=None):
+# matplotlib is an optional dependency
+if TYPE_CHECKING:
+    from matplotlib.path import Path
+
+
+def find_peaks(
+    data: ArrayLike,
+    threshold: ArrayLike,
+    box_size: float | tuple[float, float] = 3,
+    footprint: ArrayLike | None = None
+) -> pd.DataFrame | None:
     """
     Find local peaks in an image that are above above a specified
     threshold value.
@@ -72,7 +87,13 @@ def find_peaks(data, threshold, box_size=3, footprint=None):
     )
 
 
-def _filter_data(data, kernel, mode="constant", fill_value=0.0):
+def _filter_data(
+    data: ArrayLike,
+    kernel: ArrayLike | "Kernel2D" | None,
+    mode: Literal["constant", "reflect", "nearest", "mirror", "wrap"]
+        = "constant",
+    fill_value: float =0.0
+) -> NDArray[Any]:
     """
     Convolve a 2D image with a 2D kernel.
 
@@ -104,18 +125,19 @@ def _filter_data(data, kernel, mode="constant", fill_value=0.0):
     result : `~numpy.ndarray`
         The convolved image.
     """
-    if kernel is None:
-        return data
-
-    from scipy import ndimage
-
+    data = np.asanyarray(data)
     # NOTE: if data is int and kernel is float, ndimage.convolve
     # will return an int image. If the data dtype is int, we make the
     # data float so that a float image is always returned
     # TODO: should they not be doing this?
     if np.issubdtype(data.dtype, np.integer):
         data = data.astype(float)
-    return ndimage.convolve(data, kernel, mode=mode, cval=fill_value)
+
+    if kernel is None:
+        return data
+
+    from scipy.ndimage import convolve
+    return convolve(data, kernel, mode=mode, cval=fill_value) # type: ignore
 
 
 # noinspection PyProtectedMember
@@ -123,13 +145,13 @@ class LocalHIGHSlocal:
     """ Find local peaks in an image using a convolution kernel. """
     def __init__(
         self,
-        threshold,
-        fwhm,
-        ratio=1.0,
-        theta=0.0,
-        sigma_radius=1.5,
-        box_size=None,
-        use_box_size=False,
+        threshold: ArrayLike,
+        fwhm: float,
+        ratio: float = 1.0,
+        theta: float = 0.0,
+        sigma_radius: float = 1.5,
+        box_size: float | tuple[float, float] | None = None,
+        use_box_size: bool = False,
     ):
         from photutils.detection.core import _StarFinderKernel
 
@@ -140,8 +162,8 @@ class LocalHIGHSlocal:
                                    )
         self.kernel = kernel.data
         self.footprint = kernel.mask.astype(bool)
-        self.peaks = None
-        self.convolved = None
+        self.peaks: pd.DataFrame | None = None
+        self.convolved: NDArray[Any] | None = None
         self.box_size = box_size
         self.use_box_size = use_box_size
         self.threshold = threshold
@@ -150,24 +172,25 @@ class LocalHIGHSlocal:
         self.theta = theta
         self.sigma_radius = sigma_radius
 
-    def convolve_image(self, image):
+    def convolve_image(self, image: ArrayLike) -> NDArray[Any]:
         self.convolved = _filter_data(image, self.kernel)
         return self.convolved
 
-    def find_peaks(self, image):
+    def find_peaks(self, image: ArrayLike) -> pd.DataFrame | None:
         convolved = self.convolve_image(image)
-        peak_find_kwargs = {"data": convolved, "threshold": self.threshold}
         if self.use_box_size is True:
             if self.box_size is None:
                 raise ValueError(
                     "Must define a box size to use a box instead of a "
                     "kernel footprint."
                 )
-            peak_find_kwargs["box_size"] = self.box_size
+            self.peaks = find_peaks(
+                convolved, threshold=self.threshold, box_size=self.box_size
+            )
         else:
-            peak_find_kwargs["footprint"] = self.footprint
-
-        self.peaks = find_peaks(**peak_find_kwargs)
+            self.peaks = find_peaks(
+                convolved, threshold=self.threshold, footprint=self.footprint
+            )
         return self.peaks
 
 
@@ -177,7 +200,10 @@ class LocalHIGHSlocal:
 # identical replacement. The closest replacement,
 # SegmentationImage.to_patches, is more memory-intensive and requires
 # more steps.
-def outline_segments(self, mask_background=False):
+def outline_segments(
+    img: "SegmentationImage",
+    mask_background: bool = False,
+) -> NDArray[Any]:
     """
     Outline the labeled segments.
 
@@ -204,36 +230,44 @@ def outline_segments(self, mask_background=False):
                                 grey_erosion)
 
     # edge connectivity
-    footprint = generate_binary_structure(self._ndim, 1)
+    footprint = generate_binary_structure(img._ndim, 1)
 
     # mode='constant' ensures outline is included on the array borders
-    eroded = grey_erosion(self.data, footprint=footprint, mode='constant',
+    eroded = grey_erosion(img.data, footprint=footprint, mode='constant',
                             cval=0.0)
-    dilated = grey_dilation(self.data, footprint=footprint,
+    dilated = grey_dilation(img.data, footprint=footprint,
                             mode='constant', cval=0.0)
 
-    outlines = ((dilated != eroded) & (self.data != 0)).astype(int)
-    outlines *= self.data
+    outlines = ((dilated != eroded) & (img.data != 0)).astype(int)
+    outlines *= img.data
 
     if mask_background:
-        outlines = np.ma.masked_where(outlines == 0, outlines)
+        outlines = np.ma.masked_equal(outlines, 0) # type: ignore
 
-    return outlines
+    return cast(NDArray[Any], outlines)
 
 
-def get_point_sources(cnt_image: np.ndarray, band: str, f_e_mask, exposure_time):
+def get_point_sources(
+    cnt_image: NDArray[Any],
+    band: GalexBand,
+    f_e_mask: NDArray[np.bool_] | None,
+    exposure_time: float,
+) -> tuple[NDArray[Any], SourceCatalog]:
     """
     Uses image segmentation to identify point sources.
-    The threshold for being a source in NUV is set at 1.5 times the background
-    rms values (2d array) for eclipses over 800 sec, while for NUV under 800s and
-    for all FUV it is 3 times bkg rms. Then there is a minimum threshold for FUV
-    of the upper quartile of all threshold values over 0.0005.
+
+    The threshold for being a source in NUV is set at 1.5 times the
+    background rms values (2d array) for eclipses over 800 sec, while
+    for NUV under 800s and for all FUV it is 3 times bkg rms. Then
+    there is a minimum threshold for FUV of the upper quartile of all
+    threshold values over 0.0005.
+
     This was called image_segmentation historically.
     Returns an array with source outlines and a source catalog.
     """
 
     from photutils.segmentation import (detect_sources, make_2dgaussian_kernel,
-                                        SourceCatalog, deblend_sources)
+                                        deblend_sources)
     from scipy.ndimage import convolve
 
     print("Estimating background and threshold.")
@@ -288,7 +322,11 @@ def get_point_sources(cnt_image: np.ndarray, band: str, f_e_mask, exposure_time)
     return outline_seg_map, seg_sources
 
 
-def estimate_threshold(bkg_rms, band, exposure_time):
+def estimate_threshold(
+    bkg_rms: ArrayLike,
+    band: GalexBand,
+    exposure_time: float
+) -> NDArray[Any]:
     print("Calculating source threshold.")
     if band == "NUV" and exposure_time > 800:
         threshold = np.multiply(1.5, bkg_rms)
@@ -323,20 +361,26 @@ def estimate_threshold(bkg_rms, band, exposure_time):
     return threshold
 
 
-def estimate_background_and_threshold(cnt_image: np.ndarray, band, exposure_time):
-
+def estimate_background_and_threshold(
+    cnt_image: ArrayLike,
+    band: GalexBand,
+    exposure_time: float
+) -> tuple[NDArray[Any], NDArray[Any]]:
     cnt_image, bkg_rms = estimate_background(cnt_image, band)
     threshold = estimate_threshold(bkg_rms, band, exposure_time)
-
     return cnt_image, threshold
 
 
-def estimate_background(cnt_image: np.ndarray, band):
+def estimate_background(
+    cnt_image: ArrayLike,
+    band: GalexBand,
+) -> tuple[NDArray[Any], NDArray[np.float32]]:
     from photutils.background import Background2D, MedianBackground
     from astropy.stats import SigmaClip
 
     sigma_clip = SigmaClip(sigma=3.)
     bkg_estimator = MedianBackground()
+    cnt_image = np.asanyarray(cnt_image)
     # remove f_e mask from background 2d, could consider
     # using the coverage_mask option for no data areas
     bkg = Background2D(cnt_image,
@@ -353,14 +397,22 @@ def estimate_background(cnt_image: np.ndarray, band):
     return cnt_image, rms.astype(np.float32)
 
 
-def mask_for_extended_sources(cnt_image: np.ndarray, band: str, exposure_time):
+def mask_for_extended_sources(
+    cnt_image: NDArray[Any],
+    band: GalexBand,
+    exposure_time: float
+) -> tuple[dict[int, "Path"], pd.DataFrame] | None:
     print("Running DAO for extended source ID.")
     dao_sources = dao_handler(cnt_image, exposure_time)
     print(f"Found {len(dao_sources)} peaks with DAO.")
     return get_extended(dao_sources, band)
 
 
-def check_point_in_extended(outline_seg_map: np.ndarray, masks, source_table):
+def check_point_in_extended(
+    outline_seg_map: NDArray[Any],
+    masks: dict[int, "Path"],
+    source_table: pd.DataFrame
+) -> pd.DataFrame:
     """
     Checks if the borders of any segments are inside of
     each extended source, which are paths stored in the
@@ -372,15 +424,18 @@ def check_point_in_extended(outline_seg_map: np.ndarray, masks, source_table):
     seg_outlines = np.nonzero(outline_seg_map)
     seg_outlines_vert = np.vstack((seg_outlines[0], seg_outlines[1])).T
     source_table["extended_source"] = source_table["extended_source"].fillna(0)
-    for key in masks:
-        inside_extended = masks[key].contains_points(seg_outlines_vert)
+    for key, mask in masks.items():
+        inside_extended = mask.contains_points(seg_outlines_vert)
         segments_in_extended = outline_seg_map[seg_outlines][inside_extended]
         source_table.loc[segments_in_extended, "extended_source"] = int(key)
     #seg_sources.to_csv("seg_sources_in_extented.csv") # for debug only
     return source_table
 
 
-def dao_handler(cnt_image: np.ndarray, exposure_time):
+def dao_handler(
+    cnt_image: NDArray[Any],
+    exposure_time: float
+) -> pd.DataFrame:
     # runs DAO twice with diff kernel sizes to get more sources
     #TODO: experimenting with dao threshold being based on exp time again, then document
     # dao_1 was thresh = 0.01, dao_2 was thresh = 0.02
@@ -390,9 +445,14 @@ def dao_handler(cnt_image: np.ndarray, exposure_time):
     return pd.concat([dao_sources1, dao_sources2])
 
 
-def dao_finder(cnt_image: np.ndarray, threshold: float = 0.01,
-               fwhm: float = 5, sigma_radius: float = 1.5, ratio: float = 1,
-               theta: float = 0):
+def dao_finder(
+    cnt_image: NDArray[Any],
+    threshold: float = 0.01,
+    fwhm: float = 5,
+    sigma_radius: float = 1.5,
+    ratio: float = 1,
+    theta: float = 0
+) -> pd.DataFrame | None:
     daofind = LocalHIGHSlocal(
         fwhm=fwhm, sigma_radius=sigma_radius,
         threshold=threshold, ratio=ratio, theta=theta
@@ -400,7 +460,10 @@ def dao_finder(cnt_image: np.ndarray, threshold: float = 0.01,
     return daofind.find_peaks(cnt_image)
 
 
-def get_extended(dao_sources: pd.DataFrame, band: str):
+def get_extended(
+    dao_sources: pd.DataFrame,
+    band: GalexBand
+) -> tuple[dict[int, "Path"], pd.DataFrame] | None:
     """
     DBSCAN groups input local maximum locations from DAOStarFinder according to
     a max. separation distance called "epsilon" to be considered in the same group.
@@ -458,7 +521,10 @@ def get_extended(dao_sources: pd.DataFrame, band: str):
     return masks, pd.concat(extended_source_list, ignore_index=True)
 
 
-def get_hull_path(group, group_id: int):
+def get_hull_path(
+    group: pd.DataFrame,
+    group_id: int
+) -> tuple["Path", pd.DataFrame]:
     """
     calculates convex hull of pts in group and uses Path to make a mask of
     each convex hull, assigning a number to each hull as they are made

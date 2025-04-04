@@ -47,7 +47,7 @@ hulls     = ["matplotlib"]
 search    = ["astroquery"]
 x86_64    = ["icc_rt"]
 tests     = ["pytest"]
-typecheck = ["pandas-stubs", "types-requests"]
+typecheck = ["matplotlib", "pandas-stubs", "types-requests"]
 
 [project.urls]
 Repository = "https://github.com/MillionConcepts/gphoton2"

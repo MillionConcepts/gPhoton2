@@ -66,25 +66,28 @@ def make_lightcurves(sky_arrays: Mapping, ctx: PipeContext):
     if ctx.extended_flagging:
         # find extended sources, tag point source catalog with
         # applicable extended source IDs
-        masks, extended_source_cat = mask_for_extended_sources(
+        mask_result = mask_for_extended_sources(
             masked_cnt_image,
             ctx.band,
-            exptime)
-        if extended_source_cat is not None:
+            exptime
+        )
+        if mask_result is not None:
+            masks, extended_source_cat = mask_result
+            assert extended_source_cat is not None
             extended_name = ctx['extended_shapes']
             print(f"writing extended source table to {extended_name}")
             extended_source_cat.to_csv(
                 extended_name, index=False  # added s and [leg]??
             )
-        if ctx.source_catalog_file is None:
-            # currently flagging input catalogs with extended source IDs
-            # doesn't work because we use the segment map
-            source_table = check_point_in_extended(
-                outline_seg_map,
-                masks,
-                source_table)
-            del outline_seg_map
-        del masks
+            if ctx.source_catalog_file is None:
+                # currently flagging input catalogs with extended source IDs
+                # doesn't work because we use the segment map
+                source_table = check_point_in_extended(
+                    outline_seg_map,
+                    masks,
+                    source_table)
+                del outline_seg_map
+            del masks
     del masked_cnt_image, flag_edge_mask
     ctx.watch.click()
 
