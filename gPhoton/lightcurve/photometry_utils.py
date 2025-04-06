@@ -284,7 +284,7 @@ def get_point_sources(cnt_image: np.ndarray, band: str, f_e_mask, exposure_time)
     # deblended_data = deblended_segment_map.data.astype(np.int32)
     # hdu = fits.PrimaryHDU(deblended_data)
     # hdul = fits.HDUList([hdu])
-    # hdul.writeto('deblended_segmentation.fits', overwrite=True)
+    # hdul.writeto(f'deblended_segmentation_{band}.fits', overwrite=True)
 
     return outline_seg_map, seg_sources
 
@@ -295,13 +295,16 @@ def estimate_threshold(bkg_rms, band, exposure_time):
         threshold = np.multiply(1.5, bkg_rms)
     elif band == "NUV" and exposure_time <= 800:
         threshold = np.multiply(3, bkg_rms)
+        filtered_thresh = threshold[threshold > 0.0005]
+        upper_quartile = np.percentile(filtered_thresh, 75)
+        threshold[threshold < upper_quartile] = upper_quartile
     else:
         threshold = np.multiply(3, bkg_rms)
         # new minimum threshold for FUV to avoid ID'ing background
         filtered_thresh = threshold[threshold > 0.0005]
         if filtered_thresh is None or len(filtered_thresh) == 0:
-            print("Filtered threshold array is empty because cnt array is sparse.")
-            threshold = np.full_like(threshold, 0.0005)
+            print("cnt array is sparse, setting general threshold of .01 for FUV")
+            threshold = np.full_like(threshold, .01)
         else:
             upper_quartile = np.percentile(filtered_thresh, 75)
             threshold[threshold < upper_quartile] = upper_quartile

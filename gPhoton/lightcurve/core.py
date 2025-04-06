@@ -101,6 +101,7 @@ def make_lightcurves(sky_arrays: Mapping, ctx: PipeContext):
         write_exptime_file(ctx["expfile"], sky_arrays["image_dict"])
 
     # photometry on point sources
+    print(f"Len source table: {len(source_table)} ")
     for aperture_size in ctx.aperture_sizes:
         aperture_size_px = aperture_size / c.ARCSECPERPIXEL
         photometry_table, apertures = count_full_depth_image(
