@@ -301,8 +301,9 @@ def estimate_threshold(bkg_rms, band, exposure_time):
             print("cnt array is sparse")
             print(f"exposure time: {exposure_time} ")
             threshold = np.full_like(threshold, .08)
-        upper_quartile = np.percentile(filtered_thresh, 75)
-        threshold[threshold < upper_quartile] = upper_quartile
+        else:
+            upper_quartile = np.percentile(filtered_thresh, 75)
+            threshold[threshold < upper_quartile] = upper_quartile
     else:
         threshold = np.multiply(3, bkg_rms)
         # minimum threshold for FUV to avoid ID'ing background
