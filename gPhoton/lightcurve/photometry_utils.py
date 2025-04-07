@@ -294,20 +294,33 @@ def estimate_threshold(bkg_rms, band, exposure_time):
     if band == "NUV" and exposure_time > 800:
         threshold = np.multiply(1.5, bkg_rms)
     elif band == "NUV" and exposure_time <= 800:
+        print(f"low exposure time: {exposure_time} ")
         threshold = np.multiply(3, bkg_rms)
         filtered_thresh = threshold[threshold > 0.0005]
+        if filtered_thresh is None or len(filtered_thresh) == 0:
+            print("cnt array is sparse")
+            print(f"exposure time: {exposure_time} ")
+            threshold = np.full_like(threshold, .08)
         upper_quartile = np.percentile(filtered_thresh, 75)
         threshold[threshold < upper_quartile] = upper_quartile
     else:
         threshold = np.multiply(3, bkg_rms)
-        # new minimum threshold for FUV to avoid ID'ing background
+        # minimum threshold for FUV to avoid ID'ing background
         filtered_thresh = threshold[threshold > 0.0005]
         if filtered_thresh is None or len(filtered_thresh) == 0:
-            print("cnt array is sparse, setting general threshold of .01 for FUV")
-            threshold = np.full_like(threshold, .01)
+            print("cnt array is sparse")
+            print(f"exposure time: {exposure_time} ")
+            threshold = np.full_like(threshold, .04)
         else:
             upper_quartile = np.percentile(filtered_thresh, 75)
             threshold[threshold < upper_quartile] = upper_quartile
+    # min threshold for both bands at low exposure times
+    if exposure_time < 150:
+        print("Applying low exp time min threshold")
+        if band == "NUV":
+            threshold[threshold < .08] = .08
+        else:
+            threshold[threshold < .04] = .04
     return threshold
 
 
@@ -405,10 +418,18 @@ def get_extended(dao_sources: pd.DataFrame, band: str):
 
     x_0 = list(zip(*positions))[0]
     y_0 = list(zip(*positions))[1]
-
     starlist['x_0'] = x_0
     starlist['y_0'] = y_0
+
     epsilon = 40 if band == "NUV" else 50
+    dbscan_group = SourceGrouper(min_separation=epsilon)
+    # need to filter starlist to a max size to lessen memory usage
+    max_stars = 20000
+    num_stars = len(starlist)
+    if num_stars > max_stars:
+        indices_to_keep = np.linspace(0, num_stars - 1, max_stars, dtype=int)
+        starlist = starlist[indices_to_keep]
+        epsilon = 20
     dbscan_group = SourceGrouper(min_separation=epsilon)
     dbsc_star_groups = dbscan_group(starlist['x_0'],starlist['y_0'])
     dbsc_star_groups = pd.DataFrame({'group_id':dbsc_star_groups}).groupby('group_id')
@@ -419,6 +440,7 @@ def get_extended(dao_sources: pd.DataFrame, band: str):
     # todo: this way of adding hull masks needs work because sometimes convex hulls overlap
     extended_source_list = []
     gID = 1
+    extended_source_cat = pd.DataFrame(columns=["id", "hull_area", "num_dao_points", "hull_vertices"])
     for i in dbsc_star_groups.groups.keys():
         group = dbsc_star_groups.groups[i]
         if len(group) > 100:
@@ -435,11 +457,10 @@ def get_extended(dao_sources: pd.DataFrame, band: str):
             gID += 1
     if len(extended_source_list)>0:
         extended_source_cat = pd.concat(extended_source_list, ignore_index=True)
+        extended_source_cat.columns = ["id", "hull_area", "num_dao_points", "hull_vertices"]
     if gID>=128:
         print("There are too many extended sources identified, you can't label more than 128.")
         return
-    else:
-        extended_source_cat = pd.DataFrame(columns=["id", "hull_area", "num_dao_points", "hull_vertices"])
     return masks, extended_source_cat
 
 
