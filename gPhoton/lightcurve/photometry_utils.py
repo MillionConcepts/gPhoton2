@@ -359,8 +359,7 @@ def mask_for_extended_sources(cnt_image: np.ndarray, band: str, exposure_time):
     print("Running DAO for extended source ID.")
     dao_sources = dao_handler(cnt_image, exposure_time)
     print(f"Found {len(dao_sources)} peaks with DAO.")
-    masks, extended_source_cat = get_extended(dao_sources, band)
-    return masks, extended_source_cat
+    return get_extended(dao_sources, band)
 
 
 def check_point_in_extended(outline_seg_map: np.ndarray, masks, source_table):
@@ -412,57 +411,55 @@ def get_extended(dao_sources: pd.DataFrame, band: str):
     extended sources are considered dense collections of many local maximums.
     """
     from photutils.psf.groupers import SourceGrouper
-    positions = np.transpose((dao_sources['x_peak'], dao_sources['y_peak']))
 
-    from astropy.table import Table
-    starlist = Table()
-
-    x_0 = list(zip(*positions))[0]
-    y_0 = list(zip(*positions))[1]
-    starlist['x_0'] = x_0
-    starlist['y_0'] = y_0
+    x_0 = np.array(dao_sources['x_peak'])
+    y_0 = np.array(dao_sources['y_peak'])
 
     epsilon = 40 if band == "NUV" else 50
-    dbscan_group = SourceGrouper(min_separation=epsilon)
-    # need to filter starlist to a max size to lessen memory usage
+    # limit memory usage: if there are more than 20000 sources downsample them
     max_stars = 20000
-    num_stars = len(starlist)
+    num_stars = len(x_0)
     if num_stars > max_stars:
         indices_to_keep = np.linspace(0, num_stars - 1, max_stars, dtype=int)
-        starlist = starlist[indices_to_keep]
+        x_0 = np.take(x_0, indices_to_keep)
+        y_0 = np.take(y_0, indices_to_keep)
         epsilon = 20
+
     dbscan_group = SourceGrouper(min_separation=epsilon)
-    dbsc_star_groups = dbscan_group(starlist['x_0'],starlist['y_0'])
-    dbsc_star_groups = pd.DataFrame({'group_id':dbsc_star_groups}).groupby('group_id')
+    star_groups = pd.DataFrame({
+        'group_id': dbscan_group(x_0, y_0),
+        'x_0': x_0,
+        'y_0': y_0,
+    }).groupby('group_id')
+
+    # filter out large stars that aren't really extended sources
+    # arbitrary cutoff of 100 points
+    # annoyingly, .filter() removes the grouping so we have to put it back
+    star_groups = star_groups.filter(lambda g: len(g) > 100).groupby('group_id')
+
+    # we currently use an int8 for group IDs; there should never be
+    # this many extended sources anyway
+    if len(star_groups.groups) >= 128:
+        raise RuntimeError(
+            f"Too many extended sources! ({len(star_groups.groups)})"
+        )
+
+    if len(star_groups.groups) == 0:
+        return {}, pd.DataFrame(columns=["id", "hull_area", "num_dao_points", "hull_vertices"])
+
     # combining hull shapes for all extended sources to make a single
     # hull "mask" that shows extent of extended sources. pixel value of
     # each hull is the ID for that extended source.
+    # todo: this way of adding hull masks needs work because sometimes
+    # convex hulls overlap
     masks = {}
-    # todo: this way of adding hull masks needs work because sometimes convex hulls overlap
     extended_source_list = []
-    gID = 1
-    extended_source_cat = pd.DataFrame(columns=["id", "hull_area", "num_dao_points", "hull_vertices"])
-    for i in dbsc_star_groups.groups.keys():
-        group = dbsc_star_groups.groups[i]
-        if len(group) > 100:
-            # meant to avoid large stars that aren't really
-            # "extended" sources with ~<100 dao sources
-            path, extended_hull_data = get_hull_path(
-                pd.DataFrame({'y_0': np.array(starlist['y_0'])[group],
-                              'x_0': np.array(starlist['x_0'])[group]}),
-                # group,
-                gID
-                )
-            extended_source_list.append(extended_hull_data)
-            masks[gID] = path
-            gID += 1
-    if len(extended_source_list)>0:
-        extended_source_cat = pd.concat(extended_source_list, ignore_index=True)
-        extended_source_cat.columns = ["id", "hull_area", "num_dao_points", "hull_vertices"]
-    if gID>=128:
-        print("There are too many extended sources identified, you can't label more than 128.")
-        return
-    return masks, extended_source_cat
+    for zGid, (_, group) in enumerate(star_groups):
+        gid = zGid + 1
+        path, extended_hull_data = get_hull_path(group, gid)
+        extended_source_list.append(extended_hull_data)
+        masks[gid] = path
+    return masks, pd.concat(extended_source_list, ignore_index=True)
 
 
 def get_hull_path(group, group_id: int):
