@@ -316,12 +316,11 @@ def estimate_threshold(bkg_rms, band, exposure_time):
             upper_quartile = np.percentile(filtered_thresh, 75)
             threshold[threshold < upper_quartile] = upper_quartile
     # min threshold for both bands at low exposure times
-    if exposure_time < 150:
+    if exposure_time < 250 and band == "NUV":
         print("Applying low exp time min threshold")
-        if band == "NUV":
-            threshold[threshold < .08] = .08
-        else:
-            threshold[threshold < .04] = .04
+        threshold[threshold < .08] = .08
+    if exposure_time < 500 and band =="FUV":
+        threshold[threshold < .04] = .04
     return threshold
 
 
