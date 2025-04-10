@@ -6,7 +6,6 @@
        calibration, including walk, wiggle, linearity, post-CSP, and stim
        scaling corrections.
 """
-from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Literal, NamedTuple, cast
 
@@ -627,20 +626,20 @@ def center_and_scale(
 def compute_shutter(
     timeslice: NDArray[NFloat],
     flagslice: NDArray[NFloat],
-    trange: Sequence[float],
+    trange: tuple[float, float],
     shutgap: float = 0.05
 ) -> float:
     ix = np.where(flagslice == 0)
     t = np.hstack([trange[0], np.unique(timeslice[ix]), trange[1]])
     ix = np.where(t[1:] - t[:-1] >= shutgap)
-    return cast(float, np.array(t[1:] - t[:-1])[ix].sum())
+    return np.array(t[1:] - t[:-1])[ix].sum()
 
 
 def compute_exptime(
     timeslice: NDArray[NFloat],
     flagslice: NDArray[NFloat],
     band: GalexBand,
-    trange: Sequence[float],
+    trange: tuple[float, float],
 ) -> float:
     shutter = compute_shutter(timeslice, flagslice, trange)
     # Calculate deadtime

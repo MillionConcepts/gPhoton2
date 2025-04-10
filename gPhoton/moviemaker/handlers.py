@@ -1,10 +1,10 @@
 """top-level handler module for gPhoton.moviemaker"""
 
+from itertools import pairwise
 from multiprocessing import Pool
 from typing import Any
 
 from dustgoggles.structures import NestingDict
-from more_itertools import windowed
 import numpy as np
 
 from gPhoton.moviemaker._steps import (
@@ -25,7 +25,7 @@ def make_movies(
     ctx: PipeContext,
     exposure_array: np.ndarray,
     map_ix_dict: dict,
-    total_trange: tuple[int, int],
+    total_trange: tuple[float, float],
     imsz: tuple[int, int],
     fixed_start_time: int | None = None,
 ) -> tuple[str, dict]:
@@ -42,7 +42,7 @@ def make_movies(
         total_trange = (fixed_start_time, total_trange[1])
     assert ctx.depth is not None
     t0s = np.arange(total_trange[0], total_trange[1] + ctx.depth, ctx.depth)
-    tranges = list(windowed(t0s, 2))
+    tranges = list(pairwise(float(t) for t in t0s))
     # TODO, maybe: at very short depths, slicing arrays into memory becomes a
     #  meaningful single-core-speed-dependent bottleneck. overhead of
     #  distributing across processes may not be worth it anyway.
@@ -63,31 +63,42 @@ def make_movies(
         del map_ix_dict[map_name]
     del map_ix_dict
     if ctx.threads is None:
-        pool = None
-    else:
-        pool = Pool(ctx.threads)
-    results = {}
-    for frame_ix, trange in enumerate(tranges):
-        headline = f"Integrating frame {frame_ix + 1} of {len(tranges)}"
-        frame_params = (
-            ctx.band,
-            map_directory[frame_ix],
-            exposure_directory[frame_ix],
-            trange,
-            imsz,
-            ctx.lil,
-            headline,
-        )
-        if pool is None:
-            results[frame_ix] = sm_compute_movie_frame(*frame_params)
-        else:
-            results[frame_ix] = pool.apply_async(
-                sm_compute_movie_frame, frame_params
+        results = {}
+        for frame_ix, trange in enumerate(tranges):
+            headline = f"Integrating frame {frame_ix + 1} of {len(tranges)}"
+            results[frame_ix] = sm_compute_movie_frame(
+                ctx.band,
+                map_directory[frame_ix],
+                exposure_directory[frame_ix],
+                trange,
+                imsz,
+                ctx.lil,
+                headline,
             )
-    if pool is not None:
-        pool.close()
-        pool.join()
-        results = {task: result.get() for task, result in results.items()}
+    else:
+        with Pool(ctx.threads) as pool:
+            result_futures = {}
+            for frame_ix, trange in enumerate(tranges):
+                headline = f"Integrating frame {frame_ix + 1} of {len(tranges)}"
+                frame_params = (
+                    ctx.band,
+                    map_directory[frame_ix],
+                    exposure_directory[frame_ix],
+                    trange,
+                    imsz,
+                    ctx.lil,
+                    headline,
+                )
+                result_futures[frame_ix] = pool.apply_async(
+                    sm_compute_movie_frame, frame_params
+                )
+            pool.close()
+            pool.join()
+            results = {
+                frame_ix: result.get()
+                for frame_ix, result in result_futures.items()
+            }
+
     frame_indices = sorted(results.keys())
     movies: dict[str, list[Any]] = {"cnt": [], "flag": []}
     exptimes = []
@@ -149,15 +160,14 @@ def create_images_and_movies(
     imsz = (
         int((wcs.wcs.crpix[1] - 0.5) * 2), int((wcs.wcs.crpix[0] - 0.5) * 2)
     )
-    render_kwargs = {
-        "exposure_array": exposure_array,
-        "map_ix_dict": map_ix_dict,
-        "total_trange": total_trange,
-        "imsz": imsz,
-    }
     print("making full-depth image")
     # don't be careful about memory wrt sparsification, just go for it
-    status, image_dict = make_full_depth_image(**render_kwargs)
+    status, image_dict = make_full_depth_image(
+        exposure_array = exposure_array,
+        map_ix_dict = map_ix_dict,
+        total_trange = total_trange,
+        imsz = imsz,
+    )
     if (
         (ctx.min_exptime is not None)
         and (image_dict["exptimes"][0] < ctx.min_exptime)
@@ -181,7 +191,12 @@ def create_images_and_movies(
 
     print(f"making {ctx.depth}-second depth movies")
     status, movie_dict = make_movies(
-        ctx, fixed_start_time=fixed_start_time, **render_kwargs,
+        ctx,
+        fixed_start_time = fixed_start_time,
+        exposure_array = exposure_array,
+        map_ix_dict = map_ix_dict,
+        total_trange = total_trange,
+        imsz = imsz,
     )
     return {
         "wcs": wcs,

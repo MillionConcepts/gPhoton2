@@ -24,6 +24,7 @@ NNum = TypeVar("NNum", bound=np.number[Any])
 NNumX = TypeVar("NNumX", bound=np.number[Any])
 NNumY = TypeVar("NNumY", bound=np.number[Any])
 
+NDShape = TypeVar("NDShape", bound=tuple)
 
 __all__ = [
     "Pathlike",
@@ -32,4 +33,5 @@ __all__ = [
     "NFloat", "NFloatX", "NFloatY",
     "NInt", "NIntX", "NIntY",
     "NNum", "NNumX", "NNumY",
+    "NDShape",
 ]

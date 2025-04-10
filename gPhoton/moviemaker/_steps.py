@@ -4,18 +4,18 @@
    processes. generally should not be called on their own.
 """
 from pathlib import Path
-from collections.abc import Mapping, Sequence
-from typing import Literal
+from collections.abc import Mapping, Sequence, Iterable
+from typing import Any, Literal
 import warnings
 
 import fitsio
 import pyarrow
 from astropy.io import fits as pyfits
-from dustgoggles.structures import NestingDict
+from astropy.wcs import WCS
 import numpy as np
-from numpy.typing import ArrayLike, NDArray
 from pyarrow import parquet
 import scipy.sparse
+from scipy.sparse import spmatrix
 import sh
 from quickbin import bin2d
 
@@ -29,12 +29,17 @@ from gPhoton.sharing import (
     reference_shared_memory_arrays,
     unlink_nested_block_dict,
     send_to_shared_memory,
+    SharedArrayInfo,
 )
-from gPhoton.types import GalexBand, Pathlike
+from gPhoton.types import (
+    GalexBand, Pathlike, NDArray, NDShape, NFloat, NFloatX, NFloatY, NInt
+)
 from gPhoton.vorpal import between, slice_between
 
 
-def booleanize_for_fits(array: ArrayLike) -> NDArray[np.uint8]:
+def booleanize_for_fits(
+    array: np.ndarray[NDShape, np.dtype[Any]]
+) -> np.ndarray[NDShape, np.dtype[np.uint8]]:
     """
     many things in FITS arrays are too big. it would be nice if FITS had a
     1-bit data type. It does not. Furthermore, astropy.io.fits will not even
@@ -50,10 +55,10 @@ def booleanize_for_fits(array: ArrayLike) -> NDArray[np.uint8]:
 
 
 def make_bool_frame(
-    foc: np.ndarray,
-    weights: np.ndarray,
+    foc: NDArray[NFloat],
+    weights: NDArray[NInt],
     imsz: tuple[int, int],
-) -> NDArray[np.uint8]:
+) -> np.ndarray[tuple[int, int], np.dtype[np.uint8]]:
     """
     :param foc: 2-column array containing positions in detector space
     :param weights: 1-D array containing counts at each position
@@ -81,10 +86,10 @@ def make_bool_frame(
 
 
 def make_hist_frame(
-    foc: np.ndarray,
-    weights: np.ndarray,
+    foc: NDArray[NFloatX],
+    weights: NDArray[NFloatY],
     imsz: tuple[int, int],
-) -> NDArray[np.float32]:
+) -> np.ndarray[tuple[int, int], np.dtype[np.float32]]:
     """
     :param foc: 2-column array containing positions in detector space
     :param weights: 1-D array containing counts at each position
@@ -108,10 +113,10 @@ def make_hist_frame(
 
 
 def make_mask_frame(
-    foc: np.ndarray,
-    weights: np.ndarray,
+    foc: NDArray[NFloat],
+    weights: NDArray[NInt],
     imsz: tuple[int, int],
-) -> NDArray[np.uint8]:
+) -> np.ndarray[tuple[int, int], np.dtype[np.uint8]]:
     """
     make a mask / bitmap by calling mask_frame on diff bit values
     and then combining
@@ -139,7 +144,9 @@ def make_mask_frame(
 
 
 def shared_compute_exptime(
-    event_block_info: Mapping, band: GalexBand, trange: tuple[float, float]
+    event_block_info: Mapping[str, SharedArrayInfo],
+    band: GalexBand,
+    trange: tuple[float, float]
 ) -> float:
     """
     unlike unshared_compute_exptime(),
@@ -152,7 +159,9 @@ def shared_compute_exptime(
 
 
 def unshared_compute_exptime(
-    events: np.ndarray, band: GalexBand, trange: Sequence[float]
+    events: NDArray[NFloat],
+    band: GalexBand,
+    trange: tuple[float, float]
 ) -> float:
     times = events[:, 0]
     tix = np.where((times >= trange[0]) & (times < trange[1]))
@@ -175,7 +184,13 @@ def select_on_detector(
     )
 
 
-def prep_image_inputs(photonfile, ctx):
+def prep_image_inputs(photonfile: Pathlike, ctx: PipeContext) -> tuple[
+    NDArray[Any],
+    dict[Literal['flag', 'cnt'],
+         dict[Literal['t', 'foc', 'weights'], NDArray[Any]]],
+    tuple[float, float],
+    WCS
+]:
     event_table, exposure_array = load_image_tables(photonfile)
     foc, wcs = generate_wcs_components(event_table)
     with warnings.catch_warnings():
@@ -189,12 +204,18 @@ def prep_image_inputs(photonfile, ctx):
         ctx.narrow_edge_thresh)
     artifact_ix = np.where(artifact_flags!= 0)
     t = event_table["t"].to_numpy()
-    map_ix_dict = generate_indexed_values(foc, artifact_ix, artifact_flags, t, weights)
+    map_ix_dict = generate_indexed_values(
+        foc, artifact_ix, artifact_flags, t, weights
+    )
     total_trange = (t.min(), t.max())
     return exposure_array, map_ix_dict, total_trange, wcs
 
 
-def combine_artifacts(event_table, wide_edge_thresh, narrow_edge_thresh):
+def combine_artifacts(
+    event_table: pyarrow.Table,
+    wide_edge_thresh: float,
+    narrow_edge_thresh: float
+) -> NDArray[np.uint8]:
     """ combines flag, mask, and edge flags into 8 bit mask values
     to eventually create a single artifact backplane. Only propagated
      flag is 120 (ghost) because 7 and 12 do not have valid aspect
@@ -204,27 +225,45 @@ def combine_artifacts(event_table, wide_edge_thresh, narrow_edge_thresh):
     # hard coded narrow (360) and wide (340) edge setting in ctx
     wide_edge_bit = (event_table['detrad'].to_numpy() > wide_edge_thresh) * 4
     narrow_edge_bit = (event_table['detrad'].to_numpy() > narrow_edge_thresh) * 8
-    return mask_bit | flag_bit | wide_edge_bit | narrow_edge_bit
+    return (
+        mask_bit.astype(np.uint8)
+        | flag_bit.astype(np.uint8)
+        | wide_edge_bit.astype(np.uint8)
+        | narrow_edge_bit.astype(np.uint8)
+    )
 
 
-def generate_indexed_values(foc, artifact_ix, artifact_flags, t, weights):
-    # TODO This probably doesn't need to be a NestingDict after creation...
-    indexed = NestingDict()
-
-    indexed["flag"]["t"] = t[artifact_ix]
-    indexed["flag"]["foc"] = foc[artifact_ix]
-    indexed["flag"]["weights"] = artifact_flags[artifact_ix]
-
-    indexed["cnt"]["t"] = t[:]
-    indexed["cnt"]["foc"] = foc[:]
-    indexed["cnt"]["weights"] = weights[:]
-
-    return indexed
+def generate_indexed_values(
+    foc: NDArray[Any],
+    artifact_ix: tuple[NDArray[np.intp], ...],
+    artifact_flags: NDArray[Any],
+    t: NDArray[Any],
+    weights: NDArray[Any]
+) -> dict[
+    Literal["flag", "cnt"],
+    dict[Literal["t", "foc", "weights"], NDArray[Any]]
+]:
+    return {
+        "flag": {
+            "t": t[artifact_ix],
+            "foc": foc[artifact_ix],
+            "weights": artifact_flags[artifact_ix],
+        },
+        "cnt": {
+            "t": t[:],
+            "foc": foc[:],
+            "weights": weights[:],
+        }
+    }
 
 
 def slice_frame_into_memory(
-    exposure_directory, map_ix_dict, map_name, frame_ix, trange
-):
+    exposure_directory: Mapping[int, Mapping[str, SharedArrayInfo] | None],
+    map_ix_dict: Mapping[str, Mapping[str, NDArray[Any]]],
+    map_name: str,
+    frame_ix: int,
+    trange: tuple[float, float],
+) -> None | dict[str, SharedArrayInfo]:
     # 0-count exposure times have 'None' entries assigned in
     # slice_exposure_into_memory
     if exposure_directory[frame_ix] is None:
@@ -249,11 +288,17 @@ def slice_frame_into_memory(
 
 
 def sm_compute_movie_frame(
-    band, map_block_info, exposure_block_info, trange, imsz, lil, headline
-):
+    band: GalexBand,
+    map_block_info: Mapping[str, Mapping[str, SharedArrayInfo] | None],
+    exposure_block_info: Mapping[str, SharedArrayInfo] | None,
+    trange: tuple[float, float],
+    imsz: tuple[int, int],
+    lil: bool,
+    headline: str,
+) -> dict[Literal["cnt", "flag", "exptime"], NDArray[Any] | float]:
     print_inline(headline)
     if exposure_block_info is None:
-        exptime = 0
+        exptime = 0.0
         cntmap, flagmap = zero_frame(imsz, lil)
     else:
         exptime = shared_compute_exptime(exposure_block_info, band, trange)
@@ -263,7 +308,6 @@ def sm_compute_movie_frame(
         )
         expblock["exposure"].unlink()
         expblock["exposure"].close()
-        # noinspection PyTypeChecker
         cntmap, flagmap = sm_make_maps(map_block_info, imsz, lil)
         unlink_nested_block_dict(map_block_info)
         # TODO: slice this into shared memory to reduce serialization cost?
@@ -275,8 +319,11 @@ def sm_compute_movie_frame(
     }
 
 
-def slice_exposure_into_memory(exposure_array, tranges):
-    exposure_directory = {}
+def slice_exposure_into_memory(
+    exposure_array: NDArray[Any],
+    tranges: Iterable[tuple[float, float]]
+) -> dict[int, dict[str, SharedArrayInfo] | None]:
+    exposure_directory: dict[int, dict[str, SharedArrayInfo] | None] = {}
     times = exposure_array[:, 0]
     for frame_ix, trange in enumerate(tranges):
         exposure = slice_between(exposure_array, times, trange[0], trange[1])
@@ -289,52 +336,59 @@ def slice_exposure_into_memory(exposure_array, tranges):
     return exposure_directory
 
 
-def zero_frame(imsz, lil=False):
-    maps = (
-        np.zeros(imsz),
-        np.zeros(imsz, dtype="uint8")
-    )
-    if lil is True:
-        return [scipy.sparse.coo_matrix(moviemap) for moviemap in maps]
-    return maps
+def zero_frame(
+    imsz: tuple[int, int],
+    lil: bool = False
+) -> tuple[NDArray[np.float32], NDArray[np.uint8]] | tuple[spmatrix, spmatrix]:
+    if lil:
+        return (
+            scipy.sparse.coo_matrix(imsz, dtype="float32"),
+            scipy.sparse.coo_matrix(imsz, dtype="uint8")
+        )
+    else:
+        return (
+            np.zeros(imsz, dtype="float32"),
+            np.zeros(imsz, dtype="uint8")
+        )
 
 
-def sm_make_maps(block_directory, imsz, lil=False):
+def sm_make_maps(
+    block_directory: Mapping[str, Mapping[str, SharedArrayInfo] | None],
+    imsz: tuple[int, int],
+    lil: bool = False
+) -> tuple[NDArray[np.float32], NDArray[np.uint8]] | tuple[spmatrix, spmatrix]:
     """
-    retrieve count, flag, and map event arrays from shared memory and
+    retrieve count and flag event arrays from shared memory and
     transform them into "maps" (image / movie frame) by taking their 2-D
     histograms; optionally return them sparsified
     """
-    maps = [
-        sm_make_map(block_directory, map_name, imsz)
-        for map_name in ("cnt", "flag")
-    ]
-    if lil is True:
-        return [scipy.sparse.coo_matrix(moviemap) for moviemap in maps]
-    return maps
+    if block_directory["cnt"] is None and block_directory["flag"] is None:
+        return zero_frame(imsz, lil)
+
+    if block_directory["cnt"] is None:
+        cntmap = np.zeros(imsz, np.float32)
+    else:
+        _, ma = reference_shared_memory_arrays(block_directory["cnt"])
+        cntmap = make_hist_frame(ma["foc"], ma["weights"], imsz)
+
+    if block_directory["flag"] is None:
+        flagmap = np.zeros(imsz, np.uint8)
+    else:
+        _, ma = reference_shared_memory_arrays(block_directory["flag"])
+        flagmap = make_mask_frame(ma["foc"], ma["weights"], imsz)
+
+    del ma
+    if lil:
+        return (scipy.sparse.coo_matrix(cntmap),
+                scipy.sparse.coo_matrix(flagmap))
+    else:
+        return (cntmap, flagmap)
 
 
-def sm_make_map(block_directory, map_name, imsz):
-    """
-    retrieve a count, flag, or map event array from shared memory and
-    transform it into a "map" by taking its 2-D hstogram
-    """
-    if block_directory[map_name] is None:
-        dtype = np.uint8 if map_name in ("flag") else np.float64
-        return np.zeros(imsz, dtype)
-    _, map_arrays = reference_shared_memory_arrays(block_directory[map_name])
-    if map_name == "flag":
-        return make_mask_frame(
-            map_arrays["foc"],
-            map_arrays["weights"],
-            imsz)
-    return make_hist_frame(
-        map_arrays["foc"],
-        map_arrays["weights"],
-        imsz)
-
-
-def generate_wcs_components(event_table):
+def generate_wcs_components(event_table: parquet.Table) -> tuple[
+    WCS,
+    None
+]:
     wcs = make_bounding_wcs(parquet_to_ndarray(event_table, ["ra", "dec"]))
     foc = wcs.wcs_world2pix(parquet_to_ndarray(event_table, ["ra", "dec"]), 1)
     return foc, wcs
@@ -342,7 +396,7 @@ def generate_wcs_components(event_table):
 
 def load_image_tables(
     photonfile: Pathlike,
-) -> tuple[pyarrow.Table, np.ndarray]:
+) -> tuple[pyarrow.Table, NDArray[Any]]:
     """
     read a photonlist file produced by `photonpipe` from a raw6 telemetry file;
     return event and exposure tables appropriate for making images / movies
@@ -357,7 +411,14 @@ def load_image_tables(
     return event_table, exposure_array
 
 
-def populate_fits_header(band, wcs, tranges, exptimes, key, ctx):
+def populate_fits_header(
+    band: GalexBand,
+    wcs: WCS,
+    tranges: Sequence[tuple[float, float]],
+    exptimes: Sequence[float],
+    key: str, # Literal["cnt", "flag"]
+    ctx: PipeContext
+) -> pyfits.Header:
     """
     create an astropy.io.fits.Header object containing our canonical
     metadata values
@@ -384,17 +445,21 @@ def populate_fits_header(band, wcs, tranges, exptimes, key, ctx):
     return header
 
 
-def initialize_fits_file(array_path):
-    if Path(array_path).exists():
-        Path(array_path).unlink()
-    stream = fitsio.FITS(array_path, "rw")
-    stream.write_image(None)
-    stream.close()
+def initialize_fits_file(array_path: Pathlike) -> None:
+    array_path = Path(array_path)
+    if array_path.exists():
+        array_path.unlink()
+    with fitsio.FITS(array_path, "rw") as stream:
+        stream.write_image(None)
 
 
 def write_fits_array(
-    ctx: PipeContext, arraymap, wcs, is_movie=True, clean_up=True
-):
+    ctx: PipeContext,
+    arraymap: dict[str, Any],
+    wcs: WCS,
+    is_movie: bool = True,
+    clean_up: bool = True,
+) -> None:
     """
     convert an intermediate movie or image dictionary, perhaps previously
     used for photometry, into a FITS object; write it to disk; compress it
@@ -475,22 +540,24 @@ def write_fits_array(
 
 
 def add_array_to_fits_file(
-    fits_path,
-    array,
-    header,
+    fits_path: Pathlike,
+    array: (NDArray[Any]
+            | scipy.sparse.spmatrix
+            | Sequence[scipy.sparse.spmatrix]),
+    header: pyfits.Header,
     compression_type: Literal["none", "gzip", "rice"] = "none",
-    **fitsio_write_kwargs
-):
+    **fitsio_write_kwargs: Any
+) -> None:
     if compression_type not in ('none', 'gzip', 'rice'):
         raise ValueError(f"{compression_type} is not supported.")
     if isinstance(array, np.ndarray):
         data = array
-    elif array.__class__.__module__.startswith('scipy.sparse'):
+    elif isinstance(array, spmatrix):
         data = array.toarray()
-    elif array[0].__class__.__module__.startswith('scipy.sparse'):
+    elif isinstance(array[0], spmatrix):
         data = np.stack([frame.toarray() for frame in array])
     else:
-        raise ValueError("I don't understand this so-called 'array'.")
+        raise TypeError("I don't understand this so-called 'array'.")
     # this pipeline supports monolithic gzipping after file construction,
     # not gzipping individual HDUs.
     fits_stream = fitsio.FITS(fits_path, "rw")
