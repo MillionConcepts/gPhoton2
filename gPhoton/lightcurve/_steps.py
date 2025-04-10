@@ -8,7 +8,8 @@ may not suitable for independent use.
 
 from multiprocessing import Pool
 from pathlib import Path
-from collections.abc import Mapping
+from collections.abc import Callable, Sequence, Mapping
+from typing import Any, TypeVar, cast
 
 import astropy.wcs
 import numpy as np
@@ -17,14 +18,18 @@ from photutils.aperture import CircularAperture, aperture_photometry
 import scipy.sparse
 
 from gPhoton.pretty import print_inline
-from gPhoton.types import Pathlike, GalexBand
+from gPhoton.types import Pathlike, GalexBand, NDArray
+
+
+FramePM = TypeVar("FramePM", NDArray[np.float64], NDArray[np.uint8])
+
 
 def count_full_depth_image(
     source_table: pd.DataFrame,
     aperture_size: float,
-    image_dict: Mapping[str, np.ndarray],
+    image_dict: Mapping[str, NDArray[Any]],
     system: astropy.wcs.WCS
-):
+) -> tuple[pd.DataFrame, CircularAperture]:
     source_table = source_table.reset_index(drop=True)
     positions = source_table[["xcentroid", "ycentroid"]].to_numpy()
     apertures = CircularAperture(positions, r=aperture_size)
@@ -49,7 +54,10 @@ def count_full_depth_image(
     return source_table, apertures
 
 
-def bitwise_aperture_photometry(artifact_map: np.ndarray, apertures):
+def bitwise_aperture_photometry(
+    artifact_map: NDArray[Any],
+    apertures: CircularAperture,
+) -> NDArray[np.uint8]:
     """ Run aperture photometry on each bit in artifact flag backplane.
     Non-zero results mean that bit is flagged. Only 4 bits set rn. """
     bitmask_column= np.zeros(len(apertures), dtype=np.uint8)
@@ -61,7 +69,11 @@ def bitwise_aperture_photometry(artifact_map: np.ndarray, apertures):
     return bitmask_column
 
 
-def check_empty_image(eclipse:int, band:GalexBand, image_dict):
+def check_empty_image(
+    eclipse: int,
+    band: GalexBand,
+    image_dict: Mapping[str, NDArray[Any]]
+) -> str | None:
     if not image_dict["cnt"].max():
         print(f"{eclipse} appears to contain nothing in {band}.")
         # do we want to return a file when the image is empty?
@@ -71,60 +83,97 @@ def check_empty_image(eclipse:int, band:GalexBand, image_dict):
     return None
 
 
-def extract_frame(frame, apertures, key):
+def count_frame(
+    frame: NDArray[Any] | scipy.sparse.spmatrix,
+    apertures: CircularAperture,
+) -> NDArray[np.float64]:
     if isinstance(frame, scipy.sparse.spmatrix):
         frame = frame.toarray()
-    if key == "flag":
-        return bitwise_aperture_photometry(frame, apertures)
-    return aperture_photometry(frame, apertures)["aperture_sum"].data
+    return cast(
+        NDArray[np.float64],
+        aperture_photometry(frame, apertures)["aperture_sum"].data
+    )
 
 
-def _extract_photometry_unthreaded(movie, apertures, key):
-    photometry = {}
-    for ix, frame in enumerate(movie):
-        print_inline(f"extracting frame {ix}")
-        photometry[ix] = extract_frame(frame, apertures, key)
+def flag_frame(
+    frame: NDArray[Any] | scipy.sparse.spmatrix,
+    apertures: CircularAperture,
+) -> NDArray[np.uint8]:
+    if isinstance(frame, scipy.sparse.spmatrix):
+        frame = frame.toarray()
+    return bitwise_aperture_photometry(frame, apertures)
+
+
+def _extract_photometry_unthreaded(
+    movie: Sequence[NDArray[Any] | scipy.sparse.spmatrix],
+    apertures: CircularAperture,
+    extractor: Callable[[NDArray[Any] | scipy.sparse.spmatrix, CircularAperture], FramePM]
+) -> list[FramePM]:
+    photometry: list[FramePM] = []
+    for frame in movie:
+        print_inline(f"extracting frame {len(photometry)}")
+        photometry.append(extractor(frame, apertures))
     return photometry
 
 
 # it's foolish to run this multithreaded unless you _are_ unpacking sparse
 # matrices, but I won't stop you.
-def _extract_photometry_threaded(movie, apertures, threads, key):
-    pool = Pool(threads)
-    photometry = {}
-    for ix, frame in enumerate(movie):
-        photometry[ix] = pool.apply_async(extract_frame, (frame, apertures, key))
-    pool.close()
-    pool.join()
-    return {ix: result.get() for ix, result in photometry.items()}
+def _extract_photometry_threaded(
+    movie: Sequence[NDArray[Any] | scipy.sparse.spmatrix],
+    apertures: CircularAperture,
+    extractor: Callable[[NDArray[Any] | scipy.sparse.spmatrix, CircularAperture], FramePM],
+    threads: int,
+) -> list[FramePM]:
+    with Pool(threads) as pool:
+        photo_futures = [
+            pool.apply_async(extractor, (frame, apertures))
+            for frame in movie
+        ]
+        pool.close()
+        pool.join()
+        return [result.get() for result in photo_futures]
 
 
-def extract_photometry(movie_dict, source_table, apertures, threads):
-    photometry_tables = []
-    for key in ["cnt", "flag"]:
-        title = "primary movie" if key == "cnt" else f"{key} map"
-        print(f"extracting photometry from {title}")
-        if threads is None:
-            photometry = _extract_photometry_unthreaded(
-                movie_dict[key], apertures, key
-            )
-        else:
-            photometry = _extract_photometry_threaded(
-                movie_dict[key], apertures, threads, key
-            )
-        frame_indices = sorted(photometry.keys())
-        if key in ("flag"):
-            column_prefix = "artifact_flag"
-        else:
-            column_prefix = "aperture_sum"
-        photometry = {
-            f"{column_prefix}_{ix}": photometry[ix] for ix in frame_indices
-        }
-        photometry_tables.append(pd.DataFrame.from_dict(photometry))
-    return pd.concat([source_table, *photometry_tables], axis=1)
+def extract_photometry(
+    movie_dict: Mapping[str, Sequence[NDArray[Any] | scipy.sparse.spmatrix]],
+    source_table: pd.DataFrame,
+    apertures: CircularAperture,
+    threads: int | None
+) -> pd.DataFrame:
+    if threads is None:
+        print("extracting photometry from primary movie")
+        counts = _extract_photometry_unthreaded(
+            movie_dict["cnt"], apertures, count_frame
+        )
+        print("extracting photometry from flag map")
+        flags = _extract_photometry_unthreaded(
+            movie_dict["flag"], apertures, flag_frame
+        )
+    else:
+        print("extracting photometry from primary movie")
+        counts = _extract_photometry_threaded(
+            movie_dict["cnt"], apertures, count_frame, threads
+        )
+        print("extracting photometry from flag map")
+        flags = _extract_photometry_threaded(
+            movie_dict["flag"], apertures, flag_frame, threads
+        )
+
+    counts_table = pd.DataFrame.from_dict({
+        f"aperture_sum_{ix}": count
+        for ix, count in enumerate(counts)
+    })
+    flags_table = pd.DataFrame.from_dict({
+        f"artifact_flag_{ix}": flag
+        for ix, flag in enumerate(flags)
+    })
+    return pd.concat([source_table, counts_table, flags_table], axis=1)
 
 
-def write_exptime_file(expfile: Pathlike, movie_dict) -> None:
+def write_exptime_file(
+    expfile: Pathlike,
+    movie_dict: Mapping[str, Any]
+) -> None:
     exptime_table = pd.DataFrame(
         {
             "expt": movie_dict["exptimes"],
@@ -133,7 +182,6 @@ def write_exptime_file(expfile: Pathlike, movie_dict) -> None:
         }
     )
     print(f"writing exposure time table to {expfile}")
-    # noinspection PyTypeChecker
     exptime_table.to_csv(expfile, index=False)
 
 
@@ -161,11 +209,11 @@ def _load_parquet_catalog(
         # This lets you feed gPhoton2's outputs back into itself
         filters = None
 
-    return parquet.read_table(
+    return cast(pd.DataFrame, parquet.read_table(
         source_catalog_file,
         filters=filters,
         columns=['ra', 'dec']
-    ).to_pandas()
+    ).to_pandas())
 
 
 def load_source_catalog(
@@ -197,7 +245,10 @@ def load_source_catalog(
     return sources[~sources.duplicated()].reset_index(drop=True)
 
 
-def format_source_catalog(source_table, wcs):
+def format_source_catalog(
+    source_table: pd.DataFrame,
+    wcs: astropy.wcs.WCS
+) -> pd.DataFrame:
     print(f"Using specified catalog of {len(source_table)} sources.")
     positions = np.vstack(
         [
