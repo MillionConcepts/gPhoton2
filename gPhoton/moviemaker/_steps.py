@@ -30,7 +30,7 @@ from gPhoton.sharing import (
     unlink_nested_block_dict,
     send_to_shared_memory,
 )
-from gPhoton.types import Pathlike
+from gPhoton.types import GalexBand, Pathlike
 from gPhoton.vorpal import between, slice_between
 
 
@@ -139,7 +139,7 @@ def make_mask_frame(
 
 
 def shared_compute_exptime(
-    event_block_info: Mapping, band: str, trange: tuple[float, float]
+    event_block_info: Mapping, band: GalexBand, trange: tuple[float, float]
 ) -> float:
     """
     unlike unshared_compute_exptime(),
@@ -152,7 +152,7 @@ def shared_compute_exptime(
 
 
 def unshared_compute_exptime(
-    events: np.ndarray, band: str, trange: Sequence[float]
+    events: np.ndarray, band: GalexBand, trange: Sequence[float]
 ) -> float:
     times = events[:, 0]
     tix = np.where((times >= trange[0]) & (times < trange[1]))

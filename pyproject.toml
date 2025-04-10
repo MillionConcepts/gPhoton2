@@ -98,6 +98,7 @@ module = [
     "fast_histogram",
     "fitsio",
     "numba",
+    "numba.*",
     "photutils",
     "photutils.*",
     "quickbin",

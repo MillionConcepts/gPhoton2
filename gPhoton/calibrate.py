@@ -8,19 +8,31 @@
 """
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Any, Literal, NamedTuple, cast
 
 import numba
-from numba import njit
 import numpy as np
+from numpy.typing import ArrayLike
 
 from gPhoton import cals
 from gPhoton.aspect import aspect_tables
 import gPhoton.constants as c
-from gPhoton.types import GalexBand
+from gPhoton.numba_utilz import jit
+from gPhoton.types import GalexBand, NDArray, NFloat
 
 
-# ------------------------------------------------------------------------------
-def clk_cen_scl_slp(band: GalexBand, eclipse: int) -> tuple:
+class DetectorCalConstants(NamedTuple):
+    xclk: int
+    yclk: int
+    xcen: int
+    ycen: int
+    xscl: float
+    yscl: float
+    xslp: float
+    yslp: float
+
+
+def clk_cen_scl_slp(band: GalexBand, eclipse: int) -> DetectorCalConstants:
     """
     Return the detector clock, center, scale, and slope constants. These are
         empirically determined detector-space calibration parameters that help
@@ -52,11 +64,19 @@ def clk_cen_scl_slp(band: GalexBand, eclipse: int) -> tuple:
     else:
         raise ValueError("Band must be either FUV or NUV ... Exiting.")
 
-    return xclk, yclk, xcen, ycen, xscl, yscl, xslp, yslp
+    return DetectorCalConstants(xclk, yclk, xcen, ycen, xscl, yscl, xslp, yslp)
 
 
-# -----------------------------------------------------------------------------
-def post_csp_caldata():
+class PostCSPCorrections(NamedTuple):
+    wig2: NDArray[np.float64]
+    wig2data: dict[Literal["start", "inc"], int]
+    wlk2: NDArray[np.float64]
+    wlk2data: dict[Literal["start", "inc"], int]
+    clk2: NDArray[np.float64]
+    clk2data: dict[Literal["start", "inc"], int]
+
+
+def post_csp_caldata() -> PostCSPCorrections:
     """
     Loads the calibration data for after the CSP event.
 
@@ -73,7 +93,9 @@ def post_csp_caldata():
         wig2fits["yy"], wig2fits["YB"], wig2fits["YA"], wig2fits["XB"]
     ] = wig2fits["ycor"]
 
-    wig2data = {"start": wig2head["Y_AS_0"], "inc": wig2head["Y_AS_INC"]}
+    wig2data: dict[Literal["start", "inc"], int] = {
+        "start": wig2head["Y_AS_0"], "inc": wig2head["Y_AS_INC"]
+    }
 
     print("Loading post-CSP walk file...")
 
@@ -82,7 +104,9 @@ def post_csp_caldata():
 
     wlk2[wlk2fits["yy"], wlk2fits["yb"], wlk2fits["q"]] = wlk2fits["ycor"]
 
-    wlk2data = {"start": wlk2head["Y_AS_0"], "inc": wlk2head["Y_AS_INC"]}
+    wlk2data: dict[Literal["start", "inc"], int] = {
+        "start": wlk2head["Y_AS_0"], "inc": wlk2head["Y_AS_INC"]
+    }
 
     print("Loading post-CSP clock file...")
 
@@ -91,13 +115,17 @@ def post_csp_caldata():
 
     clk2[clk2fits["yy"], clk2fits["YB"]] = clk2fits["ycor"]
 
-    clk2data = {"start": clk2head["Y_AS_0"], "inc": clk2head["Y_AS_INC"]}
+    clk2data: dict[Literal["start", "inc"], int] = {
+        "start": clk2head["Y_AS_0"], "inc": clk2head["Y_AS_INC"]
+    }
 
-    return wig2, wig2data, wlk2, wlk2data, clk2, clk2data
+    return PostCSPCorrections(wig2, wig2data, wlk2, wlk2data, clk2, clk2data)
 
 
-# ------------------------------------------------------------------------------
-def avg_stimpos(band, eclipse):
+def avg_stimpos(band: GalexBand, eclipse: int) -> dict[
+    Literal["x1", "x2", "x3", "x4", "y1", "y2", "y3", "y4"],
+    float
+]:
     """
     Define the mean detector stim positions.
 
@@ -115,7 +143,7 @@ def avg_stimpos(band, eclipse):
     """
 
     if band == "FUV":
-        avgstim = {
+        return {
             "x1": -2541.88,
             "x2": 2632.06,
             "x3": -2541.53,
@@ -129,7 +157,7 @@ def avg_stimpos(band, eclipse):
     elif band == "NUV":
         if eclipse >= 38150:
             # The average stim positions after the clock change (post-CSP).
-            avgstim = {
+            return {
                 "x1": -2722.53,
                 "x2": 2470.29,
                 "x3": -2721.98,
@@ -141,7 +169,7 @@ def avg_stimpos(band, eclipse):
             }
         else:
             # The average stim positions for pre-CSP data (eclipse 37423).
-            avgstim = {
+            return {
                 "x1": -2722.27,
                 "x2": 2468.84,
                 "x3": -2721.87,
@@ -155,13 +183,21 @@ def avg_stimpos(band, eclipse):
     else:
         raise ValueError("No valid band specified.")
 
-    return avgstim
+
+class StimsIndexes(NamedTuple):
+    index1: NDArray[np.intp]
+    index2: NDArray[np.intp]
+    index3: NDArray[np.intp]
+    index4: NDArray[np.intp]
 
 
-# ------------------------------------------------------------------------------
-
-# ------------------------------------------------------------------------------
-def find_stims_index(x, y, band, eclipse, margin=90.001):
+def find_stims_index(
+    x: ArrayLike,
+    y: ArrayLike,
+    band: GalexBand,
+    eclipse: int,
+    margin: float = 90.001
+) -> StimsIndexes:
     """
     Given a list of detector x,y positions of events, returns four
         arrays that contain the indices of likely stim events for that stim,
@@ -198,13 +234,6 @@ def find_stims_index(x, y, band, eclipse, margin=90.001):
     # [Future] This method could be programmed better. Consider using numpy
     # "where" and the logical '&' operator, instead of .nonzero()?
 
-    # Plate scale (in arcsec/mm).
-    pltscl = 68.754932
-    # Plate scale in arcsec per micron.
-    c.ASPUM = pltscl / 1000.0
-    # [Future] Could define the plate scale (in both units) as a constant for
-    # the module, since it is used in many places?
-
     x_as = np.array(x) * c.ASPUM
     y_as = np.array(y) * c.ASPUM
 
@@ -235,11 +264,15 @@ def find_stims_index(x, y, band, eclipse, margin=90.001):
         & (y_as < (avg["y4"] + margin))
     ).nonzero()[0]
 
-    return index1, index2, index3, index4
+    return StimsIndexes(index1, index2, index3, index4)
 
 
 # ------------------------------------------------------------------------------
-def rtaph_yap(ya, yb, yamc):
+def rtaph_yap(
+    ya: NDArray[NFloat],
+    yb: NDArray[NFloat],
+    yamc: NDArray[NFloat]
+) -> NDArray[np.int64]:
     """
     For post-CSP data, 'wrap' the YA value for YA in [0,1]. From rtaph.c.
 
@@ -270,10 +303,13 @@ def rtaph_yap(ya, yb, yamc):
     return np.array(yap, dtype="int64") % 32
 
 
-# ------------------------------------------------------------------------------
-
-# ------------------------------------------------------------------------------
-def rtaph_yac(yactbl, ya, yb, yamc, eclipse):
+def rtaph_yac(
+    yactbl: NDArray[NFloat],
+    ya: NDArray[NFloat],
+    yb: NDArray[NFloat],
+    yamc: NDArray[NFloat],
+    eclipse: int
+) -> NDArray[np.float64]:
     """
     Compute a the YAmC (yac) correction to the Y detector FEE position.
 
@@ -300,21 +336,26 @@ def rtaph_yac(yactbl, ya, yb, yamc, eclipse):
     :returns: numpy.ndarray
     """
 
-    yac = np.zeros(len(ya))
     if eclipse <= 37423:
-        return yac
+        return np.zeros(len(ya))
 
     yap = rtaph_yap(ya, yb, yamc)
-
     return yactbl[yap, yb]
 
 
-# ------------------------------------------------------------------------------
-
-# ------------------------------------------------------------------------------
 def rtaph_yac2(
-    q, xb, yb, ya, y, wig2, wig2data, wlk2, wlk2data, clk2, clk2data
-):
+    q: NDArray[NFloat],
+    xb: NDArray[NFloat],
+    yb: NDArray[NFloat],
+    ya: NDArray[NFloat],
+    y: NDArray[NFloat],
+    wig2: NDArray[NFloat],
+    wig2data: dict[Literal["start", "inc"], int],
+    wlk2: NDArray[NFloat],
+    wlk2data: dict[Literal["start", "inc"], int],
+    clk2: NDArray[NFloat],
+    clk2data: dict[Literal["start", "inc"], int]
+) -> NDArray[np.float64]:
     """
     Compute a secondary correction to the YAmC (yac) detector FEE Y position.
 
@@ -368,8 +409,9 @@ def rtaph_yac2(
 
     :returns: numpy.ndarray -- Secondary YAmC corrections.
     """
-    y_as = y * c.ASPUM
-    yac_as = np.zeros(len(y_as))
+    ASPUM = np.float64(c.ASPUM)
+    y_as = y * ASPUM
+    yac_as = np.zeros_like(y_as)
     ix = ((y_as > -2000) & (y_as < 2000)).nonzero()[0]
 
     ii = (np.array(y_as, dtype="int64") - wig2data["start"]) / wig2data["inc"]
@@ -381,10 +423,10 @@ def rtaph_yac2(
     ii = (np.array(y_as, dtype="int64") - clk2data["start"]) / clk2data["inc"]
     yac_as[ix] = clk2[np.array(ii[ix], dtype="int64"), yb[ix]]
 
-    return yac_as / c.ASPUM
+    return yac_as / ASPUM
 
 
-def flat_scale_parameters(band):
+def flat_scale_parameters(band: GalexBand) -> tuple[float, float, float]:
     """
     Return the flat scaling parameters for a given band.
 
@@ -416,7 +458,11 @@ def flat_scale_parameters(band):
     return flat_correct_0, flat_correct_1, flat_correct_2
 
 
-def compute_flat_scale(t, band, verbose=0):
+def compute_flat_scale(
+    t: ArrayLike,
+    band: GalexBand,
+    verbose: int = 0
+) -> NDArray[Any]:
     """
     Return the flat scale factor for a given time.
         These are empirically determined linear scales to the flat field
@@ -465,17 +511,19 @@ def compute_flat_scale(t, band, verbose=0):
     if verbose:
         print("         flat scale = ", flat_scale)
 
-    return flat_scale
+    # this evaluates as Any, I suspect imprecise typing within numpy itself
+    # revisit after we're not stuck on numpy 1.26 anymore
+    return flat_scale # type: ignore
 
 
 def get_fuv_temp(eclipse: int, aspect_dir: None | str | Path = None) -> float:
     """return FUV detector temperature for a given eclipse."""
-    return aspect_tables(
+    return cast(float, aspect_tables(
         eclipse=eclipse,
         tables="metadata",
         columns=["fuv_temp"],
         aspect_dir=aspect_dir
-    )[0]["fuv_temp"][0].as_py()
+    )[0]["fuv_temp"][0].as_py())
 
 
 def find_fuv_offset(
@@ -510,17 +558,26 @@ def find_fuv_offset(
 # two components of the expensive center-and-scale step that can be
 # accelerated effectively with numba
 
-@njit(cache=True)
-def plus7_mod32_minus16(array):
+@jit
+def plus7_mod32_minus16(array: NDArray[np.int16]) -> NDArray[np.int16]:
     """add 7, take result modulo 32, subtract 16"""
     return ((array + 7) % 32) - 16
 
 
-@njit(
-    (numba.int16[:], numba.int16[:], numba.int16[:], numba.int16, numba.int16, numba.int16[:], numba.int16[:]),
-    cache=True
-)
-def center_scale_step_1(xa, yb, xb, xclk, yclk, xamc, yamc):
+@jit(signatures=(
+    numba.int16[:], numba.int16[:], numba.int16[:],
+    numba.int16, numba.int16,
+    numba.int16[:], numba.int16[:]
+))
+def center_scale_step_1(
+    xa: NDArray[np.int16],
+    yb: NDArray[np.int16],
+    xb: NDArray[np.int16],
+    xclk: int,
+    yclk: int,
+    xamc: NDArray[np.int16],
+    yamc: NDArray[np.int16]
+) -> tuple[NDArray[np.int16], NDArray[np.int64], NDArray[np.int16]]:
     """
     perform an expensive component of the center-and-scale pipeline
     """
@@ -530,7 +587,12 @@ def center_scale_step_1(xa, yb, xb, xclk, yclk, xamc, yamc):
     return xraw0, ya.astype(numba.int64), yraw0
 
 
-def center_and_scale(band, data, eclipse):
+def center_and_scale(
+    band: GalexBand,
+    data: dict[Literal["q", "t", "xa", "xamc", "xb", "yamc", "yb"], NDArray[Any]],
+    eclipse: int
+) -> dict[Literal["q", "t", "x", "xa", "xamc", "xb", "y", "ya", "yamc", "yb"],
+          NDArray[Any]]:
     """
     center and scale photon events from a raw6 file based on mission
     calibration constants
@@ -547,6 +609,9 @@ def center_and_scale(band, data, eclipse):
         data["xamc"],
         data["yamc"],
     )
+    data = cast(dict[Literal["q", "t", "x", "xa", "xamc", "xb", "y", "ya", "yamc", "yb"],
+                     NDArray[Any]],
+                data)
     data["ya"] = (ya % 32).astype("int16")
     xraw = (
         xraw0 + np.array(plus7_mod32_minus16(data["xa"]), dtype="int64") * xslp
@@ -559,17 +624,22 @@ def center_and_scale(band, data, eclipse):
     return data
 
 
-def compute_shutter(timeslice, flagslice, trange, shutgap=0.05):
+def compute_shutter(
+    timeslice: NDArray[NFloat],
+    flagslice: NDArray[NFloat],
+    trange: Sequence[float],
+    shutgap: float = 0.05
+) -> float:
     ix = np.where(flagslice == 0)
     t = np.hstack([trange[0], np.unique(timeslice[ix]), trange[1]])
     ix = np.where(t[1:] - t[:-1] >= shutgap)
-    return np.array(t[1:] - t[:-1])[ix].sum()
+    return cast(float, np.array(t[1:] - t[:-1])[ix].sum())
 
 
 def compute_exptime(
-    timeslice: np.ndarray,
-    flagslice: np.ndarray,
-    band: str,
+    timeslice: NDArray[NFloat],
+    flagslice: NDArray[NFloat],
+    band: GalexBand,
     trange: Sequence[float],
 ) -> float:
     shutter = compute_shutter(timeslice, flagslice, trange)
