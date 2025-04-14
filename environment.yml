@@ -11,7 +11,7 @@ dependencies:
   - more-itertools
   - matplotlib
   - numba
-  - numpy<2.0.0
+  - numpy>=2.2
   - pandas
   - photutils>=2.0
   - pip
