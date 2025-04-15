@@ -277,7 +277,8 @@ def get_point_sources(cnt_image: np.ndarray, band: str, f_e_mask, exposure_time)
     seg_sources = SourceCatalog(cnt_image, deblended_segment_map, convolved_data=convolved_data
                                 ).to_table(columns=columns).to_pandas()
     seg_sources.astype({'label': 'int32'})
-    seg_sources = seg_sources.set_index("label", drop=True).dropna(axis=0, how='any')
+    seg_sources = seg_sources.set_index("label", drop=True) # removed so labels align with outline_seg_map
+                                                            # .dropna(axis=0, how='any')
 
     # for source finding troubleshooting purposes:
     # from astropy.io import fits
