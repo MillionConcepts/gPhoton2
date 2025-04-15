@@ -380,10 +380,10 @@ def rtaph_yac2(
     yac_as[ix] = wig2[np.array(ii[ix], dtype="int64"), yb[ix], ya[ix], xb[ix]]
 
     ii = (np.array(y_as, dtype="int64") - wlk2data["start"]) / wlk2data["inc"]
-    yac_as[ix] = wlk2[np.array(ii[ix], dtype="int64"), yb[ix], q[ix]]
+    yac_as[ix] += wlk2[np.array(ii[ix], dtype="int64"), yb[ix], q[ix]]
 
     ii = (np.array(y_as, dtype="int64") - clk2data["start"]) / clk2data["inc"]
-    yac_as[ix] = clk2[np.array(ii[ix], dtype="int64"), yb[ix]]
+    yac_as[ix] += clk2[np.array(ii[ix], dtype="int64"), yb[ix]]
 
     return yac_as / c.ASPUM
 
