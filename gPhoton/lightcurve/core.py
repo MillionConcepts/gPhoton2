@@ -2,6 +2,7 @@ from typing import Mapping
 import warnings
 import numpy as np
 import pandas as pd
+from skimage.draw import disk
 import gPhoton.constants as c
 from gPhoton.lightcurve._steps import (
     count_full_depth_image,
@@ -30,18 +31,29 @@ def make_lightcurves(sky_arrays: Mapping, ctx: PipeContext):
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
+
         # preparing images for source finding
         exptime = image_dict["exptimes"][0]
+
+        # edge mask just for source finding (not a flag, just demarcates
+        # bad area for source finding @ image edge)
+        flag_edge_mask = image_dict["flag"]
+        flag_edge_mask = np.where((flag_edge_mask & 0b0010) != 0, 0, flag_edge_mask)
+        row, col = image_dict["flag"].shape
+        row = row/2
+        col = col/2
+        rr, cc = disk((row, col), 1450, shape=flag_edge_mask.shape)
+        outside_mask = np.ones_like(flag_edge_mask, dtype=bool)
+        outside_mask[rr, cc] = False
+        # bitwise flag for edge
+        flag_edge_mask[outside_mask] |= 0b1000
         masked_cnt_image = zero_flag(
             image_dict["cnt"],
-            image_dict["flag"],
+            flag_edge_mask,
             copy=True
-        ) / exptime
-        masked_cnt_image = masked_cnt_image.astype(np.float32)
-        flag_edge_mask = flag_mask(
-            image_dict["cnt"],
-            image_dict["flag"]
         )
+        masked_cnt_image = masked_cnt_image.astype(np.float32)
+        masked_cnt_image[(flag_edge_mask & 0b1000) != 0] = np.nan
 
     if ctx.source_catalog_file is not None:
         # for input point source catalog
@@ -52,11 +64,11 @@ def make_lightcurves(sky_arrays: Mapping, ctx: PipeContext):
         source_table = format_source_catalog(sources, sky_arrays["wcs"])
     else:
         # if there's no input catalog
-        outline_seg_map, source_table = get_point_sources(
+        print(sky_arrays['photon_count'])
+        outline_seg_map, source_table, bkg_sub_cnt = get_point_sources(
             masked_cnt_image,
-            ctx.band,
             flag_edge_mask,
-            exptime)
+            sky_arrays['photon_count'])
 
     # set all extended sources IDs for point sources as Null unless
     # extended source finding is run
@@ -67,9 +79,9 @@ def make_lightcurves(sky_arrays: Mapping, ctx: PipeContext):
         # find extended sources, tag point source catalog with
         # applicable extended source IDs
         masks, extended_source_cat = mask_for_extended_sources(
-            masked_cnt_image,
+            bkg_sub_cnt,
             ctx.band,
-            exptime)
+            sky_arrays['photon_count'])
         if extended_source_cat is not None:
             extended_name = ctx['extended_shapes']
             print(f"writing extended source table to {extended_name}")

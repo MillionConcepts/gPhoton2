@@ -13,6 +13,7 @@ import re
 import shutil
 import warnings
 from pathlib import Path
+from pyarrow import parquet
 from time import time
 from types import MappingProxyType
 from typing import Optional, Sequence, Mapping, Literal
@@ -426,6 +427,8 @@ def load_moviemaker_results(context, lil):
         }
     else:
         results['movie_dict'] = {}
+    photon_count = get_photon_counts(context)
+    results['photon_count'] = photon_count
     return results
 
 
@@ -439,6 +442,18 @@ def pick_and_copy_array(context, which="image"):
     print(f"making temp copy of {which} from remote")
     shutil.copy(context(remote=True)[which], context.temp_path())
     return Path(context.temp_path(), Path(context[which]).name)
+
+
+def get_photon_counts(context):
+    if (phot_path := Path(context['photonfile'])).exists():
+        meta = parquet.read_metadata(phot_path)
+        return meta.num_rows
+    elif (phot_path := Path(context(remote=True)['photonfile'])).exists():
+        meta = parquet.read_metadata(phot_path)
+        return meta.num_rows
+    else:
+        print("Photonlist not found, using photonlist length of 0.")
+        return 0
 
 
 def create_local_paths(context: PipeContext) -> None:
