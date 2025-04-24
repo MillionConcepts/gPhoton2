@@ -418,8 +418,6 @@ def get_extended(dao_sources: pd.DataFrame, band: str):
                     min_samples=1)
     dao_sources['group_id'] = dbscan.fit(pos_stars).labels_
 
-    print(pd.unique( dao_sources['group_id']))
-
     # -1 is the value for ungrouped sources, so we don't want them ID'd as a group
     star_groups = dao_sources[dao_sources['group_id'] != -1].groupby('group_id')
 
