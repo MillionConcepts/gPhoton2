@@ -142,7 +142,7 @@ def create_images_and_movies(
     print("indexing data and making WCS solution")
     movie_dict = {}
     status = "started"
-    exposure_array, map_ix_dict, total_trange, wcs = prep_image_inputs(
+    exposure_array, map_ix_dict, total_trange, wcs, photons = prep_image_inputs(
         photonfile,
         ctx
     )
@@ -166,6 +166,7 @@ def create_images_and_movies(
             "wcs": wcs,
             "movie_dict": {},
             "image_dict": image_dict,
+            "photon_count": photons,
             "status": (
                 f"exptime {round(image_dict['exptimes'][0])} "
                 f"< min_exptime {ctx.min_exptime}"
@@ -180,5 +181,6 @@ def create_images_and_movies(
         "wcs": wcs,
         "movie_dict": movie_dict,
         "image_dict": image_dict,
+        "photon_count": photons,
         "status": status,
     }

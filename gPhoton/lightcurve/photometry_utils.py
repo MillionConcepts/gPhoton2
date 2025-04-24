@@ -222,7 +222,7 @@ def outline_segments(self, mask_background=False):
     return outlines
 
 
-def get_point_sources(cnt_image: np.ndarray, f_e_mask, photon_count):
+def get_point_sources(cnt_image: np.ndarray, f_e_mask, photon_count, band):
     """
     Uses image segmentation to identify point sources.
     The threshold for being a source in NUV is set at 1.5 times the background
@@ -236,10 +236,10 @@ def get_point_sources(cnt_image: np.ndarray, f_e_mask, photon_count):
     from photutils.segmentation import (detect_sources, make_2dgaussian_kernel,
                                         SourceCatalog, deblend_sources)
     from scipy.ndimage import convolve
-
+    #from gPhoton.coadd import zero_flag
     print("Estimating background and threshold.")
     cnt_image, threshold = estimate_background_and_threshold(
-        cnt_image, photon_count
+        cnt_image, photon_count, band
     )
     kernel = make_2dgaussian_kernel(fwhm=3, size=(3, 3))
 
@@ -285,33 +285,37 @@ def get_point_sources(cnt_image: np.ndarray, f_e_mask, photon_count):
                                                             # .dropna(axis=0, how='any')
 
     # for source finding troubleshooting purposes:
-    from astropy.io import fits
-    deblended_data = deblended_segment_map.data.astype(np.int32)
-    hdu = fits.PrimaryHDU(deblended_data)
-    hdul = fits.HDUList([hdu])
-    hdul.writeto(f'deblended_segmentation_{photon_count}.fits', overwrite=True)
+    # from astropy.io import fits
+    # deblended_data = deblended_segment_map.data.astype(np.int32)
+    # hdu = fits.PrimaryHDU(deblended_data)
+    # hdul = fits.HDUList([hdu])
+    # print(f'deblended_segmentation_{photon_count}_{band}.fits')
+    # hdul.writeto(f'deblended_segmentation_{photon_count}_{band}.fits', overwrite=True)
 
     return outline_seg_map, seg_sources, cnt_image
 
 
-def estimate_threshold(bkg_rms, photon_count):
+def estimate_threshold(bkg_rms, photon_count, band):
     print("Calculating source threshold.")
 
     multiplier = -0.18 * np.log(photon_count) + 4.87
     minimum = -0.61 * np.log(multiplier) + 0.93
     print(f"multiplier: {multiplier}, minimum:{minimum}")
-
     bkg_rms = bkg_rms.astype(np.float32)
+    if band == "FUV":
+        m75 = np.nanpercentile(bkg_rms, 75)
+        bkg_rms[bkg_rms < m75] = m75
+        print(f"bkg rms min: {m75}")
     bkg_rms[bkg_rms < minimum] = minimum
     threshold = np.multiply(multiplier, bkg_rms)
 
     return threshold
 
 
-def estimate_background_and_threshold(cnt_image: np.ndarray, photon_count):
+def estimate_background_and_threshold(cnt_image: np.ndarray, photon_count, band):
 
     cnt_image, bkg_rms = estimate_background(cnt_image)
-    threshold = estimate_threshold(bkg_rms, photon_count)
+    threshold = estimate_threshold(bkg_rms, photon_count, band)
 
     return cnt_image, threshold
 
@@ -334,14 +338,17 @@ def estimate_background(cnt_image: np.ndarray):
     # no longer have to explicitly delete all bkg components bc of
     # photutils 2.0 update
     rms = bkg.background_rms
+    print(f"np percentile 75: {np.nanpercentile(rms, 75)}")
+    print(f"np percentile 90: {np.nanpercentile(rms, 90)}")
+    print(f"np percentile 50: {np.nanpercentile(rms, 50)}")
 
     return cnt_image, rms.astype(np.float32)
 
 
 def mask_for_extended_sources(cnt_image: np.ndarray, band: str, photon_count):
     print("Running DAO for extended source ID.")
-    dao_sources = dao_handler(cnt_image, photon_count)
-    print(f"Found {len(dao_sources)} peaks with DAO.")
+    dao_sources = dao_handler(cnt_image, band)
+    print(f"Found {len(dao_sources)} peaks with DAO, photons: {photon_count}.")
     return get_extended(dao_sources, band)
 
 
@@ -365,20 +372,20 @@ def check_point_in_extended(outline_seg_map: np.ndarray, masks, source_table):
     return source_table
 
 
-def dao_handler(cnt_image: np.ndarray, photon_count):
+def dao_handler(cnt_image: np.ndarray, band):
     # runs DAO twice with diff kernel sizes to get more sources
     #TODO: experimenting with dao threshold being based on exp time again, then document
     # dao_1 was thresh = 0.01, dao_2 was thresh = 0.02
-    #threshold = np.multiply(np.power(exposure_time, -0.86026), 3)
-    # 1/10th minimum for pt source finding
-    #threshold = (-0.61 * np.log(  -0.18 * np.log(photon_count) + 4.87) + 0.93)*10
-    print(f"{np.nanpercentile(cnt_image,99.5)}")
-    print(f"{np.nanpercentile(cnt_image,95)}")
-    threshold = np.nanpercentile(cnt_image,99.5)
-    print(f"Extended source threshold: {threshold}")
-    dao_sources1 = dao_finder(cnt_image, threshold=threshold, fwhm=5)
-    dao_sources2 = dao_finder(cnt_image,threshold=threshold, fwhm=3)
+    if band == "NUV":
+        thresh1 = .01
+        thresh2 = .02
+    if band == "FUV":
+        thresh1 = .006
+        thresh2 = .01
+    dao_sources1 = dao_finder(cnt_image, threshold= thresh1, fwhm=5)
+    dao_sources2 = dao_finder(cnt_image,threshold= thresh2, fwhm=3)
     dao_sources = pd.concat([dao_sources1, dao_sources2])
+    #dao_sources.to_csv("dao_sources.csv")
     return dao_sources
 
 
@@ -399,39 +406,33 @@ def get_extended(dao_sources: pd.DataFrame, band: str):
     a max. separation distance called "epsilon" to be considered in the same group.
     extended sources are considered dense collections of many local maximums.
     """
-    from photutils.psf.groupers import SourceGrouper
+    from sklearn.cluster import DBSCAN
 
-    x_0 = np.array(dao_sources['x_peak'])
-    y_0 = np.array(dao_sources['y_peak'])
+    epsilon = 40 if band == "NUV" else 50
+    print(f"epsilon: {epsilon}")
+    dao_sources['id'] = dao_sources.index
+    pos_stars = np.transpose((dao_sources['x_peak'], dao_sources['y_peak']))
+    # default min_samples for scikit is 5, when we used DBSCAN from photutils they
+    # had set it to 1. so we set it to 1 here.
+    dbscan = DBSCAN(eps=epsilon,
+                    min_samples=1)
+    dao_sources['group_id'] = dbscan.fit(pos_stars).labels_
 
-    epsilon = 1 if band == "NUV" else 20
-    # limit memory usage: if there are more than 20000 sources downsample them
-    max_stars = 20000
-    num_stars = len(x_0)
-    if num_stars > max_stars:
-        indices_to_keep = np.linspace(0, num_stars - 1, max_stars, dtype=int)
-        x_0 = np.take(x_0, indices_to_keep)
-        y_0 = np.take(y_0, indices_to_keep)
-        epsilon = 1
+    print(pd.unique( dao_sources['group_id']))
 
-    dbscan_group = SourceGrouper(min_separation=epsilon)
-    star_groups = pd.DataFrame({
-        'group_id': dbscan_group(x_0, y_0),
-        'x_0': x_0,
-        'y_0': y_0,
-    }).groupby('group_id')
+    # -1 is the value for ungrouped sources, so we don't want them ID'd as a group
+    star_groups = dao_sources[dao_sources['group_id'] != -1].groupby('group_id')
 
     # filter out large stars that aren't really extended sources
     # arbitrary cutoff of 100 points
     # annoyingly, .filter() removes the grouping so we have to put it back
-    #star_groups = star_groups.filter(lambda g: len(g) > 100).groupby('group_id')
+    cutoff = 200 if band == "NUV" else 100
+    star_groups = star_groups.filter(lambda g: len(g) > cutoff).groupby('group_id')
 
-    # we currently use an int8 for group IDs; there should never be
+    # we currently use an int8 for group IDs; there should probably never be
     # this many extended sources anyway
     if len(star_groups.groups) >= 128:
-        raise RuntimeError(
-            f"Too many extended sources! ({len(star_groups.groups)})"
-        )
+        raise RuntimeError(f"Too many extended sources! ({len(star_groups.groups)})")
 
     if len(star_groups.groups) == 0:
         return {}, pd.DataFrame(columns=["id", "hull_area", "num_dao_points", "hull_vertices"])

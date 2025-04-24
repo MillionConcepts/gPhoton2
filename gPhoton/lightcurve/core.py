@@ -68,7 +68,8 @@ def make_lightcurves(sky_arrays: Mapping, ctx: PipeContext):
         outline_seg_map, source_table, bkg_sub_cnt = get_point_sources(
             masked_cnt_image,
             flag_edge_mask,
-            sky_arrays['photon_count'])
+            sky_arrays['photon_count'],
+            ctx.band)
 
     # set all extended sources IDs for point sources as Null unless
     # extended source finding is run
@@ -79,7 +80,7 @@ def make_lightcurves(sky_arrays: Mapping, ctx: PipeContext):
         # find extended sources, tag point source catalog with
         # applicable extended source IDs
         masks, extended_source_cat = mask_for_extended_sources(
-            bkg_sub_cnt,
+            bkg_sub_cnt/exptime,
             ctx.band,
             sky_arrays['photon_count'])
         if extended_source_cat is not None:

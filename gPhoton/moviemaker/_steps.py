@@ -161,7 +161,7 @@ def prep_image_inputs(photonfile, ctx):
     t = event_table["t"].to_numpy()
     map_ix_dict = generate_indexed_values(foc, artifact_ix, artifact_flags, t, weights)
     total_trange = (t.min(), t.max())
-    return exposure_array, map_ix_dict, total_trange, wcs
+    return exposure_array, map_ix_dict, total_trange, wcs, len(event_table)
 
 
 def combine_artifacts(event_table, wide_edge_thresh, narrow_edge_thresh):
