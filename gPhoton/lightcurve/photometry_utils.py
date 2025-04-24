@@ -285,12 +285,12 @@ def get_point_sources(cnt_image: np.ndarray, f_e_mask, photon_count, band):
                                                             # .dropna(axis=0, how='any')
 
     # for source finding troubleshooting purposes:
-    # from astropy.io import fits
-    # deblended_data = deblended_segment_map.data.astype(np.int32)
-    # hdu = fits.PrimaryHDU(deblended_data)
-    # hdul = fits.HDUList([hdu])
-    # print(f'deblended_segmentation_{photon_count}_{band}.fits')
-    # hdul.writeto(f'deblended_segmentation_{photon_count}_{band}.fits', overwrite=True)
+    from astropy.io import fits
+    deblended_data = deblended_segment_map.data.astype(np.int32)
+    hdu = fits.PrimaryHDU(deblended_data)
+    hdul = fits.HDUList([hdu])
+    print(f'deblended_segmentation_{photon_count}_{band}.fits')
+    hdul.writeto(f'deblended_segmentation_{photon_count}_{band}.fits', overwrite=True)
 
     return outline_seg_map, seg_sources, cnt_image
 
@@ -424,7 +424,7 @@ def get_extended(dao_sources: pd.DataFrame, band: str):
     # filter out large stars that aren't really extended sources
     # arbitrary cutoff of 100 points
     # annoyingly, .filter() removes the grouping so we have to put it back
-    cutoff = 200 if band == "NUV" else 100
+    cutoff = 250 if band == "NUV" else 125
     star_groups = star_groups.filter(lambda g: len(g) > cutoff).groupby('group_id')
 
     # we currently use an int8 for group IDs; there should probably never be
@@ -458,7 +458,7 @@ def get_hull_path(group, group_id: int):
     import matplotlib.path
     from scipy.spatial import ConvexHull
 
-    xypos = np.transpose([group['y_0'], group['x_0']]) # switched x and y
+    xypos = np.transpose([group['y_peak'], group['x_peak']]) # switched x and y
     hull = ConvexHull(xypos)
     hull_verts = tuple(zip(xypos[hull.vertices, 0], xypos[hull.vertices, 1]))
 

@@ -2,8 +2,8 @@ from gPhoton.pipeline import execute_pipeline
 
 if __name__ == "__main__":
     execute_pipeline(
-        3047,
-        "FUV",
+        34946,
+        "NUV",
         depth=120,
         # integer; None to deactivate (default None)
         threads=4,
@@ -20,7 +20,7 @@ if __name__ == "__main__":
         coregister_lightcurves=False,
         # photonpipe, moviemaker, None (default None)
         stop_after=None,
-        photometry_only=False,
+        photometry_only=True,
         # "none", "gzip", "rice"
         compression="rice",
         # use array sparsification on movie frames?
