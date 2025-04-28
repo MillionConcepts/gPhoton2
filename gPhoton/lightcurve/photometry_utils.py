@@ -348,7 +348,7 @@ def estimate_background(cnt_image: np.ndarray):
 def mask_for_extended_sources(cnt_image: np.ndarray, band: str, photon_count):
     print("Running DAO for extended source ID.")
     minimum = minimum_elliot_sigmoid(photon_count)
-    dao_sources = dao_handler(cnt_image, band, minimum)
+    dao_sources = dao_handler(cnt_image, minimum)
     print(f"Found {len(dao_sources)} peaks with DAO, photons: {photon_count}.")
     return get_extended(dao_sources, band)
 
