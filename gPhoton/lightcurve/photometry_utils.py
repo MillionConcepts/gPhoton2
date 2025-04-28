@@ -238,7 +238,7 @@ def get_point_sources(cnt_image: np.ndarray, f_e_mask, photon_count, band):
     from scipy.ndimage import convolve
     #from gPhoton.coadd import zero_flag
     print("Estimating background and threshold.")
-    cnt_image, threshold = estimate_background_and_threshold(
+    cnt_image, threshold, multiplier, minimum = estimate_background_and_threshold(
         cnt_image, photon_count, band
     )
     kernel = make_2dgaussian_kernel(fwhm=3, size=(3, 3))
@@ -283,14 +283,15 @@ def get_point_sources(cnt_image: np.ndarray, f_e_mask, photon_count, band):
     seg_sources.astype({'label': 'int32'})
     seg_sources = seg_sources.set_index("label", drop=True) # removed so labels align with outline_seg_map
                                                             # .dropna(axis=0, how='any')
-
+    seg_sources['threshold_multiplier'] = multiplier
+    seg_sources['threshold_minimum'] = minimum
     # for source finding troubleshooting purposes:
-    from astropy.io import fits
-    deblended_data = deblended_segment_map.data.astype(np.int32)
-    hdu = fits.PrimaryHDU(deblended_data)
-    hdul = fits.HDUList([hdu])
-    print(f'deblended_segmentation_{photon_count}_{band}.fits')
-    hdul.writeto(f'deblended_segmentation_{photon_count}_{band}.fits', overwrite=True)
+    #from astropy.io import fits
+    #deblended_data = deblended_segment_map.data.astype(np.int32)
+    #hdu = fits.PrimaryHDU(deblended_data)
+    #hdul = fits.HDUList([hdu])
+    #print(f'deblended_segmentation_{photon_count}_{band}.fits')
+    #hdul.writeto(f'deblended_segmentation_{photon_count}_{band}.fits', overwrite=True)
 
     return outline_seg_map, seg_sources, cnt_image
 
@@ -298,26 +299,29 @@ def get_point_sources(cnt_image: np.ndarray, f_e_mask, photon_count, band):
 def estimate_threshold(bkg_rms, photon_count, band):
     print("Calculating source threshold.")
 
-    multiplier = -0.18 * np.log(photon_count) + 4.87
-    minimum = -0.61 * np.log(multiplier) + 0.93
+    multiplier = -0.15 * np.log(photon_count) + 4.3
+    minimum = minimum_elliot_sigmoid(photon_count)
     print(f"multiplier: {multiplier}, minimum:{minimum}")
     bkg_rms = bkg_rms.astype(np.float32)
-    if band == "FUV":
-        m75 = np.nanpercentile(bkg_rms, 75)
-        bkg_rms[bkg_rms < m75] = m75
-        print(f"bkg rms min: {m75}")
     bkg_rms[bkg_rms < minimum] = minimum
     threshold = np.multiply(multiplier, bkg_rms)
 
-    return threshold
+    return threshold, multiplier, minimum
+
+
+def minimum_elliot_sigmoid(x):
+    b = 0.00182538272
+    c = 1058.67793
+    sqrt_x = np.sqrt(x)
+    return 0.5 * (b * (sqrt_x - c)) / (1 + np.abs(b * (sqrt_x - c))) + 0.53
 
 
 def estimate_background_and_threshold(cnt_image: np.ndarray, photon_count, band):
 
     cnt_image, bkg_rms = estimate_background(cnt_image)
-    threshold = estimate_threshold(bkg_rms, photon_count, band)
+    threshold, multiplier, minimum = estimate_threshold(bkg_rms, photon_count, band)
 
-    return cnt_image, threshold
+    return cnt_image, threshold, multiplier, minimum
 
 
 def estimate_background(cnt_image: np.ndarray):
@@ -338,16 +342,13 @@ def estimate_background(cnt_image: np.ndarray):
     # no longer have to explicitly delete all bkg components bc of
     # photutils 2.0 update
     rms = bkg.background_rms
-    print(f"np percentile 75: {np.nanpercentile(rms, 75)}")
-    print(f"np percentile 90: {np.nanpercentile(rms, 90)}")
-    print(f"np percentile 50: {np.nanpercentile(rms, 50)}")
-
     return cnt_image, rms.astype(np.float32)
 
 
 def mask_for_extended_sources(cnt_image: np.ndarray, band: str, photon_count):
     print("Running DAO for extended source ID.")
-    dao_sources = dao_handler(cnt_image, band)
+    minimum = minimum_elliot_sigmoid(photon_count)
+    dao_sources = dao_handler(cnt_image, band, minimum)
     print(f"Found {len(dao_sources)} peaks with DAO, photons: {photon_count}.")
     return get_extended(dao_sources, band)
 
@@ -372,16 +373,18 @@ def check_point_in_extended(outline_seg_map: np.ndarray, masks, source_table):
     return source_table
 
 
-def dao_handler(cnt_image: np.ndarray, band):
+def dao_handler(cnt_image: np.ndarray, minimum):
     # runs DAO twice with diff kernel sizes to get more sources
     #TODO: experimenting with dao threshold being based on exp time again, then document
     # dao_1 was thresh = 0.01, dao_2 was thresh = 0.02
-    if band == "NUV":
-        thresh1 = .01
-        thresh2 = .02
-    if band == "FUV":
-        thresh1 = .006
-        thresh2 = .01
+    # if band == "NUV":
+    #     thresh1 = .01
+    #     thresh2 = .02
+    # if band == "FUV":
+    #     thresh1 = .006
+    #     thresh2 = .01
+    thresh1 = minimum/3
+    thresh2 = minimum/3.5
     dao_sources1 = dao_finder(cnt_image, threshold= thresh1, fwhm=5)
     dao_sources2 = dao_finder(cnt_image,threshold= thresh2, fwhm=3)
     dao_sources = pd.concat([dao_sources1, dao_sources2])
