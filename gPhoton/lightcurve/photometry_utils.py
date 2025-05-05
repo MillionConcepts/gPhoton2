@@ -222,7 +222,7 @@ def outline_segments(self, mask_background=False):
     return outlines
 
 
-def get_point_sources(cnt_image: np.ndarray, f_e_mask, photon_count, band):
+def get_point_sources(cnt_image: np.ndarray, f_e_mask, photon_count, expt):
     """
     Uses image segmentation to identify point sources.
     The threshold for being a source in NUV is set at 1.5 times the background
@@ -239,7 +239,7 @@ def get_point_sources(cnt_image: np.ndarray, f_e_mask, photon_count, band):
     #from gPhoton.coadd import zero_flag
     print("Estimating background and threshold.")
     cnt_image, threshold, multiplier, minimum = estimate_background_and_threshold(
-        cnt_image, photon_count, band
+        cnt_image, photon_count, expt
     )
     kernel = make_2dgaussian_kernel(fwhm=3, size=(3, 3))
 
@@ -286,22 +286,34 @@ def get_point_sources(cnt_image: np.ndarray, f_e_mask, photon_count, band):
     seg_sources['threshold_multiplier'] = multiplier
     seg_sources['threshold_minimum'] = minimum
     # for source finding troubleshooting purposes:
-    #from astropy.io import fits
-    #deblended_data = deblended_segment_map.data.astype(np.int32)
-    #hdu = fits.PrimaryHDU(deblended_data)
-    #hdul = fits.HDUList([hdu])
-    #print(f'deblended_segmentation_{photon_count}_{band}.fits')
-    #hdul.writeto(f'deblended_segmentation_{photon_count}_{band}.fits', overwrite=True)
+    # from astropy.io import fits
+    # deblended_data = deblended_segment_map.data.astype(np.int32)
+    # hdu = fits.PrimaryHDU(deblended_data)
+    # hdul = fits.HDUList([hdu])
+    # print(f'deblended_segmentation_{photon_count}_{expt}.fits')
+    # hdul.writeto(f'deblended_segmentation_{photon_count}_{expt}_o.fits', overwrite=True)
 
     return outline_seg_map, seg_sources, cnt_image
 
 
-def estimate_threshold(bkg_rms, photon_count, band):
+def estimate_threshold(bkg_rms, photon_count, expt):
     print("Calculating source threshold.")
-
-    multiplier = -0.15 * np.log(photon_count) + 4.3
+    # was -0.15,4.3
+    multiplier = -0.14 * np.log(photon_count) + 4.0
     minimum = minimum_elliot_sigmoid(photon_count)
+
+    # increase threshold multiplier for background dominant
+    # arrays where detector sensitivity inequalities may be
+    # more obvious. mostly relevant for FUV. low photon counts
+    # and low exposure times will be less relevant because their
+    # rms is 0 usually anyways. so I don't want the minimum to
+    # increase after the additional multiplier is applied.
+    if photon_count/expt < 15000:
+        minimum = minimum * (multiplier / (multiplier+0.5))
+        multiplier += .75
+
     print(f"multiplier: {multiplier}, minimum:{minimum}")
+
     bkg_rms = bkg_rms.astype(np.float32)
     bkg_rms[bkg_rms < minimum] = minimum
     threshold = np.multiply(multiplier, bkg_rms)
@@ -316,10 +328,10 @@ def minimum_elliot_sigmoid(x):
     return 0.5 * (b * (sqrt_x - c)) / (1 + np.abs(b * (sqrt_x - c))) + 0.53
 
 
-def estimate_background_and_threshold(cnt_image: np.ndarray, photon_count, band):
+def estimate_background_and_threshold(cnt_image: np.ndarray, photon_count, expt):
 
     cnt_image, bkg_rms = estimate_background(cnt_image)
-    threshold, multiplier, minimum = estimate_threshold(bkg_rms, photon_count, band)
+    threshold, multiplier, minimum = estimate_threshold(bkg_rms, photon_count, expt)
 
     return cnt_image, threshold, multiplier, minimum
 
@@ -353,7 +365,7 @@ def mask_for_extended_sources(cnt_image: np.ndarray, band: str, photon_count):
     return get_extended(dao_sources, band)
 
 
-def check_point_in_extended(outline_seg_map: np.ndarray, masks, source_table):
+def check_point_in_extended(outline_seg_map: np.ndarray, masks, source_table, extended_source_cat):
     """
     Checks if the borders of any segments are inside of
     each extended source, which are paths stored in the
@@ -368,23 +380,23 @@ def check_point_in_extended(outline_seg_map: np.ndarray, masks, source_table):
     for key in masks:
         inside_extended = masks[key].contains_points(seg_outlines_vert)
         segments_in_extended = outline_seg_map[seg_outlines][inside_extended]
-        source_table.loc[segments_in_extended, "extended_source"] = int(key)
+        area = extended_source_cat[extended_source_cat['id']==key].iloc[0]['hull_area']
+        density = len(segments_in_extended)/area
+        extended_source_cat.loc[extended_source_cat['id'] == key, 'density'] = density
+        print(f"area of hull for {key}: {area}")
+        print(f"density: {density}")
+        if density >= 1.5:
+            source_table.loc[segments_in_extended, "extended_source"] = int(key)
     #seg_sources.to_csv("seg_sources_in_extended.csv") # for debug only
-    return source_table
+    return source_table, extended_source_cat
 
 
 def dao_handler(cnt_image: np.ndarray, minimum):
     # runs DAO twice with diff kernel sizes to get more sources
     #TODO: experimenting with dao threshold being based on exp time again, then document
     # dao_1 was thresh = 0.01, dao_2 was thresh = 0.02
-    # if band == "NUV":
-    #     thresh1 = .01
-    #     thresh2 = .02
-    # if band == "FUV":
-    #     thresh1 = .006
-    #     thresh2 = .01
-    thresh1 = minimum/3
-    thresh2 = minimum/3.5
+    thresh1 = minimum/80
+    thresh2 = minimum/110
     dao_sources1 = dao_finder(cnt_image, threshold= thresh1, fwhm=5)
     dao_sources2 = dao_finder(cnt_image,threshold= thresh2, fwhm=3)
     dao_sources = pd.concat([dao_sources1, dao_sources2])
@@ -411,8 +423,15 @@ def get_extended(dao_sources: pd.DataFrame, band: str):
     """
     from sklearn.cluster import DBSCAN
 
-    epsilon = 40 if band == "NUV" else 50
+    num_points = len(dao_sources)
+    epsilon = (((1500 ** 2) / num_points) ** .6)
+    # based on roughly when function hits these values
+    if num_points < 1514:
+        epsilon = 80
+    if num_points > 223228:
+        epsilon = 4
     print(f"epsilon: {epsilon}")
+
     dao_sources['id'] = dao_sources.index
     pos_stars = np.transpose((dao_sources['x_peak'], dao_sources['y_peak']))
     # default min_samples for scikit is 5, when we used DBSCAN from photutils they
@@ -427,16 +446,16 @@ def get_extended(dao_sources: pd.DataFrame, band: str):
     # filter out large stars that aren't really extended sources
     # arbitrary cutoff of 100 points
     # annoyingly, .filter() removes the grouping so we have to put it back
-    cutoff = 250 if band == "NUV" else 125
+    cutoff = 50 if band == "NUV" else 40
     star_groups = star_groups.filter(lambda g: len(g) > cutoff).groupby('group_id')
 
     # we currently use an int8 for group IDs; there should probably never be
     # this many extended sources anyway
-    if len(star_groups.groups) >= 128:
-        raise RuntimeError(f"Too many extended sources! ({len(star_groups.groups)})")
+    # if len(star_groups.groups) >= 128:
+    #     raise RuntimeError(f"Too many extended sources! ({len(star_groups.groups)})")
 
     if len(star_groups.groups) == 0:
-        return {}, pd.DataFrame(columns=["id", "hull_area", "num_dao_points", "hull_vertices"])
+        return {}, pd.DataFrame(columns=["id", "hull_area", "num_dao_points", "hull_vertices", "epsilon", "density"])
 
     # combining hull shapes for all extended sources to make a single
     # hull "mask" that shows extent of extended sources. pixel value of
@@ -450,7 +469,11 @@ def get_extended(dao_sources: pd.DataFrame, band: str):
         path, extended_hull_data = get_hull_path(group, gid)
         extended_source_list.append(extended_hull_data)
         masks[gid] = path
-    return masks, pd.concat(extended_source_list, ignore_index=True)
+    catalog = pd.concat(extended_source_list, ignore_index=True)
+    catalog["epsilon"] = epsilon
+    # placeholder val
+    catalog["density"] = 0.0
+    return masks, catalog
 
 
 def get_hull_path(group, group_id: int):

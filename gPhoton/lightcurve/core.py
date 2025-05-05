@@ -69,7 +69,7 @@ def make_lightcurves(sky_arrays: Mapping, ctx: PipeContext):
             masked_cnt_image,
             flag_edge_mask,
             sky_arrays['photon_count'],
-            ctx.band)
+            exptime)
 
     # set all extended sources IDs for point sources as Null unless
     # extended source finding is run
@@ -83,20 +83,21 @@ def make_lightcurves(sky_arrays: Mapping, ctx: PipeContext):
             bkg_sub_cnt/exptime,
             ctx.band,
             sky_arrays['photon_count'])
+        if ctx.source_catalog_file is None:
+            # currently flagging input catalogs with extended source IDs
+            # doesn't work because we use the segment map
+            source_table, extended_source_cat = check_point_in_extended(
+                outline_seg_map,
+                masks,
+                source_table,
+                extended_source_cat)
+            del outline_seg_map
         if extended_source_cat is not None:
             extended_name = ctx['extended_shapes']
             print(f"writing extended source table to {extended_name}")
             extended_source_cat.to_csv(
                 extended_name, index=False  # added s and [leg]??
             )
-        if ctx.source_catalog_file is None:
-            # currently flagging input catalogs with extended source IDs
-            # doesn't work because we use the segment map
-            source_table = check_point_in_extended(
-                outline_seg_map,
-                masks,
-                source_table)
-            del outline_seg_map
         del masks
     del masked_cnt_image, flag_edge_mask
     ctx.watch.click()
