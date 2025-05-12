@@ -74,7 +74,7 @@ def make_lightcurves(sky_arrays: Mapping, ctx: PipeContext):
     # set all extended sources IDs for point sources as Null unless
     # extended source finding is run
     source_table["extended_source"] = None
-    source_table["extended_source"] = source_table["extended_source"].astype(pd.Int8Dtype())
+    source_table["extended_source"] = source_table["extended_source"].astype(pd.Int16Dtype())
 
     if ctx.extended_flagging:
         # find extended sources, tag point source catalog with
@@ -84,13 +84,15 @@ def make_lightcurves(sky_arrays: Mapping, ctx: PipeContext):
             ctx.band,
             sky_arrays['photon_count'])
         if ctx.source_catalog_file is None:
-            # currently flagging input catalogs with extended source IDs
-            # doesn't work because we use the segment map
             source_table, extended_source_cat = check_point_in_extended(
                 outline_seg_map,
                 masks,
                 source_table,
                 extended_source_cat)
+            # drop rows where there are no point sources ID'd
+            extended_source_cat = extended_source_cat[
+                ~((extended_source_cat['area_density'] == 0) | (extended_source_cat['source_count'] == 0))
+            ]
             del outline_seg_map
         if extended_source_cat is not None:
             extended_name = ctx['extended_shapes']

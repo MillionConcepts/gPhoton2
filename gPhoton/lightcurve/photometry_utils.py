@@ -236,7 +236,7 @@ def get_point_sources(cnt_image: np.ndarray, f_e_mask, photon_count, expt):
     from photutils.segmentation import (detect_sources, make_2dgaussian_kernel,
                                         SourceCatalog, deblend_sources)
     from scipy.ndimage import convolve
-    #from gPhoton.coadd import zero_flag
+
     print("Estimating background and threshold.")
     cnt_image, threshold, multiplier, minimum = estimate_background_and_threshold(
         cnt_image, photon_count, expt
@@ -246,13 +246,13 @@ def get_point_sources(cnt_image: np.ndarray, f_e_mask, photon_count, expt):
     convolved_data = convolve(cnt_image, kernel)
     convolved_mask = convolve(f_e_mask, kernel)
 
-    # changing "npixels" in detect sources to 3 ID's more small sources
+    # changing "npixels" in detect sources to <4 ID's more small sources
     # but also more spurious looking ones..
     print("Segmenting and deblending point sources.")
     segment_map = detect_sources(
         convolved_data,
         threshold,
-        npixels=4,
+        npixels=2,
         connectivity=4,
         mask=convolved_mask
     )
@@ -261,12 +261,12 @@ def get_point_sources(cnt_image: np.ndarray, f_e_mask, photon_count, expt):
 
     deblended_segment_map = deblend_sources(convolved_data,
                                             segment_map,
-                                            npixels=4,
-                                            nlevels=20,
-                                            contrast=0.003,
-                                            mode='linear',
+                                            npixels=3,
+                                            nlevels=60,
+                                            contrast=0.001,
+                                            mode='exponential',
                                             progress_bar=False)
-    # 0.004, contrast npixels was 8
+    # 0.004, contrast, then .003 (happy with this), npixels was 8, mode was linear, nlevels was 20
     del segment_map
     
     outline_seg_map = outline_segments(deblended_segment_map)
@@ -307,9 +307,10 @@ def estimate_threshold(bkg_rms, photon_count, expt):
     # more obvious. mostly relevant for FUV. low photon counts
     # and low exposure times will be less relevant because their
     # rms is 0 usually anyways. so I don't want the minimum to
-    # increase after the additional multiplier is applied.
+    # increase the same amount after the additional multiplier is applied.
     if photon_count/expt < 15000:
         minimum = minimum * (multiplier / (multiplier+0.5))
+        minimum += .2
         multiplier += .75
 
     print(f"multiplier: {multiplier}, minimum:{minimum}")
@@ -345,8 +346,8 @@ def estimate_background(cnt_image: np.ndarray):
     # remove f_e mask from background 2d, could consider
     # using the coverage_mask option for no data areas
     bkg = Background2D(cnt_image,
-                       (50, 50),
-                       filter_size=(3, 3),
+                       (15, 15),
+                       filter_size=(21,21),
                        bkg_estimator=bkg_estimator,
                        sigma_clip=sigma_clip)
 
@@ -380,13 +381,17 @@ def check_point_in_extended(outline_seg_map: np.ndarray, masks, source_table, ex
     for key in masks:
         inside_extended = masks[key].contains_points(seg_outlines_vert)
         segments_in_extended = outline_seg_map[seg_outlines][inside_extended]
+        unique_segments = np.unique(segments_in_extended)
+        mask = np.isin(outline_seg_map, unique_segments)
+        num_masked_pixels = np.count_nonzero(mask)
         area = extended_source_cat[extended_source_cat['id']==key].iloc[0]['hull_area']
-        density = len(segments_in_extended)/area
-        extended_source_cat.loc[extended_source_cat['id'] == key, 'density'] = density
-        print(f"area of hull for {key}: {area}")
-        print(f"density: {density}")
-        if density >= 1.5:
-            source_table.loc[segments_in_extended, "extended_source"] = int(key)
+        area_density = num_masked_pixels / area
+        extended_source_cat.loc[extended_source_cat['id'] == key, 'area_density'] = area_density
+        extended_source_cat.loc[extended_source_cat['id'] == key, 'source_count'] = len(unique_segments)
+        if area_density >= 1:
+            # check for whole eclipse being ID'd as extended
+            if not area > 7000000:
+                source_table.loc[segments_in_extended, "extended_source"] = int(key)
     #seg_sources.to_csv("seg_sources_in_extended.csv") # for debug only
     return source_table, extended_source_cat
 
@@ -428,9 +433,9 @@ def get_extended(dao_sources: pd.DataFrame, band: str):
     # based on roughly when function hits these values
     if num_points < 1514:
         epsilon = 80
-    if num_points > 223228:
+    if num_points > 250000:
         epsilon = 4
-    print(f"epsilon: {epsilon}")
+    print(f"DBSCAN epsilon: {epsilon}")
 
     dao_sources['id'] = dao_sources.index
     pos_stars = np.transpose((dao_sources['x_peak'], dao_sources['y_peak']))
@@ -443,11 +448,9 @@ def get_extended(dao_sources: pd.DataFrame, band: str):
     # -1 is the value for ungrouped sources, so we don't want them ID'd as a group
     star_groups = dao_sources[dao_sources['group_id'] != -1].groupby('group_id')
 
-    # filter out large stars that aren't really extended sources
-    # arbitrary cutoff of 100 points
-    # annoyingly, .filter() removes the grouping so we have to put it back
-    cutoff = 50 if band == "NUV" else 40
-    star_groups = star_groups.filter(lambda g: len(g) > cutoff).groupby('group_id')
+    # need at least 3 points for convex hull but sometimes they're colinear
+    # and everything breaks so up the cutoff to 15
+    star_groups = star_groups.filter(lambda g: len(g) >= 15).groupby('group_id')
 
     # we currently use an int8 for group IDs; there should probably never be
     # this many extended sources anyway
@@ -455,7 +458,8 @@ def get_extended(dao_sources: pd.DataFrame, band: str):
     #     raise RuntimeError(f"Too many extended sources! ({len(star_groups.groups)})")
 
     if len(star_groups.groups) == 0:
-        return {}, pd.DataFrame(columns=["id", "hull_area", "num_dao_points", "hull_vertices", "epsilon", "density"])
+        return {}, pd.DataFrame(columns=["id", "hull_area", "num_dao_points", "hull_vertices",
+                                         "epsilon", "area_density", "source_count"])
 
     # combining hull shapes for all extended sources to make a single
     # hull "mask" that shows extent of extended sources. pixel value of
@@ -471,8 +475,9 @@ def get_extended(dao_sources: pd.DataFrame, band: str):
         masks[gid] = path
     catalog = pd.concat(extended_source_list, ignore_index=True)
     catalog["epsilon"] = epsilon
-    # placeholder val
-    catalog["density"] = 0.0
+    # placeholder vals
+    catalog["area_density"] = 0.0
+    catalog["source_count"] = 0
     return masks, catalog
 
 
