@@ -206,7 +206,8 @@ class PipeContext:
         aspect_dir: None | str | Path = None,
         ftype: str = "csv",
         wide_edge_thresh: int = 340,
-        narrow_edge_thresh: int = 360
+        narrow_edge_thresh: int = 360,
+        single_leg: Optional[int] = None
     ):
         self.eclipse = eclipse
         self.band = band

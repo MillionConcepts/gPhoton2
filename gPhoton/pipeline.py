@@ -91,6 +91,26 @@ def find_photonfiles(context: PipeContext):
 
 def execute_photometry_only(ctx: PipeContext):
     errors = []
+
+    if ctx.single_leg is not None:
+        leg_step = ctx.explode_legs()[ctx.single_leg]
+        loaded_arrays = load_moviemaker_results(leg_step, ctx.lil)
+        # this is an error code
+        if isinstance(loaded_arrays, str):
+            errors.append(loaded_arrays)
+
+        from gPhoton.lightcurve import make_lightcurves
+
+        result = make_lightcurves(loaded_arrays, leg_step)
+        if result != "successful":
+            errors.append(result)
+        print(
+            f"{round(time() - ctx.watch.start_time, 2)} seconds for execution"
+        )
+        if len(errors) > 0:
+            return "return code: " + ";".join(errors)
+        return "return code: successful"
+
     for leg_step in ctx.explode_legs():
         loaded_arrays = load_moviemaker_results(leg_step, ctx.lil)
         # this is an error code
@@ -142,6 +162,7 @@ def execute_pipeline(
     suffix: Optional[str] = None,
     aspect_dir: None | str | Path = None,
     ftype: str = "csv",
+    single_leg = None
 ) -> str:
     """
     Args:
@@ -217,6 +238,8 @@ def execute_pipeline(
         aspect_dir: specifies the location of aspect tables
         ftype: file type desired for output files; can be either
             "csv" or "parquet", currently only affects photometry files
+        single_leg:  the leg number of a single leg, only for photometry_only
+        runs ATP where the catalog and images are premade.
     Returns:
         str: `"return code: successful"` for fully successful execution;
             `"return code: {other_thing}"` for various known failure states
@@ -271,6 +294,7 @@ def execute_pipeline(
         suffix=suffix,
         aspect_dir=aspect_dir,
         ftype=ftype,
+        single_leg=single_leg
     )
     ctx.watch.start()
     if photometry_only:

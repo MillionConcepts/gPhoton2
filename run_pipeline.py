@@ -28,7 +28,7 @@ if __name__ == "__main__":
         # write movie frames as separate files
         burst=False,
         extended_photonlist=True,
-        extended_flagging=True,
+        extended_flagging=False,
         verbose=2
         #source_catalog_file="test_data/e00775/e00775-nd-f0120-b01-movie-photom-12_8.csv"
     )
