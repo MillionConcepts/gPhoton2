@@ -245,6 +245,7 @@ class PipeContext:
         self.ftype = ftype
         self.wide_edge_thresh = wide_edge_thresh
         self.narrow_edge_thresh = narrow_edge_thresh
+        self.single_leg = single_leg
 
     def __repr__(self):
         params = [ f"{k}={v!r}" for k,v in self.__dict__ ]
