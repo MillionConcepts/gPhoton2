@@ -350,7 +350,8 @@ def execute_full_pipeline(ctx):
         if (p_stats["flags"]["min"] > 6) or (p_stats["ra"]["max"] is None):
             print(f"no unflagged data in {path}, not processing")
             leg_paths.append(False)
-        leg_paths.append(path)
+        else:
+            leg_paths.append(path)
     if all(l is False for l in leg_paths):
         print("no usable legs, bailing out.")
         return "return code: no unflagged data (stopped after photon list)"
@@ -374,7 +375,7 @@ def execute_full_pipeline(ctx):
                 ctx, path, fixed_start_time=fixed_start_time
             )
         except ValueError as e:
-            print(f"failed to create images and movies for leg {leg_step.leg}")
+            print(f"failed to create images and movies for leg {leg_step.leg+1}")
             print(f"Error: {e}")
             continue
         ctx.watch.click()

@@ -149,6 +149,14 @@ def create_images_and_movies(
     imsz = (
         int((wcs.wcs.crpix[1] - 0.5) * 2), int((wcs.wcs.crpix[0] - 0.5) * 2)
     )
+    # to check that the dimensions of the image are at least 1x1
+    # for images where everything is flagged it could get to this point
+    # and the imsz is 0,0 and image making returns []. could maybe be a better fix
+    # catching this earlier in the pipeline maybe?
+    if sum(imsz) <= 1:
+        raise ValueError("image size is less than 1x1, "
+                         "photonlist is likely all flagged.")
+
     render_kwargs = {
         "exposure_array": exposure_array,
         "map_ix_dict": map_ix_dict,
