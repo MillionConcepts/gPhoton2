@@ -125,6 +125,7 @@ def make_lightcurves(sky_arrays: Mapping, ctx: PipeContext):
             aperture_size_px,
             sky_arrays["image_dict"],
             sky_arrays["wcs"],
+            ctx
         )
         ctx.watch.click()
         if sky_arrays['movie_dict'] is not None:

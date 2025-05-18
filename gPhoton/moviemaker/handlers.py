@@ -112,13 +112,32 @@ def make_full_depth_image(
     output_dict["cnt"] = make_frame(
             map_ix_dict["cnt"]["foc"],
             map_ix_dict["cnt"]["weights"],
+            "sum",
+            imsz
+    )
+    output_dict["row"] = make_frame(
+            map_ix_dict["cnt"]["foc"],
+            map_ix_dict["cnt"]["row_weights"],
+            "std",
+            imsz
+    )
+    output_dict["col"] = make_frame(
+            map_ix_dict["cnt"]["foc"],
+            map_ix_dict["cnt"]["col_weights"],
+            "std",
+            imsz
+    )
+    output_dict["ya"] = make_frame(
+            map_ix_dict["cnt"]["foc"],
+            map_ix_dict["cnt"]["ya_weights"],
+            "median",
             imsz
     )
     output_dict["flag"] = make_mask_frame(
-        map_ix_dict['flag']["foc"],
-        map_ix_dict['flag']["weights"],
-        imsz
-        )
+            map_ix_dict['flag']["foc"],
+            map_ix_dict['flag']["weights"],
+            imsz
+    )
     return "successfully made image", output_dict
 
 

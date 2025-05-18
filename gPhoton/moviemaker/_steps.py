@@ -49,12 +49,14 @@ def booleanize_for_fits(array: np.ndarray) -> np.ndarray:
 def make_frame(
     foc: np.ndarray,
     weights: np.ndarray,
+    stat: str,
     imsz: tuple[int, int],
     booleanize: bool = False,
 ) -> np.ndarray:
     """
     :param foc: 2-column array containing positions in detector space
     :param weights: 1-D array containing counts at each position
+    :param stat: string denoting what stat to calculate with bin2d
     :param imsz: x/y dimensions of output image
     :param booleanize: reduce this to "boolean" (uint8 valued as 0 or 1)?
     :return: ndarray containing single image made from 2D histogram of inputs
@@ -70,7 +72,7 @@ def make_frame(
                 foc[:, 1] - 0.5,
                 foc[:, 0] - 0.5,
                 weights,
-                "sum",
+                stat,
                 n_bins=imsz,
                 bbounds=([[0, imsz[0]], [0, imsz[1]]])
             )
@@ -102,6 +104,7 @@ def make_mask_frame(
         if len(filtered_foc) > 0:
             mask_frame = make_frame(filtered_foc,
                                     filtered_bit_mask,
+                                    "sum",
                                     imsz,
                                     booleanize=True)
             frame |= (mask_frame > 0).astype(np.uint8) << bit
@@ -152,14 +155,20 @@ def prep_image_inputs(photonfile, ctx):
         # don't bother us about divide-by-zero errors
         warnings.simplefilter("ignore")
         weights = 1.0 / event_table["response"].to_numpy()
+    # for new hotspot masking
+    col_weights = event_table["col"].to_numpy()
+    row_weights = event_table["row"].to_numpy()
+    ya_weights = event_table["ya"].to_numpy()
+    t = event_table["t"].to_numpy()
     # combine flag, mask, edge into "artifacts"
     artifact_flags = combine_artifacts(
         event_table,
         ctx.wide_edge_thresh,
         ctx.narrow_edge_thresh)
     artifact_ix = np.where(artifact_flags!= 0)
-    t = event_table["t"].to_numpy()
-    map_ix_dict = generate_indexed_values(foc, artifact_ix, artifact_flags, t, weights)
+    map_ix_dict = generate_indexed_values(foc, artifact_ix, artifact_flags, t,
+                                          weights, col_weights, row_weights,
+                                          ya_weights)
     total_trange = (t.min(), t.max())
     return exposure_array, map_ix_dict, total_trange, wcs, len(event_table)
 
@@ -178,9 +187,11 @@ def combine_artifacts(event_table, wide_edge_thresh, narrow_edge_thresh):
     return artifacts
 
 
-def generate_indexed_values(foc, artifact_ix, artifact_flags, t, weights):
+def generate_indexed_values(foc, artifact_ix, artifact_flags, t, weights,
+                            col_weights, row_weights, ya_weights):
     indexed = NestingDict()
-    for value, value_name in zip((t, foc, weights), ("t", "foc", "weights")):
+    for value, value_name in zip((t, foc, weights, row_weights, col_weights, ya_weights),
+                                 ("t", "foc", "weights", "row_weights", "col_weights", "ya_weights")):
         for map_ix, map_name in zip(
             (artifact_ix, slice(None)), ("flag", "cnt")
         ):
@@ -300,6 +311,7 @@ def sm_make_map(block_directory, map_name, imsz):
     return make_frame(
         map_arrays["foc"],
         map_arrays["weights"],
+        "sum",
         imsz)
 
 
@@ -317,7 +329,7 @@ def load_image_tables(
     return event and exposure tables appropriate for making images / movies
     and performing photometry
     """
-    relevant_columns = ["ra", "dec", "response", "flags", "mask", "t", "detrad"]
+    relevant_columns = ["ra", "dec", "response", "flags", "mask", "t", "detrad", "col", "row", "ya"]
     event_table = parquet.read_table(photonfile, columns=relevant_columns)
     # retain time and flag for every event for exposure time computations
     exposure_array = parquet_to_ndarray(event_table, ["t", "flags"])

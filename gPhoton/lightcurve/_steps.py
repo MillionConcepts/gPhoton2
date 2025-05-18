@@ -28,7 +28,8 @@ def count_full_depth_image(
     source_table: pd.DataFrame,
     aperture_size: float,
     image_dict: Mapping[str, np.ndarray],
-    system: astropy.wcs.WCS
+    system: astropy.wcs.WCS,
+    ctx
 ):
     source_table = source_table.reset_index(drop=True)
     positions = source_table[["xcentroid", "ycentroid"]].to_numpy()
@@ -38,6 +39,27 @@ def count_full_depth_image(
         [source_table, phot_table[["xcenter", "ycenter", "aperture_sum"]]],
         axis=1,
     )
+    if ctx.source_catalog_file is None:
+        # we don't want to run this for forced photometry
+        # aperture photometry of ya vals, primarily for ghosts in post CSP
+        ya_phot_table = aperture_photometry(image_dict["ya"], apertures).to_pandas()
+        ya_phot_table = ya_phot_table.rename(columns={'aperture_sum': 'ya_aperture_sum'})
+        source_table = pd.concat(
+            [source_table, ya_phot_table[["ya_aperture_sum"]]],
+            axis=1,
+        )
+        # aperture photometry on std of col and row values for detecting unmasked hotspots
+        stdcolrow_phot_table = aperture_photometry(np.nan_to_num(image_dict["col"]+image_dict["row"], nan=0), apertures).to_pandas()
+        stdcolrow_phot_table = stdcolrow_phot_table.rename(columns={'aperture_sum': 'stdcolrow_aperture_sum'})
+        source_table = pd.concat(
+            [source_table, stdcolrow_phot_table[["stdcolrow_aperture_sum"]]],
+            axis=1,
+        )
+        # aperture area
+        aparea = np.pi*aperture_size**2
+        source_table["stdcolrow_aperture_sum"] = source_table["stdcolrow_aperture_sum"]/aparea
+        source_table["ya_aperture_sum"] = source_table["ya_aperture_sum"]/aparea
+
     source_table["artifact_flag"] = bitwise_aperture_photometry(
         image_dict["flag"],
         apertures)
