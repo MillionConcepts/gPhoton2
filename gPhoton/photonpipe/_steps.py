@@ -54,7 +54,8 @@ def process_chunk_in_unshared_memory(
     stim_coefficients,
     xoffset,
     yoffset,
-    write_intermediate_variables
+    write_intermediate_variables,
+    photonlist_cols
 ):
     chunk = apply_all_corrections(
         aspect,
@@ -67,8 +68,12 @@ def process_chunk_in_unshared_memory(
         yoffset,
     )
     output = chunk | calibrate_photons_inline(band, cal_data, chunk, chunkid)
-    if write_intermediate_variables is not True:
+    # default make short photonlist, full photonlist if extended is set True,
+    # or use defined set of keys from photonlist_cols
+    if write_intermediate_variables is not True and photonlist_cols is None:
         output = keyfilter(lambda key: key in PIPELINE_VARIABLES, output)
+    if photonlist_cols is not None:
+        output = keyfilter(lambda key: key in photonlist_cols, output)
     return output
 
 
@@ -103,7 +108,8 @@ def process_chunk_in_shared_memory(
     stim_coefficients,
     xoffset,
     yoffset,
-    write_intermediate_variables
+    write_intermediate_variables,
+    photonlist_cols
 ):
     chunk_blocks, chunk = reference_shared_memory_arrays(block_info)
     cal_data = {}
@@ -123,8 +129,12 @@ def process_chunk_in_shared_memory(
         yoffset,
     )
     chunk |= calibrate_photons_inline(band, cal_data, chunk, chunk_title)
-    if write_intermediate_variables is not True:
+    # default make short photonlist, full photonlist if extended is set True,
+    # or use defined set of keys from photonlist_cols
+    if write_intermediate_variables is not True  and photonlist_cols is None:
         chunk = keyfilter(lambda key: key in PIPELINE_VARIABLES, chunk)
+    if photonlist_cols is not None:
+        chunk = keyfilter(lambda key: key in photonlist_cols, chunk)
     processed_block_info = send_to_shared_memory(chunk)
     for block in chunk_blocks.values():
         block.close()
@@ -819,12 +829,8 @@ def load_cal_data(stims, band, eclipse):
 
 
 def flag_ghosts(leg_data):
-    """ Adds a flag for ghosts in post-CSP eclipses
-    using the concentration of low YA values as a ghost
-    indicator.
-
-    Not very fast, could use some work to speed it up.
-    """
+    """ flag for ghosts in post-CSP eclipses identified by low YA values. added photometry
+    of YA values (elsewhere) is a secondary check for ghostliness."""
     from quickbin import bin2d
 
     ra, dec, ya, col, row, flags = (
@@ -835,60 +841,37 @@ def flag_ghosts(leg_data):
         leg_data["row"],
         leg_data["flags"],
     )
-
-    print("filtering")
-    valid_indices = (col >= 0) & (col <= 800) & (row >= 0) & (row <= 800)
-    # mask NaNs
-    nan_free_indices = valid_indices & ~np.isnan(ya) & ~np.isnan(ra) & ~np.isnan(dec)
-    ra_valid, dec_valid, ya_valid = ra[nan_free_indices],\
-                                    dec[nan_free_indices],\
-                                    ya[nan_free_indices]
-    print("binning")
+    valid = (col >= 0) & (col <= 800) & (row >= 0) & (row <= 800)
+    valid &= ~np.isnan(ya) & ~np.isnan(ra) & ~np.isnan(dec)
+    ra_valid, dec_valid, ya_valid = ra[valid], dec[valid], ya[valid]
     n_bins = 1600
-    binned = bin2d(
-        ra_valid,
-        dec_valid,
-        ya_valid,
-        ('mean', 'count'),
-        n_bins=n_bins
-        )
+    binned = bin2d(ra_valid, dec_valid, ya_valid, ('mean', 'count'), n_bins=n_bins)
+
+    # cutoffs for ID as a ghost
     filtered = (binned['mean'] < 6) & (binned['count'] > 15)
 
-    # get the ra/dec edges
-    ra_min, ra_max = np.min(ra_valid), np.max(ra_valid)
-    dec_min, dec_max = np.min(dec_valid), np.max(dec_valid)
-    ra_edges = np.linspace(ra_min, ra_max, n_bins + 1)
-    dec_edges = np.linspace(dec_min, dec_max, n_bins + 1)
-
-    # get flagged ra/dec
-    flagged_pixels = np.array(np.nonzero(filtered)).T
-    ra_flagged = (ra_edges[flagged_pixels[:, 0]] + ra_edges[flagged_pixels[:, 0] + 1]) / 2
-    dec_flagged = (dec_edges[flagged_pixels[:, 1]] + dec_edges[flagged_pixels[:, 1] + 1]) / 2
-
-    print("masking")
+    # bin indices and widths, roughly
+    ra_min, ra_max = ra_valid.min(), ra_valid.max()
+    dec_min, dec_max = dec_valid.min(), dec_valid.max()
     ra_bin_width = (ra_max - ra_min) / n_bins
     dec_bin_width = (dec_max - dec_min) / n_bins
+    ra_ix = ((ra - ra_min) / ra_bin_width).astype(int)
+    dec_ix = ((dec - dec_min) / dec_bin_width).astype(int)
 
+    valid_bins = (
+        (ra_ix >= 0) & (ra_ix < n_bins) &
+        (dec_ix >= 0) & (dec_ix < n_bins) &
+        ~np.isnan(ra) & ~np.isnan(dec)
+    )
+    ra_ix_valid = ra_ix[valid_bins]
+    dec_ix_valid = dec_ix[valid_bins]
+
+    flag_map = np.zeros((n_bins, n_bins), dtype=bool)
+    flag_map[filtered] = True
     mask = np.zeros_like(ra, dtype=bool)
+    mask_indices = flag_map[ra_ix_valid, dec_ix_valid]
+    mask[np.flatnonzero(valid_bins)] = mask_indices
 
-    chunk_size = 100000
-    for start in range(0, len(ra), chunk_size):
-        end = min(start + chunk_size, len(ra))
-        ra_chunk = ra[start:end]
-        dec_chunk = dec[start:end]
-
-        # done twice?
-        valid_chunk_indices = ~np.isnan(ra_chunk) & ~np.isnan(dec_chunk)
-        ra_chunk = ra_chunk[valid_chunk_indices]
-        dec_chunk = dec_chunk[valid_chunk_indices]
-
-        if len(ra_chunk) > 0:
-            for r, d in zip(ra_flagged, dec_flagged):
-                ra_mask = (ra_chunk >= r - ra_bin_width / 2) & (ra_chunk < r + ra_bin_width / 2)
-                dec_mask = (dec_chunk >= d - dec_bin_width / 2) & (dec_chunk < d + dec_bin_width / 2)
-                combo_mask = ra_mask & dec_mask
-                mask[start:end][valid_chunk_indices] |= combo_mask
-
-    leg_data["flags"][mask] = 120
-
+    # flag as 120
+    flags[mask] = 120
     return leg_data

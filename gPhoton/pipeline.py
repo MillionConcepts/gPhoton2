@@ -162,7 +162,8 @@ def execute_pipeline(
     suffix: Optional[str] = None,
     aspect_dir: None | str | Path = None,
     ftype: str = "csv",
-    single_leg = None
+    single_leg = None,
+    photonlist_cols: Sequence[str] = None
 ) -> str:
     """
     Args:
@@ -239,7 +240,10 @@ def execute_pipeline(
         ftype: file type desired for output files; can be either
             "csv" or "parquet", currently only affects photometry files
         single_leg:  the leg number of a single leg, only for photometry_only
-        runs ATP where the catalog and images are premade.
+            runs ATP where the catalog and images are premade.
+        photonlist_cols: Specify a list of desired columns in the photonlist. If
+            't', 'flags', 'ra', 'dec', 'detrad', 'mask', 'response','ya','col', and
+            'row' are not included, steps past photonlist creation will not work.
     Returns:
         str: `"return code: successful"` for fully successful execution;
             `"return code: {other_thing}"` for various known failure states
@@ -255,7 +259,7 @@ def execute_pipeline(
             return f"return code: {';'.join(e_error)}"
         print("override_eclipse_limits=True, continuing anyway")
     if lil==False:
-        warnings.warn("lil=False is deprected and will be removed in a future release. Defaulting to lil=True.")
+        warnings.warn("lil=False is deprecated and will be removed in a future release. Defaulting to lil=True.")
     if aspect not in ("aspect", "aspect2"):
         print(f"Invalid aspect argument {aspect}, bailing out.")
         return f"return code: invalid aspect argument {aspect}"
@@ -294,7 +298,8 @@ def execute_pipeline(
         suffix=suffix,
         aspect_dir=aspect_dir,
         ftype=ftype,
-        single_leg=single_leg
+        single_leg=single_leg,
+        photonlist_cols=photonlist_cols,
     )
     ctx.watch.start()
     if photometry_only:

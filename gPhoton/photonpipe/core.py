@@ -117,7 +117,8 @@ def execute_photonpipe(ctx: PipeContext, raw6file: Optional[Pathlike] = None):
             stim_coefficients,
             xoffset,
             yoffset,
-            ctx.extended_photonlist
+            ctx.extended_photonlist,
+            ctx.photonlist_cols
         )
         if pool is None:
             results[(leg_ix, chunk_ix)] = chunk_function(*process_args)

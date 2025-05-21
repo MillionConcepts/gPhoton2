@@ -207,7 +207,8 @@ class PipeContext:
         ftype: str = "csv",
         wide_edge_thresh: int = 340,
         narrow_edge_thresh: int = 360,
-        single_leg: Optional[int] = None
+        single_leg: Optional[int] = None,
+        photonlist_cols: Sequence[str] = None
     ):
         self.eclipse = eclipse
         self.band = band
@@ -246,6 +247,7 @@ class PipeContext:
         self.wide_edge_thresh = wide_edge_thresh
         self.narrow_edge_thresh = narrow_edge_thresh
         self.single_leg = single_leg
+        self.photonlist_cols = photonlist_cols
 
     def __repr__(self):
         params = [ f"{k}={v!r}" for k,v in self.__dict__ ]

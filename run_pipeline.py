@@ -2,7 +2,7 @@ from gPhoton.pipeline import execute_pipeline
 
 if __name__ == "__main__":
     execute_pipeline(
-        33795,
+        43883,
         "NUV",
         depth=120,
         # integer; None to deactivate (default None)
@@ -11,7 +11,7 @@ if __name__ == "__main__":
         local_root="test_data",
         # auxiliary remote location for input data
         # remote_root="/mnt/s3",
-        recreate=False,
+        recreate=True,
         # list of floats; relevant only to lightcurve / photometry portion
         aperture_sizes=[12.8],
         # actually write image/movie products? otherwise hold in memory but
@@ -27,8 +27,8 @@ if __name__ == "__main__":
         lil=True,
         # write movie frames as separate files
         burst=False,
-        extended_photonlist=True,
+        extended_photonlist=False,
         extended_flagging=False,
-        verbose=2
-        #source_catalog_file="test_data/e00775/e00775-nd-f0120-b01-movie-photom-12_8.csv"
+        verbose=2,
+        photonlist_cols = ('t', 'flags', 'ra', 'dec', 'detrad', 'mask', 'response','ya','col','row')
     )
