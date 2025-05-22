@@ -42,14 +42,18 @@ def count_full_depth_image(
     if ctx.source_catalog_file is None:
         # we don't want to run this for forced photometry
         # aperture photometry of ya vals, primarily for ghosts in post CSP
-        ya_phot_table = aperture_photometry(image_dict["ya"], apertures).to_pandas()
+        ya_phot_table = aperture_photometry(image_dict["ya"],
+                                            apertures,
+                                            method='center').to_pandas()
         ya_phot_table = ya_phot_table.rename(columns={'aperture_sum': 'ya_aperture_sum'})
         source_table = pd.concat(
             [source_table, ya_phot_table[["ya_aperture_sum"]]],
             axis=1,
         )
         # aperture photometry on std of col and row values for detecting unmasked hotspots
-        stdcolrow_phot_table = aperture_photometry(np.nan_to_num(image_dict["col"]+image_dict["row"], nan=0), apertures).to_pandas()
+        stdcolrow_phot_table = aperture_photometry(np.nan_to_num(image_dict["col"]+image_dict["row"], nan=0),
+                                                   apertures,
+                                                   method='center').to_pandas()
         stdcolrow_phot_table = stdcolrow_phot_table.rename(columns={'aperture_sum': 'stdcolrow_aperture_sum'})
         source_table = pd.concat(
             [source_table, stdcolrow_phot_table[["stdcolrow_aperture_sum"]]],
@@ -67,12 +71,9 @@ def count_full_depth_image(
     # TODO: this isn't necessary for specified catalog positions. but
     #  should we do a sanity check?
     if "ra" not in source_table.columns:
-        world = [
-            system.wcs_pix2world([pos], 1, ra_dec_order=True)[0].tolist()
-            for pos in apertures.positions
-        ]
-        source_table["ra"] = [coord[0] for coord in world]
-        source_table["dec"] = [coord[1] for coord in world]
+        world = system.wcs_pix2world(apertures.positions, 1, ra_dec_order=True)
+        source_table["ra"] = world[:, 0]
+        source_table["dec"] = world[:, 1]
     return source_table, apertures
 
 
@@ -82,6 +83,9 @@ def bitwise_aperture_photometry(artifact_map: np.ndarray, apertures):
     bitmask_column= np.zeros(len(apertures), dtype=np.uint8)
     # add check to see if there are any bits in the map?
     for bit in range(4):
+        if not np.any(artifact_map & (1 << bit)):
+            # most useful for skipping ghost flag in eclipses pre-CSP
+            continue
         bit_image = (artifact_map & (1 << bit)) > 0
         bit_flag_table = aperture_photometry(bit_image.astype(int), apertures).to_pandas()
         bitmask_column |= (bit_flag_table["aperture_sum"].to_numpy() > 0).astype(np.uint8) << bit

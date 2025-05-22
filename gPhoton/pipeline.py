@@ -243,7 +243,8 @@ def execute_pipeline(
             runs ATP where the catalog and images are premade.
         photonlist_cols: Specify a list of desired columns in the photonlist. If
             't', 'flags', 'ra', 'dec', 'detrad', 'mask', 'response','ya','col', and
-            'row' are not included, steps past photonlist creation will not work.
+            'row' are not included, steps past photonlist creation will not work. Use
+            at your own peril.
     Returns:
         str: `"return code: successful"` for fully successful execution;
             `"return code: {other_thing}"` for various known failure states
@@ -266,6 +267,12 @@ def execute_pipeline(
     if source_catalog_file is not None and not Path(source_catalog_file).exists():
         print(f"source_catalog_file {source_catalog_file} not found, bailing out.")
         return("return code: source catalog file not found")
+    if source_catalog_file is not None and extended_flagging:
+        print(f"source_catalog_file {source_catalog_file} in use, extended source finding will not work.")
+        return("return code: forced photometry and extended source ID are incompatible.")
+    if single_leg is not None and (not photometry_only or not source_catalog_file):
+        print(f"single leg runs can only be executed in photometry_only mode with a catalog input.")
+        return("return code: photometry-only with catalog for single leg runs.")
     if not depth: # movie-writing has no meaning here
         write = dict(write)
         write['movie']=False

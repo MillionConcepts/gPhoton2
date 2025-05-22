@@ -64,7 +64,6 @@ def make_lightcurves(sky_arrays: Mapping, ctx: PipeContext):
         source_table = format_source_catalog(sources, sky_arrays["wcs"])
     else:
         # if there's no input catalog
-        print(sky_arrays['photon_count'])
         outline_seg_map, source_table, bkg_sub_cnt = get_point_sources(
             masked_cnt_image,
             flag_edge_mask,
@@ -81,7 +80,6 @@ def make_lightcurves(sky_arrays: Mapping, ctx: PipeContext):
         # applicable extended source IDs
         masks, extended_source_cat = mask_for_extended_sources(
             bkg_sub_cnt/exptime,
-            ctx.band,
             sky_arrays['photon_count'])
         if ctx.source_catalog_file is None:
             source_table, extended_source_cat = check_point_in_extended(
@@ -98,7 +96,7 @@ def make_lightcurves(sky_arrays: Mapping, ctx: PipeContext):
             extended_name = ctx['extended_shapes']
             print(f"writing extended source table to {extended_name}")
             extended_source_cat.to_csv(
-                extended_name, index=False  # added s and [leg]??
+                extended_name, index=False
             )
         del masks
     del masked_cnt_image, flag_edge_mask

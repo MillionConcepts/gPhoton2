@@ -291,7 +291,7 @@ def get_point_sources(cnt_image: np.ndarray, f_e_mask, photon_count, expt):
     # hdu = fits.PrimaryHDU(deblended_data)
     # hdul = fits.HDUList([hdu])
     # print(f'deblended_segmentation_{photon_count}_{expt}.fits')
-    # hdul.writeto(f'deblended_segmentation_{photon_count}_{expt}_o.fits', overwrite=True)
+    # hdul.writeto(f'deblended_segmentation_{photon_count}_{expt}_28996.fits', overwrite=True)
 
     return outline_seg_map, seg_sources, cnt_image
 
@@ -307,11 +307,15 @@ def estimate_threshold(bkg_rms, photon_count, expt):
     # more obvious. mostly relevant for FUV. low photon counts
     # and low exposure times will be less relevant because their
     # rms is 0 usually anyways. so I don't want the minimum to
-    # increase the same amount after the additional multiplier is applied.
+    # increase proportionally after the additional multiplier is applied.
     if photon_count/expt < 15000:
-        minimum = minimum * (multiplier / (multiplier+0.5))
-        minimum += .2
-        multiplier += .75
+        print(f"image is likely quite sparse.")
+        minimum = minimum * (multiplier / (multiplier+0.5)) + .1
+        if multiplier < 1.9:
+            # transitional zone to "full" background of photons
+            # around 6e6 photons
+            multiplier += .75
+            minimum += .1
 
     print(f"multiplier: {multiplier}, minimum:{minimum}")
 
@@ -358,12 +362,12 @@ def estimate_background(cnt_image: np.ndarray):
     return cnt_image, rms.astype(np.float32)
 
 
-def mask_for_extended_sources(cnt_image: np.ndarray, band: str, photon_count):
+def mask_for_extended_sources(cnt_image: np.ndarray, photon_count):
     print("Running DAO for extended source ID.")
     minimum = minimum_elliot_sigmoid(photon_count)
     dao_sources = dao_handler(cnt_image, minimum)
     print(f"Found {len(dao_sources)} peaks with DAO, photons: {photon_count}.")
-    return get_extended(dao_sources, band)
+    return get_extended(dao_sources)
 
 
 def check_point_in_extended(outline_seg_map: np.ndarray, masks, source_table, extended_source_cat):
@@ -382,16 +386,20 @@ def check_point_in_extended(outline_seg_map: np.ndarray, masks, source_table, ex
         inside_extended = masks[key].contains_points(seg_outlines_vert)
         segments_in_extended = outline_seg_map[seg_outlines][inside_extended]
         unique_segments = np.unique(segments_in_extended)
-        mask = np.isin(outline_seg_map, unique_segments)
-        num_masked_pixels = np.count_nonzero(mask)
         area = extended_source_cat[extended_source_cat['id']==key].iloc[0]['hull_area']
-        area_density = num_masked_pixels / area
+        area_sum = source_table.loc[unique_segments, "area"].sum()
+        area_density = area_sum / area
         extended_source_cat.loc[extended_source_cat['id'] == key, 'area_density'] = area_density
         extended_source_cat.loc[extended_source_cat['id'] == key, 'source_count'] = len(unique_segments)
-        if area_density >= 1:
+        if area_density >= .4 and len(unique_segments) > 3:
             # check for whole eclipse being ID'd as extended
-            if not area > 7000000:
+            if not area > 6000000:
                 source_table.loc[segments_in_extended, "extended_source"] = int(key)
+        else:
+            # don't keep extended sources that don't have a certain source density and
+            # pt source count
+            extended_source_cat = extended_source_cat[extended_source_cat['id'] != key]
+
     #seg_sources.to_csv("seg_sources_in_extended.csv") # for debug only
     return source_table, extended_source_cat
 
@@ -420,7 +428,7 @@ def dao_finder(cnt_image: np.ndarray, threshold: float = 0.01,
     return dao_sources
 
 
-def get_extended(dao_sources: pd.DataFrame, band: str):
+def get_extended(dao_sources: pd.DataFrame):
     """
     DBSCAN groups input local maximum locations from DAOStarFinder according to
     a max. separation distance called "epsilon" to be considered in the same group.
@@ -450,7 +458,7 @@ def get_extended(dao_sources: pd.DataFrame, band: str):
 
     # need at least 3 points for convex hull but sometimes they're colinear
     # and everything breaks so up the cutoff to 15
-    star_groups = star_groups.filter(lambda g: len(g) >= 15).groupby('group_id')
+    star_groups = star_groups.filter(lambda g: len(g) >= 9).groupby('group_id')
 
     # we currently use an int8 for group IDs; there should probably never be
     # this many extended sources anyway
@@ -492,9 +500,11 @@ def get_hull_path(group, group_id: int):
     xypos = np.transpose([group['y_peak'], group['x_peak']]) # switched x and y
     hull = ConvexHull(xypos)
     hull_verts = tuple(zip(xypos[hull.vertices, 0], xypos[hull.vertices, 1]))
-
-    hull_data_dict = {'id': group_id, 'hull_area': hull.area,
-                      'num_dao_points': hull.npoints, 'hull_vertices': hull_verts}
+    hull_data_dict = {'id': group_id,
+                      'hull_perimeter': hull.area,
+                      'hull_area': hull.volume,
+                      'num_dao_points': hull.npoints,
+                      'hull_vertices': hull_verts}
     extended_hull_data = pd.DataFrame(data=hull_data_dict)
 
     # path takes data as: an array, masked array or sequence of pairs.
