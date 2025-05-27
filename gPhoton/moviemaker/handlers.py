@@ -143,11 +143,11 @@ def make_full_depth_image(
 
 def write_moviemaker_results(results, ctx):
     if ctx.write["image"] and (results["image_dict"] != {}):
-        write_fits_array(ctx, results["image_dict"], results["wcs"], False)
+        write_fits_array(ctx, results["image_dict"], results["wcs"], results['photon_count'], False)
     del results["image_dict"]
     ctx.watch.click()
     if ctx.write["movie"] and (results["movie_dict"] != {}):
-        write_fits_array(ctx, results["movie_dict"], results["wcs"])
+        write_fits_array(ctx, results["movie_dict"], results["wcs"], results['photon_count'])
         ctx.watch.click()
     return "successful"
 

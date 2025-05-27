@@ -338,7 +338,7 @@ def load_image_tables(
     return event_table, exposure_array
 
 
-def populate_fits_header(band, wcs, tranges, exptimes, key, ctx):
+def populate_fits_header(band, wcs, tranges, exptimes, photon_count, key, ctx):
     """
     create an astropy.io.fits.Header object containing our canonical
     metadata values
@@ -354,6 +354,7 @@ def populate_fits_header(band, wcs, tranges, exptimes, key, ctx):
     header["EXPSTART"] = np.array(tranges).min()
     header["EXPEND"] = np.array(tranges).max()
     header["EXPTIME"] = sum(t1 - t0 for (t0, t1) in tranges)
+    header["PHOTCNT"] = photon_count
     header["N_FRAME"] = len(tranges)
     if key == "flag":
         header["HARDEDGE"] = ctx.narrow_edge_thresh
@@ -374,7 +375,7 @@ def initialize_fits_file(array_path):
 
 
 def write_fits_array(
-    ctx: PipeContext, arraymap, wcs, is_movie=True, clean_up=True
+    ctx: PipeContext, arraymap, wcs, photon_count, is_movie=True, clean_up=True
 ):
     """
     convert an intermediate movie or image dictionary, perhaps previously
@@ -399,7 +400,7 @@ def write_fits_array(
             for key in ["cnt", "flag"]:
                 print(f"writing frame {frame} {key} map")
                 header = populate_fits_header(
-                    ctx.band, wcs, arraymap["tranges"], arraymap["exptimes"], key, ctx
+                    ctx.band, wcs, arraymap["tranges"], arraymap["exptimes"], photon_count, key, ctx
                 )
                 header['EXTNAME'] = key.upper()
                 add_array_to_fits_file(
@@ -419,7 +420,7 @@ def write_fits_array(
         for key in ["cnt", "flag"]:
             print(f"writing {key} map")
             header = populate_fits_header(
-                ctx.band, wcs, arraymap["tranges"], arraymap["exptimes"], key, ctx
+                ctx.band, wcs, arraymap["tranges"], arraymap["exptimes"], photon_count, key, ctx
             )
             header['EXTNAME'] = key.upper()
             add_array_to_fits_file(
