@@ -310,13 +310,13 @@ def estimate_threshold(bkg_rms, photon_count, expt):
     # increase proportionally after the additional multiplier is applied.
     if photon_count/expt < 15000:
         print(f"image is likely quite sparse.")
-        minimum = minimum * (multiplier / (multiplier+0.5)) + .1
-        if multiplier < 1.9:
+        if multiplier < 1.8:
             # transitional zone to "full" background of photons
             # around 6e6 photons
+            minimum = minimum * (multiplier / (multiplier + 0.5))
             multiplier += .75
             minimum += .1
-
+        minimum += .05
     print(f"multiplier: {multiplier}, minimum:{minimum}")
 
     bkg_rms = bkg_rms.astype(np.float32)
@@ -349,11 +349,13 @@ def estimate_background(cnt_image: np.ndarray):
     bkg_estimator = MedianBackground()
     # remove f_e mask from background 2d, could consider
     # using the coverage_mask option for no data areas
-    bkg = Background2D(cnt_image,
-                       (15, 15),
-                       filter_size=(21,21),
-                       bkg_estimator=bkg_estimator,
-                       sigma_clip=sigma_clip)
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        bkg = Background2D(cnt_image,
+                           (15, 15),
+                           filter_size=(21,21),
+                           bkg_estimator=bkg_estimator,
+                           sigma_clip=sigma_clip)
 
     cnt_image -= bkg.background
     # no longer have to explicitly delete all bkg components bc of
@@ -391,7 +393,7 @@ def check_point_in_extended(outline_seg_map: np.ndarray, masks, source_table, ex
         area_density = area_sum / area
         extended_source_cat.loc[extended_source_cat['id'] == key, 'area_density'] = area_density
         extended_source_cat.loc[extended_source_cat['id'] == key, 'source_count'] = len(unique_segments)
-        if area_density >= .4 and len(unique_segments) > 3:
+        if (area_density >= .15 and len(unique_segments) >= 4) or len(unique_segments) > 30:
             # check for whole eclipse being ID'd as extended
             if not area > 6000000:
                 source_table.loc[segments_in_extended, "extended_source"] = int(key)
@@ -401,6 +403,7 @@ def check_point_in_extended(outline_seg_map: np.ndarray, masks, source_table, ex
             extended_source_cat = extended_source_cat[extended_source_cat['id'] != key]
 
     #seg_sources.to_csv("seg_sources_in_extended.csv") # for debug only
+    print(f'length of extended source table: {extended_source_cat["id"].nunique()}')
     return source_table, extended_source_cat
 
 
@@ -442,7 +445,10 @@ def get_extended(dao_sources: pd.DataFrame):
     if num_points < 1514:
         epsilon = 80
     if num_points > 250000:
-        epsilon = 4
+         epsilon = 5
+         cut = np.linspace(0, num_points - 1, 250000, dtype=int)
+         dao_sources = dao_sources.iloc[cut].reset_index(drop=True)
+
     print(f"DBSCAN epsilon: {epsilon}")
 
     dao_sources['id'] = dao_sources.index
@@ -457,8 +463,7 @@ def get_extended(dao_sources: pd.DataFrame):
     star_groups = dao_sources[dao_sources['group_id'] != -1].groupby('group_id')
 
     # need at least 3 points for convex hull but sometimes they're colinear
-    # and everything breaks so up the cutoff to 15
-    star_groups = star_groups.filter(lambda g: len(g) >= 9).groupby('group_id')
+    star_groups = star_groups.filter(lambda g: len(g) >= 11).groupby('group_id')
 
     # we currently use an int8 for group IDs; there should probably never be
     # this many extended sources anyway
@@ -477,10 +482,11 @@ def get_extended(dao_sources: pd.DataFrame):
     masks = {}
     extended_source_list = []
     for zGid, (_, group) in enumerate(star_groups):
-        gid = zGid + 1
-        path, extended_hull_data = get_hull_path(group, gid)
-        extended_source_list.append(extended_hull_data)
-        masks[gid] = path
+            gid = zGid + 1
+            path, extended_hull_data = get_hull_path(group, gid)
+            if path is not None and extended_hull_data is not None:
+                extended_source_list.append(extended_hull_data)
+                masks[gid] = path
     catalog = pd.concat(extended_source_list, ignore_index=True)
     catalog["epsilon"] = epsilon
     # placeholder vals
@@ -498,15 +504,21 @@ def get_hull_path(group, group_id: int):
     from scipy.spatial import ConvexHull
 
     xypos = np.transpose([group['y_peak'], group['x_peak']]) # switched x and y
-    hull = ConvexHull(xypos)
-    hull_verts = tuple(zip(xypos[hull.vertices, 0], xypos[hull.vertices, 1]))
-    hull_data_dict = {'id': group_id,
-                      'hull_perimeter': hull.area,
-                      'hull_area': hull.volume,
-                      'num_dao_points': hull.npoints,
-                      'hull_vertices': hull_verts}
-    extended_hull_data = pd.DataFrame(data=hull_data_dict)
+    if np.unique(xypos[:, 0]).size > 1 and np.unique(xypos[:, 1]).size > 1:
+        hull = ConvexHull(xypos)
+        hull_verts = tuple(zip(xypos[hull.vertices, 0], xypos[hull.vertices, 1]))
+        hull_data_dict = {'id': group_id,
+                          'hull_perimeter': hull.area,
+                          'hull_area': hull.volume,
+                          'num_dao_points': hull.npoints,
+                          'hull_vertices': hull_verts}
+        extended_hull_data = pd.DataFrame(data=hull_data_dict)
 
-    # path takes data as: an array, masked array or sequence of pairs.
-    poly_path = matplotlib.path.Path(hull_verts)
-    return poly_path, extended_hull_data
+        # path takes data as: an array, masked array or sequence of pairs.
+        poly_path = matplotlib.path.Path(hull_verts)
+        return poly_path, extended_hull_data
+    else:
+        # this basically only happens if all the points are colinear
+        print(f"failed to make convex hull, points are colinear.")
+        return None, None
+
