@@ -259,18 +259,6 @@ def get_point_sources(cnt_image: np.ndarray, f_e_mask, photon_count, expt):
     del threshold, kernel
     #gc.collect()
 
-    deblended_segment_map = deblend_sources(convolved_data,
-                                            segment_map,
-                                            npixels=3,
-                                            nlevels=60,
-                                            contrast=0.001,
-                                            mode='exponential',
-                                            progress_bar=False)
-    # 0.004, contrast, then .003 (happy with this), npixels was 8, mode was linear, nlevels was 20
-    del segment_map
-    
-    outline_seg_map = outline_segments(deblended_segment_map)
-
     # can add more columns w/ outputs listed in photutils image seg documentation
     columns = ['label', 'xcentroid', 'ycentroid', 'area', 'segment_flux',
                'elongation', 'eccentricity', 'equivalent_radius', 'orientation',
@@ -278,8 +266,27 @@ def get_point_sources(cnt_image: np.ndarray, f_e_mask, photon_count, expt):
                'minval_xindex', 'minval_yindex', 'bbox_xmin', 'bbox_xmax',
                'bbox_ymin', 'bbox_ymax']
 
-    seg_sources = SourceCatalog(cnt_image, deblended_segment_map, convolved_data=convolved_data
-                                ).to_table(columns=columns).to_pandas()
+    # if 0 sources are found, the segment map will be None and deblending will return an error
+    if segment_map is not None:
+        deblended_segment_map = deblend_sources(convolved_data,
+                                            segment_map,
+                                            npixels=3,
+                                            nlevels=60,
+                                            contrast=0.001,
+                                            mode='exponential',
+                                            progress_bar=False)
+        # 0.004, contrast, then .003 (happy with this), npixels was 8, mode was linear, nlevels was 20
+        outline_seg_map = outline_segments(deblended_segment_map)
+
+        seg_sources = SourceCatalog(cnt_image, deblended_segment_map, convolved_data=convolved_data
+                                    ).to_table(columns=columns).to_pandas()
+    else:
+        # make empty df and outline image if segment_map is none
+        seg_sources = pd.DataFrame(columns=columns)
+        outline_seg_map = np.zeros_like(segment_map)
+
+    del segment_map
+
     seg_sources.astype({'label': 'int32'})
     seg_sources = seg_sources.set_index("label", drop=True) # removed so labels align with outline_seg_map
                                                             # .dropna(axis=0, how='any')
