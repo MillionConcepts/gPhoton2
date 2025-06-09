@@ -388,26 +388,28 @@ def check_point_in_extended(outline_seg_map: np.ndarray, masks, source_table, ex
     0 = not in an extended source, but extended source
     detection was run.
     """
-    seg_outlines = np.nonzero(outline_seg_map)
-    seg_outlines_vert = np.vstack((seg_outlines[0], seg_outlines[1])).T
     source_table["extended_source"] = source_table["extended_source"].fillna(0)
-    for key in masks:
-        inside_extended = masks[key].contains_points(seg_outlines_vert)
-        segments_in_extended = outline_seg_map[seg_outlines][inside_extended]
-        unique_segments = np.unique(segments_in_extended)
-        area = extended_source_cat[extended_source_cat['id']==key].iloc[0]['hull_area']
-        area_sum = source_table.loc[unique_segments, "area"].sum()
-        area_density = area_sum / area
-        extended_source_cat.loc[extended_source_cat['id'] == key, 'area_density'] = area_density
-        extended_source_cat.loc[extended_source_cat['id'] == key, 'source_count'] = len(unique_segments)
-        if (area_density >= .15 and len(unique_segments) >= 4) or len(unique_segments) > 30:
-            # check for whole eclipse being ID'd as extended
-            if not area > 6000000:
-                source_table.loc[segments_in_extended, "extended_source"] = int(key)
-        else:
-            # don't keep extended sources that don't have a certain source density and
-            # pt source count
-            extended_source_cat = extended_source_cat[extended_source_cat['id'] != key]
+    # can't do this on a 0d outline seg map when no sources are found
+    if outline_seg_map.ndim is not 0:
+        seg_outlines = np.nonzero(outline_seg_map)
+        seg_outlines_vert = np.vstack((seg_outlines[0], seg_outlines[1])).T
+        for key in masks:
+            inside_extended = masks[key].contains_points(seg_outlines_vert)
+            segments_in_extended = outline_seg_map[seg_outlines][inside_extended]
+            unique_segments = np.unique(segments_in_extended)
+            area = extended_source_cat[extended_source_cat['id']==key].iloc[0]['hull_area']
+            area_sum = source_table.loc[unique_segments, "area"].sum()
+            area_density = area_sum / area
+            extended_source_cat.loc[extended_source_cat['id'] == key, 'area_density'] = area_density
+            extended_source_cat.loc[extended_source_cat['id'] == key, 'source_count'] = len(unique_segments)
+            if (area_density >= .15 and len(unique_segments) >= 4) or len(unique_segments) > 30:
+                # check for whole eclipse being ID'd as extended
+                if not area > 6000000:
+                    source_table.loc[segments_in_extended, "extended_source"] = int(key)
+            else:
+                # don't keep extended sources that don't have a certain source density and
+                # pt source count
+                extended_source_cat = extended_source_cat[extended_source_cat['id'] != key]
 
     #seg_sources.to_csv("seg_sources_in_extended.csv") # for debug only
     print(f'length of extended source table: {extended_source_cat["id"].nunique()}')
