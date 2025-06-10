@@ -422,8 +422,11 @@ def dao_handler(cnt_image: np.ndarray, minimum):
     # dao_1 was thresh = 0.01, dao_2 was thresh = 0.02
     thresh1 = minimum/80
     thresh2 = minimum/110
+
     dao_sources1 = dao_finder(cnt_image, threshold= thresh1, fwhm=5)
     dao_sources2 = dao_finder(cnt_image,threshold= thresh2, fwhm=3)
+    if dao_sources2 is None and dao_sources1 is None:
+        return pd.DataFrame()
     dao_sources = pd.concat([dao_sources1, dao_sources2])
     #dao_sources.to_csv("dao_sources.csv")
     return dao_sources
@@ -447,7 +450,9 @@ def get_extended(dao_sources: pd.DataFrame):
     extended sources are considered dense collections of many local maximums.
     """
     from sklearn.cluster import DBSCAN
-
+    if len(dao_sources) == 0:
+        return {}, pd.DataFrame(columns=["id", "hull_area", "num_dao_points", "hull_vertices",
+                                         "epsilon", "area_density", "source_count"])
     num_points = len(dao_sources)
     epsilon = (((1500 ** 2) / num_points) ** .6)
     # based on roughly when function hits these values
