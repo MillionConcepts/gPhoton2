@@ -293,12 +293,12 @@ def get_point_sources(cnt_image: np.ndarray, f_e_mask, photon_count, expt):
     seg_sources['threshold_multiplier'] = multiplier
     seg_sources['threshold_minimum'] = minimum
     # for source finding troubleshooting purposes:
-    # from astropy.io import fits
-    # deblended_data = deblended_segment_map.data.astype(np.int32)
-    # hdu = fits.PrimaryHDU(deblended_data)
-    # hdul = fits.HDUList([hdu])
-    # print(f'deblended_segmentation_{photon_count}_{expt}.fits')
-    # hdul.writeto(f'deblended_segmentation_{photon_count}_{expt}_28996.fits', overwrite=True)
+    from astropy.io import fits
+    deblended_data = deblended_segment_map.data.astype(np.int32)
+    hdu = fits.PrimaryHDU(deblended_data)
+    hdul = fits.HDUList([hdu])
+    print(f'deblended_segmentation_{photon_count}_{expt}.fits')
+    hdul.writeto(f'deblended_segmentation_350_370.fits', overwrite=True)
 
     return outline_seg_map, seg_sources, cnt_image
 

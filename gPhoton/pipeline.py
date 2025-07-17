@@ -384,7 +384,7 @@ def execute_full_pipeline(ctx):
             print(f"processing leg {leg_step.leg + 1} of {len(photonpaths)}")
         try:
             results = create_images_and_movies(
-                ctx, path, fixed_start_time=fixed_start_time
+                ctx, leg_step.leg, path, fixed_start_time=fixed_start_time
             )
         except ValueError as e:
             print(f"failed to create images and movies for leg {leg_step.leg+1}")

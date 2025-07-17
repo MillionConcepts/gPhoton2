@@ -2,13 +2,13 @@ from gPhoton.pipeline import execute_pipeline
 
 if __name__ == "__main__":
     execute_pipeline(
-        43883,
+        34737,
         "NUV",
         depth=120,
         # integer; None to deactivate (default None)
         threads=4,
         # where to both write output data and look for input data
-        local_root="test_data",
+        local_root="/home/bekah/eclipse",
         # auxiliary remote location for input data
         # remote_root="/mnt/s3",
         recreate=True,
@@ -30,5 +30,6 @@ if __name__ == "__main__":
         extended_photonlist=False,
         extended_flagging=False,
         verbose=2,
-        photonlist_cols = ('t', 'flags', 'ra', 'dec', 'detrad', 'mask', 'response','ya','col','row')
+        #single_leg=1,
+        photonlist_cols = ('t', 'flags', 'ra', 'dec', 'detrad', 'mask', 'response','ya','col','row', 'xi', 'eta', 'x', 'y')
     )

@@ -511,3 +511,71 @@ def add_array_to_fits_file(
         )
     finally:
         fits_stream.close()
+
+
+def make_coverage_backplane(wcs, imsz, eclipse, leg):
+    """
+    Use precomputed shapely vertices in xi, eta coords to get coverage backplane
+    in image coordinates, which will be its own backplane. Primarily used for
+    masking during point source extraction.
+    """
+    # load shapely coords for specific eclipse and leg
+    # can't do this yet bc parquet file doesn't exist
+    # so temporarily make them on the fly instead
+    # THIS WONT WORK FOR MULTIPLE LEGGED ECLIPSES
+    # get aspect / boresight data
+    aspect = pq.read_table(
+        "/home/bekah/gPhoton2/gPhoton/aspect/aspect.parquet",
+        filters=[("eclipse", "==", eclipse)]
+    )
+    boresight = pq.read_table(
+        "/home/bekah/gPhoton2/gPhoton/aspect/boresight.parquet",
+        filters=[("eclipse", "==", eclipse)]
+    )
+    ra0 = boresight['ra0']
+    dec0 = boresight['dec0']
+    roll = boresight['roll0']
+    full, edge = areas_for_leg(ra0, dec0, aspect)
+
+    # get exterior coords for edge mask
+    x_edge, y_edge = edge.exterior.coords.xy
+    ra_poly_edge, dec_poly_edge = gnomrev_simple(
+        np.asarray(x_edge),
+        np.asarray(y_edge),
+        ra0.to_numpy(),
+        dec0.to_numpy(),
+        -roll.to_numpy(),
+        1 / 36000.0,
+        0.0,
+        0.0
+    )
+    image_coords_edge = wcs.wcs_world2pix(np.column_stack((ra_poly_edge, dec_poly_edge)), 1)
+    image_edge = Polygon(image_coords_edge)
+    # use exterior coordinates of the mask for FULL MASK
+    x_full, y_full = full.exterior.coords.xy
+    ra_poly_full, dec_poly_full = gnomrev_simple(
+        np.asarray(x_full),
+        np.asarray(y_full),
+        ra0.to_numpy(),
+        dec0.to_numpy(),
+        -roll.to_numpy(),
+        1 / 36000.0,
+        0.0,
+        0.0
+    )
+    image_coords_full = wcs.wcs_world2pix(np.column_stack((ra_poly_full, dec_poly_full)), 1)
+    image_full = Polygon(image_coords_full)
+
+    # make mask array of annulus and inner full coverage area
+    ring = image_edge.difference(image_full)
+    shapes = [
+        (ring, 2),
+        (inner, 1)
+    ]
+    coverage_map = rasterize(
+        shapes=shapes,
+        out_shape=imsz,
+        fill=0,
+        dtype='uint8',
+    )
+    return coverage_map

@@ -154,6 +154,7 @@ def write_moviemaker_results(results, ctx):
 
 def create_images_and_movies(
     ctx: PipeContext,
+    leg: int,
     photonfile: Pathlike,
     fixed_start_time: Optional[int] = None
 ) -> Union[dict, str]:
@@ -185,6 +186,11 @@ def create_images_and_movies(
     print(f"making full-depth image")
     # don't be careful about memory wrt sparsification, just go for it
     status, image_dict = make_full_depth_image(**render_kwargs)
+
+    # load exposure backplane info from precomputed table of
+    # shapely polygon vertices, make backplane and add to image_dict
+    image_dict['coverage'] = make_coverage_backplane(wcs, imsz, ctx.eclipse, leg)
+
     if (
         (ctx.min_exptime is not None)
         and (image_dict["exptimes"][0] < ctx.min_exptime)

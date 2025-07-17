@@ -205,8 +205,8 @@ class PipeContext:
         suffix: Optional[str] = None,
         aspect_dir: None | str | Path = None,
         ftype: str = "csv",
-        wide_edge_thresh: int = 340,
-        narrow_edge_thresh: int = 360,
+        wide_edge_thresh: int = 350,
+        narrow_edge_thresh: int = 370,
         single_leg: Optional[int] = None,
         photonlist_cols: Sequence[str] = None
     ):
