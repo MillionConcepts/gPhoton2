@@ -134,37 +134,6 @@ def shared_compute_exptime(
     return compute_exptime(events[:, 0], events[:, 1], band, trange)
 
 
-def make_dose_frame(
-    col: np.ndarray,
-    row: np.ndarray,
-) -> np.ndarray:
-    """
-    :param col: 1-D array containing col positions on detector
-    :param row: 1-D array containing row positions on detector
-    """
-    imsz = (3200, 3200)
-    frame = np.zeros(imsz, dtype=np.uint8)
-    # less than 0 values break bin2d, greater than imsz values do too
-    scaled_col = col * 4
-    scaled_row = row * 4
-    in_bounds = (
-            (scaled_col >= 0) & (scaled_col < imsz[1]) &
-            (scaled_row >= 0) & (scaled_row < imsz[0])
-    )
-    scaled_col = scaled_col[in_bounds]
-    scaled_row = scaled_row[in_bounds]
-    if len(scaled_col) > 0:
-        # scale up col and row by 4 (800 -> 3200 max)
-        frame = bin2d(
-                scaled_col,
-                scaled_row,
-                scaled_col,
-                'count',
-                n_bins=imsz,
-                bbounds=([[0, imsz[0]], [0, imsz[1]]]))
-    return frame.astype("f4")
-
-
 def unshared_compute_exptime(
     events: np.ndarray, band: str, trange: Sequence[float]
 ) -> float:
@@ -379,7 +348,7 @@ def load_image_tables(
     return event_table, exposure_array
 
 
-def populate_fits_header(band, wcs, tranges, exptimes, photon_count, key, ctx):
+def populate_fits_header(band, wcs, tranges, exptimes, photon_count, coverage_areas, key, ctx):
     """
     create an astropy.io.fits.Header object containing our canonical
     metadata values
@@ -393,7 +362,11 @@ def populate_fits_header(band, wcs, tranges, exptimes, photon_count, key, ctx):
     header["BAND"] = 1 if band == "NUV" else 2
     header["VERSION"] = "v{v}".format(v=__version__)
     if key == "dose":
-        return header  # doesn't have a WCS like the other images
+        # area of shapely polygons in image coords
+        # dose doesn't have a WCS like the other images
+        header['PARTAREA'] = coverage_areas[0]
+        header['FULLAREA'] = coverage_areas[1]
+        return header
     header["CDELT1"], header["CDELT2"] = wcs.wcs.cdelt
     header["CTYPE1"], header["CTYPE2"] = wcs.wcs.ctype
     header["CRPIX1"], header["CRPIX2"] = wcs.wcs.crpix
@@ -418,7 +391,7 @@ def initialize_fits_file(array_path):
 
 
 def write_fits_array(
-    ctx: PipeContext, arraymap, wcs, photon_count, is_movie=True, clean_up=True
+    ctx: PipeContext, arraymap, wcs, photon_count, coverage_areas=None, is_movie=True, clean_up=True
 ):
     """
     convert an intermediate movie or image dictionary, perhaps previously
@@ -465,7 +438,7 @@ def write_fits_array(
         for key in backplanes:
             print(f"writing {key} map")
             header = populate_fits_header(
-                ctx.band, wcs, arraymap["tranges"], arraymap["exptimes"], photon_count, key, ctx
+                ctx.band, wcs, arraymap["tranges"], arraymap["exptimes"], photon_count, coverage_areas, key, ctx
             )
             header['EXTNAME'] = key.upper()
             add_array_to_fits_file(
@@ -564,10 +537,12 @@ def make_coverage_backplane(wcs, imsz, eclipse, leg, aspect_dir):
     in image coordinates, which will be its own backplane. Primarily used for
     masking during point source extraction.
     """
-    # load shapely
-    shape = aspect_tables(eclipse=eclipse,
-                          tables="exposure_rgns",
-                          aspect_dir=aspect_dir)
+    # load shapely shapes
+    shape = aspect_tables(
+        eclipse=eclipse,
+        tables="exposure_rgns",
+        aspect_dir=aspect_dir,
+    )
 
     # reconstitute as polygons
     full = shapely.from_wkb(shape[0]["full_exposure_area"][leg].as_py())
@@ -576,7 +551,7 @@ def make_coverage_backplane(wcs, imsz, eclipse, leg, aspect_dir):
     dec0 = shape[0]["dec0"][leg].as_py()
     roll = shape[0]["roll0"][leg].as_py()
 
-    # get exterior coords for edge mask
+    # exterior coords for edge mask
     x_edge, y_edge = edge.exterior.coords.xy
     ra_poly_edge, dec_poly_edge = gnomrev_simple(
         np.asarray(x_edge),
@@ -586,12 +561,14 @@ def make_coverage_backplane(wcs, imsz, eclipse, leg, aspect_dir):
         -roll,
         1 / 36000.0,
         0.0,
-        0.0
+        0.0,
     )
-    image_coords_edge = wcs.wcs_world2pix(np.column_stack((ra_poly_edge, dec_poly_edge)), 1)
-    print("making image edge")
+    image_coords_edge = wcs.wcs_world2pix(
+        np.column_stack((ra_poly_edge, dec_poly_edge)), 1
+    )
     image_edge = Polygon(image_coords_edge)
-    # use exterior coordinates of the mask for FULL MASK
+
+    # use exterior coordinates of the mask for full mask
     x_full, y_full = full.exterior.coords.xy
     ra_poly_full, dec_poly_full = gnomrev_simple(
         np.asarray(x_full),
@@ -601,17 +578,19 @@ def make_coverage_backplane(wcs, imsz, eclipse, leg, aspect_dir):
         -roll,
         1 / 36000.0,
         0.0,
-        0.0
+        0.0,
     )
-    image_coords_full = wcs.wcs_world2pix(np.column_stack((ra_poly_full, dec_poly_full)), 1)
-    print("making image full")
+    image_coords_full = wcs.wcs_world2pix(
+        np.column_stack((ra_poly_full, dec_poly_full)), 1
+    )
     image_full = Polygon(image_coords_full)
+
     # make mask array of annulus and inner full coverage area
-    # need an error case in which full and edge are in fact exactly the same
+    # need an error case in which full and edge are in fact exactly the same?
     ring = image_edge.difference(image_full)
     shapes = [
         (ring, 2),
-        (image_full, 1)
+        (image_full, 1),
     ]
     coverage_map = rasterize(
         shapes=shapes,
@@ -620,5 +599,43 @@ def make_coverage_backplane(wcs, imsz, eclipse, leg, aspect_dir):
         dtype='uint8',
     )
 
-    ## add area of interior, ring, total
-    return coverage_map
+    return coverage_map, ring.area, image_full.area
+
+
+def make_dose_frame(
+    col: np.ndarray,
+    row: np.ndarray,
+) -> np.ndarray:
+    """
+    create a 2D dose frame from column and row detector positions.
+
+    :param col: 1-D array containing col positions on detector
+    :param row: 1-D array containing row positions on detector
+    :return: 2D numpy array representing the dose frame
+    """
+    imsz = (3200, 3200)
+    frame = np.zeros(imsz, dtype=np.uint8)
+
+    # less than 0 or out-of-bounds values break bin2d
+    scaled_col = col * 4
+    scaled_row = row * 4
+
+    in_bounds = (
+        (scaled_col >= 0) & (scaled_col < imsz[1]) &
+        (scaled_row >= 0) & (scaled_row < imsz[0])
+    )
+    scaled_col = scaled_col[in_bounds]
+    scaled_row = scaled_row[in_bounds]
+
+    if len(scaled_col) > 0:
+        # scale up col and row by 4 (800 -> 3200 max)
+        frame = bin2d(
+            scaled_col,
+            scaled_row,
+            scaled_col,
+            'count',
+            n_bins=imsz,
+            bbounds=[[0, imsz[0]], [0, imsz[1]]],
+        )
+
+    return frame.astype("f4")

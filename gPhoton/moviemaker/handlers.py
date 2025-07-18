@@ -149,7 +149,13 @@ def make_full_depth_image(
 
 def write_moviemaker_results(results, ctx):
     if ctx.write["image"] and (results["image_dict"] != {}):
-        write_fits_array(ctx, results["image_dict"], results["wcs"], results['photon_count'], False)
+        write_fits_array(
+            ctx,
+            results["image_dict"],
+            results["wcs"],
+            results['photon_count'],
+            results['coverage_areas'],
+            False)
     del results["image_dict"]
     ctx.watch.click()
     if ctx.write["movie"] and (results["movie_dict"] != {}):
@@ -191,11 +197,20 @@ def create_images_and_movies(
     }
     print(f"making full-depth image")
     # don't be careful about memory wrt sparsification, just go for it
+    # makes cnt, flag, ya, col std, row std, dose map frames
+    # only cnt, flag, dose and coverage (made later) are eventually output
     status, image_dict = make_full_depth_image(**render_kwargs)
 
     # load exposure backplane info from precomputed table of
     # shapely polygon vertices, make backplane and add to image_dict
-    image_dict['coverage'] = make_coverage_backplane(wcs, imsz, ctx.eclipse, leg, ctx.aspect_dir)
+    # kind of weird it's not in make_full_depth_image but the inputs are p diff
+    image_dict['coverage'], ring_area, full_area = make_coverage_backplane(
+        wcs,
+        imsz,
+        ctx.eclipse,
+        leg,
+        ctx.aspect_dir,
+    )
 
     if (
         (ctx.min_exptime is not None)
@@ -206,6 +221,7 @@ def create_images_and_movies(
             "movie_dict": {},
             "image_dict": image_dict,
             "photon_count": photons,
+            "coverage_areas": (ring_area, full_area),
             "status": (
                 f"exptime {round(image_dict['exptimes'][0])} "
                 f"< min_exptime {ctx.min_exptime}"
@@ -221,5 +237,6 @@ def create_images_and_movies(
         "movie_dict": movie_dict,
         "image_dict": image_dict,
         "photon_count": photons,
+        "coverage_areas": (ring_area, full_area),
         "status": status,
     }
