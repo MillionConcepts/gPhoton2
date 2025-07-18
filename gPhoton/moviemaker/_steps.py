@@ -134,6 +134,37 @@ def shared_compute_exptime(
     return compute_exptime(events[:, 0], events[:, 1], band, trange)
 
 
+def make_dose_frame(
+    col: np.ndarray,
+    row: np.ndarray,
+) -> np.ndarray:
+    """
+    :param col: 1-D array containing col positions on detector
+    :param row: 1-D array containing row positions on detector
+    """
+    imsz = (3200, 3200)
+    frame = np.zeros(imsz, dtype=np.uint8)
+    # less than 0 values break bin2d, greater than imsz values do too
+    scaled_col = col * 4
+    scaled_row = row * 4
+    in_bounds = (
+            (scaled_col >= 0) & (scaled_col < imsz[1]) &
+            (scaled_row >= 0) & (scaled_row < imsz[0])
+    )
+    scaled_col = scaled_col[in_bounds]
+    scaled_row = scaled_row[in_bounds]
+    if len(scaled_col) > 0:
+        # scale up col and row by 4 (800 -> 3200 max)
+        frame = bin2d(
+                scaled_col,
+                scaled_row,
+                scaled_col,
+                'count',
+                n_bins=imsz,
+                bbounds=([[0, imsz[0]], [0, imsz[1]]]))
+    return frame.astype("f4")
+
+
 def unshared_compute_exptime(
     events: np.ndarray, band: str, trange: Sequence[float]
 ) -> float:
@@ -354,18 +385,20 @@ def populate_fits_header(band, wcs, tranges, exptimes, photon_count, key, ctx):
     metadata values
     """
     header = pyfits.Header()
-    header["CDELT1"], header["CDELT2"] = wcs.wcs.cdelt
-    header["CTYPE1"], header["CTYPE2"] = wcs.wcs.ctype
-    header["CRPIX1"], header["CRPIX2"] = wcs.wcs.crpix
-    header["CRVAL1"], header["CRVAL2"] = wcs.wcs.crval
-    header["EQUINOX"], header["EPOCH"] = 2000.0, 2000.0
-    header["BAND"] = 1 if band == "NUV" else 2
-    header["VERSION"] = "v{v}".format(v=__version__)
     header["EXPSTART"] = np.array(tranges).min()
     header["EXPEND"] = np.array(tranges).max()
     header["EXPTIME"] = sum(t1 - t0 for (t0, t1) in tranges)
     header["PHOTCNT"] = photon_count
     header["N_FRAME"] = len(tranges)
+    header["BAND"] = 1 if band == "NUV" else 2
+    header["VERSION"] = "v{v}".format(v=__version__)
+    if key == "dose":
+        return header  # doesn't have a WCS like the other images
+    header["CDELT1"], header["CDELT2"] = wcs.wcs.cdelt
+    header["CTYPE1"], header["CTYPE2"] = wcs.wcs.ctype
+    header["CRPIX1"], header["CRPIX2"] = wcs.wcs.crpix
+    header["CRVAL1"], header["CRVAL2"] = wcs.wcs.crval
+    header["EQUINOX"], header["EPOCH"] = 2000.0, 2000.0
     if key == "flag":
         header["HARDEDGE"] = ctx.narrow_edge_thresh
         header["SOFTEDGE"] = ctx.wide_edge_thresh
@@ -428,7 +461,7 @@ def write_fits_array(
         print(f"writing {array_name} to {array_path}")
         initialize_fits_file(array_path)
         backplanes = ["cnt", "flag"] if ctx['movie'] is is_movie is True \
-            else ["cnt", "flag", "coverage"]
+            else ["cnt", "flag", "coverage", "dose"]
         for key in backplanes:
             print(f"writing {key} map")
             header = populate_fits_header(
@@ -586,4 +619,6 @@ def make_coverage_backplane(wcs, imsz, eclipse, leg, aspect_dir):
         fill=0,
         dtype='uint8',
     )
+
+    ## add area of interior, ring, total
     return coverage_map

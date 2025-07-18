@@ -13,6 +13,7 @@ from gPhoton.moviemaker._steps import (
     sm_compute_movie_frame,
     unshared_compute_exptime,
     make_frame,
+    make_dose_frame,
     make_mask_frame,
     write_fits_array,
     prep_image_inputs,
@@ -138,6 +139,10 @@ def make_full_depth_image(
             map_ix_dict['flag']["foc"],
             map_ix_dict['flag']["weights"],
             imsz
+    )
+    output_dict["dose"] = make_dose_frame(
+            map_ix_dict['cnt']["col_weights"],
+            map_ix_dict['cnt']["row_weights"],
     )
     return "successfully made image", output_dict
 
