@@ -37,25 +37,17 @@ def make_lightcurves(sky_arrays: Mapping, ctx: PipeContext):
 
 
         # edge mask just for source finding (not a flag, just demarcates
-        # bad area for source finding @ image edge)
-        flag_edge_mask = image_dict["flag"]
-        flag_edge_mask = np.where((flag_edge_mask & 0b0010) != 0, 0, flag_edge_mask)
-
-        # row, col = image_dict["flag"].shape
-        # row = row/2
-        # col = col/2
-        # rr, cc = disk((row, col), 1485, shape=flag_edge_mask.shape) # was 1450
-        # outside_mask = np.ones_like(flag_edge_mask, dtype=bool)
-        # outside_mask[rr, cc] = False
-        # # bitwise flag for edge
-        # flag_edge_mask[outside_mask] |= 0b1000
+        # bad area for source finding @ image edge where there are no sources
+        # or the coverage is not "full"
+        flag_edge_mask = (image_dict["coverage"] != 1)
+        # mask hotspots
         masked_cnt_image = zero_flag(
             image_dict["cnt"],
-            flag_edge_mask,
+            image_dict['flag'],
             copy=True
         )
         masked_cnt_image = masked_cnt_image.astype(np.float32)
-        masked_cnt_image[(flag_edge_mask & 0b1000) != 0] = np.nan
+        masked_cnt_image[flag_edge_mask] = np.nan
 
     # use pre made source catalog file or find sources
     if ctx.source_catalog_file is not None:

@@ -16,6 +16,7 @@ from gPhoton.moviemaker._steps import (
     make_mask_frame,
     write_fits_array,
     prep_image_inputs,
+    make_coverage_backplane
 )
 from gPhoton.reference import PipeContext
 from gPhoton.types import Pathlike
@@ -189,7 +190,7 @@ def create_images_and_movies(
 
     # load exposure backplane info from precomputed table of
     # shapely polygon vertices, make backplane and add to image_dict
-    image_dict['coverage'] = make_coverage_backplane(wcs, imsz, ctx.eclipse, leg)
+    image_dict['coverage'] = make_coverage_backplane(wcs, imsz, ctx.eclipse, leg, ctx.aspect_dir)
 
     if (
         (ctx.min_exptime is not None)

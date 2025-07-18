@@ -95,9 +95,8 @@ def zero_flag(cnt, flag, copy=False):
     if copy is True:
         cnt = cnt.copy()
     cnt[~np.isfinite(cnt)] = 0
-    # mask narrow edge and hotspots
+    # mask hotspots
     cnt[(flag & 0b0001) != 0] = 0
-    cnt[(flag & 0b1000) != 0] = 0
     return cnt
 
 def flag_mask(cnt, flag):

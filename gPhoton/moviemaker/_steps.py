@@ -17,9 +17,19 @@ import scipy.sparse
 import sh
 from quickbin import bin2d
 
+from rasterio.features import rasterize
+from rasterio.transform import from_origin
+from astropy.wcs import WCS
+from astropy.io import fits
+import shapely
+from shapely.geometry import Polygon
+
 from gPhoton import __version__
+from gPhoton.aspect import aspect_tables
 from gPhoton.calibrate import compute_exptime
 from gPhoton.coords.wcs import make_bounding_wcs
+from gPhoton.coords.gnomonic import gnomfwd_simple, gnomrev_simple
+from gPhoton.constants import DETSIZE, PIXEL_SIZE
 from gPhoton.parquet_utils import parquet_to_ndarray
 from gPhoton.pretty import print_inline
 from gPhoton.reference import PipeContext
@@ -417,7 +427,9 @@ def write_fits_array(
             array_path = array_path.with_suffix("")
         print(f"writing {array_name} to {array_path}")
         initialize_fits_file(array_path)
-        for key in ["cnt", "flag"]:
+        backplanes = ["cnt", "flag"] if ctx['movie'] is is_movie is True \
+            else ["cnt", "flag", "coverage"]
+        for key in backplanes:
             print(f"writing {key} map")
             header = populate_fits_header(
                 ctx.band, wcs, arraymap["tranges"], arraymap["exptimes"], photon_count, key, ctx
@@ -513,64 +525,60 @@ def add_array_to_fits_file(
         fits_stream.close()
 
 
-def make_coverage_backplane(wcs, imsz, eclipse, leg):
+def make_coverage_backplane(wcs, imsz, eclipse, leg, aspect_dir):
     """
     Use precomputed shapely vertices in xi, eta coords to get coverage backplane
     in image coordinates, which will be its own backplane. Primarily used for
     masking during point source extraction.
     """
-    # load shapely coords for specific eclipse and leg
-    # can't do this yet bc parquet file doesn't exist
-    # so temporarily make them on the fly instead
-    # THIS WONT WORK FOR MULTIPLE LEGGED ECLIPSES
-    # get aspect / boresight data
-    aspect = pq.read_table(
-        "/home/bekah/gPhoton2/gPhoton/aspect/aspect.parquet",
-        filters=[("eclipse", "==", eclipse)]
-    )
-    boresight = pq.read_table(
-        "/home/bekah/gPhoton2/gPhoton/aspect/boresight.parquet",
-        filters=[("eclipse", "==", eclipse)]
-    )
-    ra0 = boresight['ra0']
-    dec0 = boresight['dec0']
-    roll = boresight['roll0']
-    full, edge = areas_for_leg(ra0, dec0, aspect)
+    # load shapely
+    shape = aspect_tables(eclipse=eclipse,
+                          tables="exposure_rgns",
+                          aspect_dir=aspect_dir)
+
+    # reconstitute as polygons
+    full = shapely.from_wkb(shape[0]["full_exposure_area"][leg].as_py())
+    edge = shapely.from_wkb(shape[0]["partial_exposure_area"][leg].as_py())
+    ra0 = shape[0]["ra0"][leg].as_py()
+    dec0 = shape[0]["dec0"][leg].as_py()
+    roll = shape[0]["roll0"][leg].as_py()
 
     # get exterior coords for edge mask
     x_edge, y_edge = edge.exterior.coords.xy
     ra_poly_edge, dec_poly_edge = gnomrev_simple(
         np.asarray(x_edge),
         np.asarray(y_edge),
-        ra0.to_numpy(),
-        dec0.to_numpy(),
-        -roll.to_numpy(),
+        ra0,
+        dec0,
+        -roll,
         1 / 36000.0,
         0.0,
         0.0
     )
     image_coords_edge = wcs.wcs_world2pix(np.column_stack((ra_poly_edge, dec_poly_edge)), 1)
+    print("making image edge")
     image_edge = Polygon(image_coords_edge)
     # use exterior coordinates of the mask for FULL MASK
     x_full, y_full = full.exterior.coords.xy
     ra_poly_full, dec_poly_full = gnomrev_simple(
         np.asarray(x_full),
         np.asarray(y_full),
-        ra0.to_numpy(),
-        dec0.to_numpy(),
-        -roll.to_numpy(),
+        ra0,
+        dec0,
+        -roll,
         1 / 36000.0,
         0.0,
         0.0
     )
     image_coords_full = wcs.wcs_world2pix(np.column_stack((ra_poly_full, dec_poly_full)), 1)
+    print("making image full")
     image_full = Polygon(image_coords_full)
-
     # make mask array of annulus and inner full coverage area
+    # need an error case in which full and edge are in fact exactly the same
     ring = image_edge.difference(image_full)
     shapes = [
         (ring, 2),
-        (inner, 1)
+        (image_full, 1)
     ]
     coverage_map = rasterize(
         shapes=shapes,

@@ -16,7 +16,7 @@ from gPhoton.coords.gnomonic import gnomfwd_simple
 from gPhoton.parquet_utils import parquet_to_ndarrays
 from gPhoton.pretty import print_inline
 
-ASPECT_TABLE_TYPE = Literal["aspect", "aspect2", "boresight", "metadata"]
+ASPECT_TABLE_TYPE = Literal["aspect", "aspect2", "boresight", "metadata", "exposure_rgns"]
 # This odd-looking construct is needed because get_args returns
 # tuple[Any, ...]; we're essentially saying 'trust me, in this case
 # the elements of the tuple are all appropriate strings'.
@@ -28,7 +28,7 @@ ALL_ASPECT_TABLES = \
 def aspect_tables(
     eclipse: None | int,
     tables: None | ASPECT_TABLE_TYPE | Iterable[ASPECT_TABLE_TYPE] =
-        ["aspect", "boresight", "metadata"],
+        ["aspect", "boresight", "metadata", "exposure_rgns"],
     # The type specification for pyarrow filter expressions is too
     # complicated (and probably variable depending on pyarrow version)
     # to replicate.  It might be worth revisiting this after pyarrow
