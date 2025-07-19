@@ -542,7 +542,7 @@ def check_fixed_start_time(ctx: PipeContext) -> Optional[str]:
     return coreg_exptime["t0"].iloc[0]
 
 
-def load_array_file(array_file, compression):
+def load_array_file(array_file, compression, movie=False):
     import astropy.wcs
     import fitsio
     from gPhoton.io.fits_utils import AgnosticHDUL, pyfits_open_igzip
@@ -550,20 +550,33 @@ def load_array_file(array_file, compression):
         hdul = AgnosticHDUL(pyfits_open_igzip(array_file))
     else:
         hdul = AgnosticHDUL(fitsio.FITS(array_file))
-    cnt_hdu, flag_hdu = (hdul[i + 1] for i in range(2))
-    headerdict = dict(cnt_hdu.header)
-    tranges = keyfilter(lambda k: re.match(r"T[01]", k), headerdict)
-    tranges = tuple(chunked(tranges.values(), 2))
-    exptimes = tuple(
-        keyfilter(lambda k: re.match(r"EXPT_", k), headerdict).values()
-    )
-    wcs = astropy.wcs.WCS(cnt_hdu.header)
-    results = {"exptimes": exptimes, "tranges": tranges, "wcs": wcs}
-    return (cnt_hdu, flag_hdu), results
+    if not movie:
+        cnt_hdu, flag_hdu, coverage_hdu = (hdul[i + 1] for i in range(3))
+        headerdict = dict(cnt_hdu.header)
+        tranges = keyfilter(lambda k: re.match(r"T[01]", k), headerdict)
+        tranges = tuple(chunked(tranges.values(), 2))
+        exptimes = tuple(
+            keyfilter(lambda k: re.match(r"EXPT_", k), headerdict).values()
+        )
+        wcs = astropy.wcs.WCS(cnt_hdu.header)
+        results = {"exptimes": exptimes, "tranges": tranges, "wcs": wcs}
+        return (cnt_hdu, flag_hdu, coverage_hdu), results
+    else:
+        cnt_hdu, flag_hdu = (hdul[i + 1] for i in range(2))
+        headerdict = dict(cnt_hdu.header)
+        tranges = keyfilter(lambda k: re.match(r"T[01]", k), headerdict)
+        tranges = tuple(chunked(tranges.values(), 2))
+        exptimes = tuple(
+            keyfilter(lambda k: re.match(r"EXPT_", k), headerdict).values()
+        )
+        wcs = astropy.wcs.WCS(cnt_hdu.header)
+        results = {"exptimes": exptimes, "tranges": tranges, "wcs": wcs}
+        return (cnt_hdu, flag_hdu), results
+
 
 
 def unpack_movie(movie_file, compression, lil):
-    hdus, results = load_array_file(movie_file, compression)
+    hdus, results = load_array_file(movie_file, compression, True)
     planes = ([], [])
     if lil is True:
         import scipy.sparse
@@ -584,6 +597,6 @@ def unpack_movie(movie_file, compression, lil):
 def unpack_image(image_file, compression):
     hdus, results = load_array_file(image_file, compression)
     planes = {
-        "cnt": hdus[0].data, "flag": hdus[1].data
+        "cnt": hdus[0].data, "flag": hdus[1].data, "coverage": hdus[2].data
     }
     return results | planes
