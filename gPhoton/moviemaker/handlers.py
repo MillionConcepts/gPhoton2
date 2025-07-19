@@ -159,7 +159,12 @@ def write_moviemaker_results(results, ctx):
     del results["image_dict"]
     ctx.watch.click()
     if ctx.write["movie"] and (results["movie_dict"] != {}):
-        write_fits_array(ctx, results["movie_dict"], results["wcs"], results['photon_count'])
+        write_fits_array(
+            ctx,
+            results["movie_dict"],
+            results["wcs"],
+            results['photon_count'],
+            is_movie=True)
         ctx.watch.click()
     return "successful"
 

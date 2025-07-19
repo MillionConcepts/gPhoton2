@@ -433,7 +433,7 @@ def write_fits_array(
             array_path = array_path.with_suffix("")
         print(f"writing {array_name} to {array_path}")
         initialize_fits_file(array_path)
-        backplanes = ["cnt", "flag"] if ctx['movie'] is is_movie is True \
+        backplanes = ["cnt", "flag"] if is_movie is True \
             else ["cnt", "flag", "coverage", "dose"]
         for key in backplanes:
             print(f"writing {key} map")
