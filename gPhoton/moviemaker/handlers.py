@@ -135,6 +135,12 @@ def make_full_depth_image(
             "median",
             imsz
     )
+    output_dict["q"] = make_frame(
+            map_ix_dict["cnt"]["foc"],
+            map_ix_dict["cnt"]["q_weights"],
+            "mean",
+            imsz
+    )
     output_dict["flag"] = make_mask_frame(
             map_ix_dict['flag']["foc"],
             map_ix_dict['flag']["weights"],

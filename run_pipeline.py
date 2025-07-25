@@ -2,7 +2,7 @@ from gPhoton.pipeline import execute_pipeline
 
 if __name__ == "__main__":
     execute_pipeline(
-        34737,
+        23456,
         "NUV",
         depth=120,
         # integer; None to deactivate (default None)
@@ -19,7 +19,7 @@ if __name__ == "__main__":
         write={"movie": False, "image": True},
         coregister_lightcurves=False,
         # photonpipe, moviemaker, None (default None)
-        stop_after=None,
+        stop_after="photonpipe",
         photometry_only=False,
         # "none", "gzip", "rice"
         compression="rice",
@@ -31,5 +31,5 @@ if __name__ == "__main__":
         extended_flagging=False,
         verbose=2,
         #single_leg=1,
-        photonlist_cols = ('t', 'flags', 'ra', 'dec', 'detrad', 'mask', 'response','ya','col','row', 'xi', 'eta', 'x', 'y')
+        photonlist_cols = ('t', 'flags', 'ra', 'dec', 'detrad', 'mask', 'response','ya','col','row', 'q')
     )

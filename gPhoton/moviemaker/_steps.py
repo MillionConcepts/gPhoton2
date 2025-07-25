@@ -169,6 +169,7 @@ def prep_image_inputs(photonfile, ctx):
     col_weights = event_table["col"].to_numpy()
     row_weights = event_table["row"].to_numpy()
     ya_weights = event_table["ya"].to_numpy()
+    q_weights = event_table["q"].to_numpy()
     t = event_table["t"].to_numpy()
     # combine flag, mask, edge into "artifacts"
     artifact_flags = combine_artifacts(
@@ -178,7 +179,7 @@ def prep_image_inputs(photonfile, ctx):
     artifact_ix = np.where(artifact_flags!= 0)
     map_ix_dict = generate_indexed_values(foc, artifact_ix, artifact_flags, t,
                                           weights, col_weights, row_weights,
-                                          ya_weights)
+                                          ya_weights, q_weights)
     total_trange = (t.min(), t.max())
     return exposure_array, map_ix_dict, total_trange, wcs, len(event_table)
 
@@ -198,10 +199,10 @@ def combine_artifacts(event_table, wide_edge_thresh, narrow_edge_thresh):
 
 
 def generate_indexed_values(foc, artifact_ix, artifact_flags, t, weights,
-                            col_weights, row_weights, ya_weights):
+                            col_weights, row_weights, ya_weights, q_weights):
     indexed = NestingDict()
-    for value, value_name in zip((t, foc, weights, row_weights, col_weights, ya_weights),
-                                 ("t", "foc", "weights", "row_weights", "col_weights", "ya_weights")):
+    for value, value_name in zip((t, foc, weights, row_weights, col_weights, ya_weights, q_weights),
+                                 ("t", "foc", "weights", "row_weights", "col_weights", "ya_weights", "q_weights")):
         for map_ix, map_name in zip(
             (artifact_ix, slice(None)), ("flag", "cnt")
         ):
@@ -339,7 +340,7 @@ def load_image_tables(
     return event and exposure tables appropriate for making images / movies
     and performing photometry
     """
-    relevant_columns = ["ra", "dec", "response", "flags", "mask", "t", "detrad", "col", "row", "ya"]
+    relevant_columns = ["ra", "dec", "response", "flags", "mask", "t", "detrad", "col", "row", "ya", "q"]
     event_table = parquet.read_table(photonfile, columns=relevant_columns)
     # retain time and flag for every event for exposure time computations
     exposure_array = parquet_to_ndarray(event_table, ["t", "flags"])

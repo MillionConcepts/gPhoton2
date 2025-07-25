@@ -59,10 +59,20 @@ def count_full_depth_image(
             [source_table, stdcolrow_phot_table[["stdcolrow_aperture_sum"]]],
             axis=1,
         )
+        # q aperture photometry
+        q_phot_table = aperture_photometry(image_dict["q"],
+                                            apertures,
+                                            method='center').to_pandas()
+        q_phot_table = q_phot_table.rename(columns={'aperture_sum': 'q_aperture_sum'})
+        source_table = pd.concat(
+            [source_table, q_phot_table[["q_aperture_sum"]]],
+            axis=1,
+        )
         # aperture area
         aparea = np.pi*aperture_size**2
         source_table["stdcolrow_aperture_sum"] = source_table["stdcolrow_aperture_sum"]/aparea
         source_table["ya_aperture_sum"] = source_table["ya_aperture_sum"]/aparea
+        source_table["q_aperture_sum"] = source_table["q_aperture_sum"]/aparea
 
     source_table["artifact_flag"] = bitwise_aperture_photometry(
         image_dict["flag"],
