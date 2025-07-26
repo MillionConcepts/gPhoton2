@@ -3,6 +3,8 @@
    :synopsis: individual components of gPhoton movie- and image-making
    processes. generally should not be called on their own.
 """
+from datetime import datetime, timezone
+
 from pathlib import Path
 from typing import Mapping, Sequence, Literal
 import warnings
@@ -355,31 +357,77 @@ def populate_fits_header(band, wcs, tranges, exptimes, photon_count, coverage_ar
     metadata values
     """
     header = pyfits.Header()
-    header["EXPSTART"] = np.array(tranges).min()
-    header["EXPEND"] = np.array(tranges).max()
-    header["EXPTIME"] = sum(t1 - t0 for (t0, t1) in tranges)
-    header["PHOTCNT"] = photon_count
-    header["N_FRAME"] = len(tranges)
+    header['TELESCOP'] = 'GALEX'
+    header["ECLIPSE"] = ctx.eclipse
+    header["LEG"] = ctx.leg
+    header['BANDNAME'] = ctx.band
     header["BAND"] = 1 if band == "NUV" else 2
-    header["VERSION"] = "v{v}".format(v=__version__)
+
+    # time stuff
+    header['TIMESYS'] = 'UTC'
+    header['TIMEUNIT'] = 's'
+    # not dead time corrected first and last photon
+    # 315964800 gps epoch
+    utc_time_start = 315964800 +  np.array(tranges).min()
+    utc_time_end = 315964800 +  np.array(tranges).max()
+    header['DATE-BEG'] = datetime.utcfromtimestamp(utc_time_start).replace(microsecond=0).isoformat()
+    header['DATE-END'] = datetime.utcfromtimestamp(utc_time_end).replace(microsecond=0).isoformat()
+    header["TSTART"] = np.array(tranges).min() # was EXPSTART
+    header["TSTOP"] = np.array(tranges).max() # was EXPEND
+    header["TELAPSE"] = round(sum(t1 - t0 for (t0, t1) in tranges), 3) # was EXPTIME
+    # corrected times
+    header['XPOSURE'] =round(sum(exptimes), 3) # will equal EXPT_1 for images
+    for i, trange in enumerate(tranges):
+        header["T0_{i}".format(i=i)] = trange[0]
+        header["T1_{i}".format(i=i)] = trange[1]
+        header["EXPT_{i}".format(i=i)] = round(exptimes[i], 3)
+
+    header["PHOTCNT"] = photon_count
+    header["N_FRAME"] = len(tranges) # this is 1 for images
     if key == "dose":
         # area of shapely polygons in image coords
         # dose doesn't have a WCS like the other images
         header['PARTAREA'] = coverage_areas[0]
         header['FULLAREA'] = coverage_areas[1]
-        return header
-    header["CDELT1"], header["CDELT2"] = wcs.wcs.cdelt
-    header["CTYPE1"], header["CTYPE2"] = wcs.wcs.ctype
-    header["CRPIX1"], header["CRPIX2"] = wcs.wcs.crpix
-    header["CRVAL1"], header["CRVAL2"] = wcs.wcs.crval
-    header["EQUINOX"], header["EPOCH"] = 2000.0, 2000.0
+
+    # WCS stuff
+    if key in ["cnt", "flag", "coverage"]:
+        header["CDELT1"], header["CDELT2"] = wcs.wcs.cdelt
+        header["CTYPE1"], header["CTYPE2"] = wcs.wcs.ctype
+        header["CRPIX1"], header["CRPIX2"] = wcs.wcs.crpix
+        header["CRVAL1"], header["CRVAL2"] = wcs.wcs.crval
+        header["EQUINOX"], header["EPOCH"] = 2000.0, 2000.0
+
     if key == "flag":
         header["HARDEDGE"] = ctx.narrow_edge_thresh
         header["SOFTEDGE"] = ctx.wide_edge_thresh
-    for i, trange in enumerate(tranges):
-        header["T0_{i}".format(i=i)] = trange[0]
-        header["T1_{i}".format(i=i)] = trange[1]
-        header["EXPT_{i}".format(i=i)] = exptimes[i]
+
+    header['ZCMPTYPE'] = 'RICE_1'
+    header['ORIGIN'] = 'Million Concepts'
+    header["VERSION"] = "v{v}".format(v=__version__) # pipeline version
+    header['DATE'] = datetime.now(timezone.utc).replace(microsecond=0).isoformat() # date pipeline is run?
+
+    # comments are added based on key / image type
+    comment = {
+        "cnt": "Sky-projected histograms of photon counts.",
+        "flag": (
+            "Sky-projected bitmap of flags, where any flagged photon in that bin "
+            "defines the flag for that whole bin. "
+            "Flag 1: Mission hotspot mask. "
+            "Flag 2: Post-CSP ghost flag. "
+            "Flag 4: Wide edge flag. "
+            "Flag 8: Narrow edge flag. "
+            "Ex: Flag 12 means both narrow and wide edge flags are set."
+        ),
+        "dose": "Detector-space histogram of photon counts.",
+        "coverage": (
+            "Aspect-derived maps in sky-projected space. Coverage varies due to "
+            "dither patterns. Full coverage during observation: 1. Partial coverage "
+            "during observation: 2."
+        ),
+    }
+    header['COMMENT'] = comment[key]
+
     return header
 
 
