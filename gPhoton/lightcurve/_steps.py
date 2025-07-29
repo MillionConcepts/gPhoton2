@@ -34,7 +34,7 @@ def count_full_depth_image(
     source_table = source_table.reset_index(drop=True)
     positions = source_table[["xcentroid", "ycentroid"]].to_numpy()
     apertures = CircularAperture(positions, r=aperture_size)
-    phot_table = aperture_photometry(image_dict["cnt"], apertures).to_pandas()
+    phot_table = aperture_photometry(image_dict["cnt"], apertures, method='exact').to_pandas()
     source_table = pd.concat(
         [source_table, phot_table[["xcenter", "ycenter", "aperture_sum"]]],
         axis=1,
@@ -44,7 +44,7 @@ def count_full_depth_image(
         # aperture photometry of ya vals, primarily for ghosts in post CSP
         ya_phot_table = aperture_photometry(image_dict["ya"],
                                             apertures,
-                                            method='center').to_pandas()
+                                            method='exact').to_pandas()
         ya_phot_table = ya_phot_table.rename(columns={'aperture_sum': 'ya_aperture_sum'})
         source_table = pd.concat(
             [source_table, ya_phot_table[["ya_aperture_sum"]]],
@@ -53,7 +53,7 @@ def count_full_depth_image(
         # aperture photometry on std of col and row values for detecting unmasked hotspots
         stdcolrow_phot_table = aperture_photometry(np.nan_to_num(image_dict["col"]+image_dict["row"], nan=0),
                                                    apertures,
-                                                   method='center').to_pandas()
+                                                   method='exact').to_pandas()
         stdcolrow_phot_table = stdcolrow_phot_table.rename(columns={'aperture_sum': 'stdcolrow_aperture_sum'})
         source_table = pd.concat(
             [source_table, stdcolrow_phot_table[["stdcolrow_aperture_sum"]]],
@@ -62,7 +62,7 @@ def count_full_depth_image(
         # q aperture photometry
         q_phot_table = aperture_photometry(np.nan_to_num(image_dict["q"], nan=0),
                                             apertures,
-                                            method='center').to_pandas()
+                                            method='exact').to_pandas()
         q_phot_table = q_phot_table.rename(columns={'aperture_sum': 'q_aperture_sum'})
         source_table = pd.concat(
             [source_table, q_phot_table[["q_aperture_sum"]]],
