@@ -60,7 +60,7 @@ def count_full_depth_image(
             axis=1,
         )
         # q aperture photometry
-        q_phot_table = aperture_photometry(image_dict["q"],
+        q_phot_table = aperture_photometry(np.nan_to_num(image_dict["q"], nan=0),
                                             apertures,
                                             method='center').to_pandas()
         q_phot_table = q_phot_table.rename(columns={'aperture_sum': 'q_aperture_sum'})
