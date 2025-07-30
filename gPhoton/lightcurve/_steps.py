@@ -12,6 +12,7 @@ from typing import Union, Optional, Mapping
 import warnings
 
 import astropy.wcs
+import gc
 import numpy as np
 import pandas as pd
 from photutils.detection import DAOStarFinder
@@ -20,7 +21,6 @@ import scipy.sparse
 
 from gPhoton.pretty import print_inline
 from gPhoton.types import Pathlike, GalexBand
-
 from gPhoton.lightcurve.photometry_utils import (mask_for_extended_sources,
                                                  check_point_in_extended)
 
@@ -41,38 +41,76 @@ def count_full_depth_image(
     )
     if ctx.source_catalog_file is None:
         # we don't want to run this for forced photometry
-        # aperture photometry of ya vals, primarily for ghosts in post CSP
-        ya_phot_table = aperture_photometry(image_dict["ya"],
-                                            apertures,
-                                            method='exact').to_pandas()
-        ya_phot_table = ya_phot_table.rename(columns={'aperture_sum': 'ya_aperture_sum'})
+        # aperture photometry of YA value, primarily for ghosts in post-CSP
+        ya_apers = apertures.area_overlap(
+            image_dict["ya"],
+            mask=np.isnan(image_dict["ya"]),
+            method="exact",
+        )
+        ya_phot_table = aperture_photometry(
+            image_dict["ya"],
+            apertures,
+            mask=np.isnan(image_dict["ya"]),
+            method="exact",
+        ).to_pandas()
+        ya_phot_table = ya_phot_table.rename(
+            columns={"aperture_sum": "ya_aperture_sum"}
+        )
         source_table = pd.concat(
             [source_table, ya_phot_table[["ya_aperture_sum"]]],
             axis=1,
         )
-        # aperture photometry on std of col and row values for detecting unmasked hotspots
-        stdcolrow_phot_table = aperture_photometry(np.nan_to_num(image_dict["col"]+image_dict["row"], nan=0),
-                                                   apertures,
-                                                   method='exact').to_pandas()
-        stdcolrow_phot_table = stdcolrow_phot_table.rename(columns={'aperture_sum': 'stdcolrow_aperture_sum'})
+        source_table["ya_aperture_sum"] /= ya_apers
+        del ya_apers
+        gc.collect()
+
+        # col / row dispersion aperture photometry
+        colrow_sum = image_dict["col"] + image_dict["row"]
+        disp_apers = apertures.area_overlap(
+            colrow_sum,
+            mask=np.isnan(colrow_sum),
+            method="exact",
+        )
+        stdcolrow_phot_table = aperture_photometry(
+            colrow_sum,
+            apertures,
+            mask=np.isnan(colrow_sum),
+            method="exact",
+        ).to_pandas()
+        stdcolrow_phot_table = stdcolrow_phot_table.rename(
+            columns={"aperture_sum": "stdcolrow_aperture_sum"}
+        )
         source_table = pd.concat(
             [source_table, stdcolrow_phot_table[["stdcolrow_aperture_sum"]]],
             axis=1,
         )
-        # q aperture photometry
-        q_phot_table = aperture_photometry(np.nan_to_num(image_dict["q"], nan=0),
-                                            apertures,
-                                            method='exact').to_pandas()
-        q_phot_table = q_phot_table.rename(columns={'aperture_sum': 'q_aperture_sum'})
+        source_table["stdcolrow_aperture_sum"] /= disp_apers
+        del disp_apers
+        gc.collect()
+
+        # Q (pulse height) aperture photometry
+        q_apers = apertures.area_overlap(
+            image_dict["q"],
+            mask=np.isnan(image_dict["q"]),
+            method="exact",
+        )
+        q_phot_table = aperture_photometry(
+            image_dict["q"],
+            apertures,
+            mask=np.isnan(image_dict["q"]),
+            method="exact",
+        ).to_pandas()
+        q_phot_table = q_phot_table.rename(
+            columns={"aperture_sum": "q_aperture_sum"}
+        )
+
         source_table = pd.concat(
             [source_table, q_phot_table[["q_aperture_sum"]]],
             axis=1,
         )
-        # aperture area
-        aparea = np.pi*aperture_size**2
-        source_table["stdcolrow_aperture_sum"] = source_table["stdcolrow_aperture_sum"]/aparea
-        source_table["ya_aperture_sum"] = source_table["ya_aperture_sum"]/aparea
-        source_table["q_aperture_sum"] = source_table["q_aperture_sum"]/aparea
+        source_table["q_aperture_sum"] /= q_apers
+        del q_apers
+        gc.collect()
 
     source_table["artifact_flag"] = bitwise_aperture_photometry(
         image_dict["flag"],
