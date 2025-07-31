@@ -198,6 +198,18 @@ def extract_photometry(movie_dict, source_table, apertures, threads):
         photometry = {
             f"{column_prefix}_{ix}": photometry[ix] for ix in frame_indices
         }
+        if key == "cnt":
+            # add exposure time info
+            # only need to do this once though
+            expt_dict = {
+                "expt": movie_dict["exptimes"],
+                "t0": [trange[0] for trange in movie_dict["tranges"]],
+                "t1": [trange[1] for trange in movie_dict["tranges"]],
+            }
+            for name, values in expt_dict.items():
+                for i, val in enumerate(values):
+                    photometry[f"{name}_{i}"] = round(val,3)
+
         photometry_tables.append(pd.DataFrame.from_dict(photometry))
     return pd.concat([source_table, *photometry_tables], axis=1)
 

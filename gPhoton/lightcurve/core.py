@@ -1,4 +1,5 @@
 from typing import Mapping
+from datetime import datetime, timezone
 import warnings
 import numpy as np
 import pandas as pd
@@ -17,7 +18,7 @@ from gPhoton.lightcurve.photometry_utils import (
     mask_for_extended_sources)
 from gPhoton.reference import FakeStopwatch, PipeContext
 from gPhoton.coadd import (zero_flag, flag_mask)
-
+from gPhoton import __version__
 
 def make_lightcurves(sky_arrays: Mapping, ctx: PipeContext):
     """
@@ -103,12 +104,6 @@ def make_lightcurves(sky_arrays: Mapping, ctx: PipeContext):
     if source_table is None:
         return "skipped photometry because no sources were found"
 
-    # exposure times
-    if sky_arrays["movie_dict"] is not None:
-        write_exptime_file(ctx["expfile"], sky_arrays["movie_dict"])
-    else:
-        write_exptime_file(ctx["expfile"], sky_arrays["image_dict"])
-
     # photometry on point sources
     print(f"Len source table: {len(source_table)} ")
     for aperture_size in ctx.aperture_sizes:
@@ -133,9 +128,31 @@ def make_lightcurves(sky_arrays: Mapping, ctx: PipeContext):
         photomfile = ctx(aperture=aperture_size)['photomfile']
         print(f"writing source table to {photomfile}")
         if ctx.ftype == "parquet":
-            photometry_table.to_parquet(photomfile, index=False)
+            import pyarrow as pa
+            # idk if pandas is a problem here
+            photometry_table = pa.Table.from_pandas(photometry_table, preserve_index=False)
+            metadata = {
+                b"TELESCOP": b"GALEX",
+                b"ECLIPSE": str(ctx.eclipse).encode(),
+                b"LEG": str(ctx.leg).encode(),
+                b"BANDNAME": str(ctx.band).encode(),
+                b"BAND": str(1 if ctx.band == "NUV" else 2).encode(),
+                b"ORIGIN": b"Million Concepts",
+                b"DATE": datetime.now(timezone.utc).replace(microsecond=0).isoformat().encode(),
+                b"TIMESYS": b"UTC",
+                b"VERSION": f"v{__version__}".encode(),
+            }
+            photometry_table = photometry_table.replace_schema_metadata(metadata)
+            pa.parquet.write_table(
+                photometry_table,
+                photomfile,
+                # maximize interop with other parquet readers
+                version="1.0",
+                store_schema=True
+            )
         elif ctx.ftype == "csv":
             photometry_table.to_csv(photomfile, index=False)
+            # no metadata for csv
         else:
             raise ValueError(f"unknown photometry format '{ctx.ftype}'")
         ctx.watch.click()
