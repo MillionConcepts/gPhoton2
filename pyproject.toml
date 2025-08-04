@@ -31,11 +31,14 @@ dependencies = [
     "photutils >= 2.0",
     "pip",
     "pyarrow",
+    "rasterio",
     "requests",
     "rich",
     "scikit-image >= 0.20",
     "scipy",
     "sh",
+    "shapely",
+    "scikit-learn",
     "quickbin",
 ]
 

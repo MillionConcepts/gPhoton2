@@ -8,7 +8,6 @@ import gPhoton.constants as c
 from gPhoton.lightcurve._steps import (
     count_full_depth_image,
     extract_photometry,
-    write_exptime_file,
     load_source_catalog,
     format_source_catalog,
     check_empty_image)
@@ -141,6 +140,7 @@ def make_lightcurves(sky_arrays: Mapping, ctx: PipeContext):
                 b"DATE": datetime.now(timezone.utc).replace(microsecond=0).isoformat().encode(),
                 b"TIMESYS": b"UTC",
                 b"VERSION": f"v{__version__}".encode(),
+                b"XPOSURE": str(round(sum(sky_arrays["movie_dict"]["exptimes"]), 3)).encode() # same as col value in photom table
             }
             photometry_table = photometry_table.replace_schema_metadata(metadata)
             pa.parquet.write_table(

@@ -18,9 +18,11 @@ dependencies:
   - pyarrow
   - requests
   - rich
+  - rasterio
   - scikit-image>=0.20
   - scipy
   - sh
+  - shapely
   # optional, used in pipeline CLI
   - fire
   # optional, used for some gzip-handling features
