@@ -24,6 +24,7 @@ dependencies = [
     "dustgoggles",
     "fast-histogram",
     "fitsio",
+    "matplotlib",
     "more-itertools",
     "numba",
     "numpy >= 2.2",
