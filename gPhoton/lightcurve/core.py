@@ -114,6 +114,8 @@ def make_lightcurves(sky_arrays: Mapping, ctx: PipeContext):
             sky_arrays["wcs"],
             ctx
         )
+        # add full depth image exposure time as exptime
+        photometry_table['exptime'] = round(sum(sky_arrays["image_dict"]["exptimes"]), 3)
         ctx.watch.click()
         if sky_arrays['movie_dict'] is not None:
             if len(sky_arrays['movie_dict']) > 0:
@@ -140,7 +142,7 @@ def make_lightcurves(sky_arrays: Mapping, ctx: PipeContext):
                 b"DATE": datetime.now(timezone.utc).replace(microsecond=0).isoformat().encode(),
                 b"TIMESYS": b"UTC",
                 b"VERSION": f"v{__version__}".encode(),
-                b"XPOSURE": str(round(sum(sky_arrays["movie_dict"]["exptimes"]), 3)).encode() # same as col value in photom table
+                b"XPOSURE": str(round(sum(sky_arrays["image_dict"]["exptimes"]), 3)).encode() # same as col value in photom table
             }
             photometry_table = photometry_table.replace_schema_metadata(metadata)
             pa.parquet.write_table(

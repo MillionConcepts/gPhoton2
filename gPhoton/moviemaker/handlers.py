@@ -132,7 +132,7 @@ def make_full_depth_image(
     output_dict["ya"] = make_frame(
             map_ix_dict["cnt"]["foc"],
             map_ix_dict["cnt"]["ya_weights"],
-            "median",
+            "mean",
             imsz
     )
     output_dict["q"] = make_frame(
