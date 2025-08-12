@@ -168,11 +168,11 @@ def prep_image_inputs(photonfile, ctx):
         warnings.simplefilter("ignore")
         weights = 1.0 / event_table["response"].to_numpy()
     # for new hotspot masking
+    t = event_table["t"].to_numpy()
     col_weights = event_table["col"].to_numpy()
     row_weights = event_table["row"].to_numpy()
     ya_weights = event_table["ya"].to_numpy()
     q_weights = event_table["q"].to_numpy()
-    t = event_table["t"].to_numpy()
     # combine flag, mask, edge into "artifacts"
     artifact_flags = combine_artifacts(
         event_table,

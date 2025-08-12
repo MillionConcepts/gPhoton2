@@ -455,8 +455,8 @@ def load_moviemaker_results(context, lil):
         if movie is None:
             print("Photometry-only run, but movie not found. Skipping.")
             return f"leg {context.leg}: movie not found"
-    image_result = unpack_image(image, context.compression)
-    results = {'wcs': image_result['wcs'], 'image_dict': image_result}
+    image_result, coverage_map = unpack_image(image, context.compression)
+    results = {'wcs': image_result['wcs'], 'image_dict': image_result, 'coverage': coverage_map}
     if context.depth is not None:
         # noinspection PyUnboundLocalVariable
         results |= {
@@ -551,7 +551,8 @@ def load_array_file(array_file, compression, movie=False):
     else:
         hdul = AgnosticHDUL(fitsio.FITS(array_file))
     if not movie:
-        cnt_hdu, flag_hdu, coverage_hdu = (hdul[i + 1] for i in range(3))
+        # dose map is 3rd hdu now for images
+        cnt_hdu, flag_hdu, coverage_hdu = (hdul[i] for i in (1, 2, 4))
         headerdict = dict(cnt_hdu.header)
         tranges = keyfilter(lambda k: re.match(r"T[01]", k), headerdict)
         tranges = tuple(chunked(tranges.values(), 2))
@@ -572,7 +573,6 @@ def load_array_file(array_file, compression, movie=False):
         wcs = astropy.wcs.WCS(cnt_hdu.header)
         results = {"exptimes": exptimes, "tranges": tranges, "wcs": wcs}
         return (cnt_hdu, flag_hdu), results
-
 
 
 def unpack_movie(movie_file, compression, lil):
@@ -597,6 +597,9 @@ def unpack_movie(movie_file, compression, lil):
 def unpack_image(image_file, compression):
     hdus, results = load_array_file(image_file, compression)
     planes = {
-        "cnt": hdus[0].data, "flag": hdus[1].data, "coverage": hdus[2].data
+        "cnt": hdus[0].data, "flag": hdus[1].data
     }
-    return results | planes
+    coverage_map = hdus[2].data # keep this separate bc it is used
+                                # by both images and movies from
+                                # results dict
+    return results | planes, coverage_map

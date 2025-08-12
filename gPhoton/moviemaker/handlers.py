@@ -105,50 +105,75 @@ def make_movies(
 
 
 def make_full_depth_image(
-    exposure_array, map_ix_dict, total_trange, imsz, band="NUV"
+    ctx, exposure_array, map_ix_dict, total_trange, imsz, band="NUV",
 ): # -> tuple[str, dict]:  we're not ready to typecheck this function yet
     interval = total_trange[1] - total_trange[0]
     trange = np.arange(total_trange[0], total_trange[1] + interval, interval)
     exptime = unshared_compute_exptime(exposure_array, band, trange)
     output_dict = {"tranges": [trange], "exptimes": [exptime]}
+    print("making count image frame")
     output_dict["cnt"] = make_frame(
             map_ix_dict["cnt"]["foc"],
             map_ix_dict["cnt"]["weights"],
             "sum",
             imsz
     )
+    print("making artifact mask image frame")
+    output_dict["flag"] = make_mask_frame(
+            map_ix_dict['flag']["foc"],
+            map_ix_dict['flag']["weights"],
+            imsz
+    )
+    print("making dose map image frame")
+    output_dict["dose"] = make_dose_frame(
+            map_ix_dict['cnt']["col_weights"],
+            map_ix_dict['cnt']["row_weights"],
+    )
+    # we only need the following images if photometry is being run,
+    # so we bail out if we stop at moviemaker.
+    if ctx.stop_after == "moviemaker":
+        return "successfully made image", output_dict
+    print("making row std image frame")
     output_dict["row"] = make_frame(
             map_ix_dict["cnt"]["foc"],
             map_ix_dict["cnt"]["row_weights"],
             "std",
             imsz
     )
+    print("making mean row image frame")
+    output_dict["row_mean"] = make_frame(
+            map_ix_dict["cnt"]["foc"],
+            map_ix_dict["cnt"]["row_weights"],
+            "mean",
+            imsz
+    )
+    print("making col std image frame")
     output_dict["col"] = make_frame(
             map_ix_dict["cnt"]["foc"],
             map_ix_dict["cnt"]["col_weights"],
             "std",
             imsz
     )
+    print("making mean col image frame")
+    output_dict["col_mean"] = make_frame(
+            map_ix_dict["cnt"]["foc"],
+            map_ix_dict["cnt"]["col_weights"],
+            "mean",
+            imsz
+    )
+    print("making mean ya image frame")
     output_dict["ya"] = make_frame(
             map_ix_dict["cnt"]["foc"],
             map_ix_dict["cnt"]["ya_weights"],
             "mean",
             imsz
     )
+    print("making mean Q image frame")
     output_dict["q"] = make_frame(
             map_ix_dict["cnt"]["foc"],
             map_ix_dict["cnt"]["q_weights"],
             "mean",
             imsz
-    )
-    output_dict["flag"] = make_mask_frame(
-            map_ix_dict['flag']["foc"],
-            map_ix_dict['flag']["weights"],
-            imsz
-    )
-    output_dict["dose"] = make_dose_frame(
-            map_ix_dict['cnt']["col_weights"],
-            map_ix_dict['cnt']["row_weights"],
     )
     return "successfully made image", output_dict
 
@@ -210,13 +235,15 @@ def create_images_and_movies(
     }
     print(f"making full-depth image")
     # don't be careful about memory wrt sparsification, just go for it
-    # makes cnt, flag, ya, col std, row std, dose map frames
-    # only cnt, flag, dose and coverage (made later) are eventually output
-    status, image_dict = make_full_depth_image(**render_kwargs)
+    # makes cnt, flag, ya, col, row, dose, q map frames
+    # only cnt, flag, dose and coverage (made later) are eventually output,
+    # so only they are generated if the pipeline stops at moviemaker.
+    status, image_dict = make_full_depth_image(ctx, **render_kwargs)
 
-    # load exposure backplane info from precomputed table of
-    # shapely polygon vertices, make backplane and add to image_dict
-    # kind of weird it's not in make_full_depth_image but the inputs are p diff
+    # load exposure backplane info from precomputed table
+    # of shapely polygon vertices. no longer saved in the
+    # image dict, it is its own "results" dict entry
+    # as it is used in both images and movies.
     coverage_map, ring_area, full_area = make_coverage_backplane(
         wcs,
         imsz,
