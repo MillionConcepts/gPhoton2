@@ -158,9 +158,10 @@ def write_moviemaker_results(results, ctx):
         write_fits_array(
             ctx,
             results["image_dict"],
+            results["coverage"],
             results["wcs"],
-            results['photon_count'],
-            results['coverage_areas'],
+            results["photon_count"],
+            results["coverage_areas"],
             False)
     del results["image_dict"]
     ctx.watch.click()
@@ -168,8 +169,9 @@ def write_moviemaker_results(results, ctx):
         write_fits_array(
             ctx,
             results["movie_dict"],
+            results["coverage"],
             results["wcs"],
-            results['photon_count'],
+            results["photon_count"],
             is_movie=True)
         ctx.watch.click()
     return "successful"
@@ -215,7 +217,7 @@ def create_images_and_movies(
     # load exposure backplane info from precomputed table of
     # shapely polygon vertices, make backplane and add to image_dict
     # kind of weird it's not in make_full_depth_image but the inputs are p diff
-    image_dict['coverage'], ring_area, full_area = make_coverage_backplane(
+    coverage_map, ring_area, full_area = make_coverage_backplane(
         wcs,
         imsz,
         ctx.eclipse,
@@ -231,6 +233,7 @@ def create_images_and_movies(
             "wcs": wcs,
             "movie_dict": {},
             "image_dict": image_dict,
+            "coverage": coverage_map,
             "photon_count": photons,
             "coverage_areas": (ring_area, full_area),
             "status": (
@@ -247,6 +250,7 @@ def create_images_and_movies(
         "wcs": wcs,
         "movie_dict": movie_dict,
         "image_dict": image_dict,
+        "coverage": coverage_map,
         "photon_count": photons,
         "coverage_areas": (ring_area, full_area),
         "status": status,

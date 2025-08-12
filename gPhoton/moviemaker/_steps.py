@@ -440,7 +440,7 @@ def initialize_fits_file(array_path):
 
 
 def write_fits_array(
-    ctx: PipeContext, arraymap, wcs, photon_count, coverage_areas=None, is_movie=True, clean_up=True
+    ctx: PipeContext, arraymap, coverage_map, wcs, photon_count, coverage_areas=None, is_movie=True, clean_up=True
 ):
     """
     convert an intermediate movie or image dictionary, perhaps previously
@@ -455,6 +455,7 @@ def write_fits_array(
     # TODO: write names / descriptions into the headers
     if (ctx.burst is True) and (is_movie is True):
         # burst mode writes each frame as a separate file w/cnt, flag
+        # (we do not use this in catalog generation)
         for frame in range(len(arraymap["cnt"])):
             start = arraymap['tranges'][frame][0] - ctx.start_time
             array_path = ctx(start=start)["movie"]
@@ -462,12 +463,13 @@ def write_fits_array(
                 array_path = array_path.with_suffix("")
             print(f"writing {array_name} frame {frame} to {array_path}")
             initialize_fits_file(array_path)
+            # write backplanes derived from photonlists
             for key in ["cnt", "flag"]:
                 print(f"writing frame {frame} {key} map")
                 header = populate_fits_header(
                     ctx.band, wcs, arraymap["tranges"], arraymap["exptimes"], photon_count, key, ctx
                 )
-                header['EXTNAME'] = key.upper()
+                header['EXTNAME'] = 'COUNT' if key == 'cnt' else key.upper()
                 add_array_to_fits_file(
                     array_path,
                     arraymap[key][frame],
@@ -475,6 +477,27 @@ def write_fits_array(
                     ctx.compression,
                     **ctx.hdu_constructor_kwargs
                 )
+            # write coverage map (for full length of eclipse)
+            print(f"writing coverage map")
+            header = populate_fits_header(
+                ctx.band,
+                wcs,
+                arraymap["tranges"],
+                arraymap["exptimes"],
+                photon_count,
+                coverage_areas,
+                "coverage",
+                ctx
+            )
+            header['EXTNAME'] = 'COVERAGE'
+            add_array_to_fits_file(
+                array_path,
+                coverage_map,
+                header,
+                ctx.compression,
+                **ctx.hdu_constructor_kwargs
+            )
+            outpaths = [array_path]
             outpaths.append(array_path)
     else:
         array_path = ctx["movie"] if is_movie is True else ctx["image"]
@@ -482,14 +505,22 @@ def write_fits_array(
             array_path = array_path.with_suffix("")
         print(f"writing {array_name} to {array_path}")
         initialize_fits_file(array_path)
+        # write backplanes derived from photonlists
         backplanes = ["cnt", "flag"] if is_movie is True \
-            else ["cnt", "flag", "coverage", "dose"]
+            else ["cnt", "flag", "dose"]
         for key in backplanes:
             print(f"writing {key} map")
             header = populate_fits_header(
-                ctx.band, wcs, arraymap["tranges"], arraymap["exptimes"], photon_count, coverage_areas, key, ctx
+                ctx.band,
+                wcs,
+                arraymap["tranges"],
+                arraymap["exptimes"],
+                photon_count,
+                coverage_areas,
+                key,
+                ctx
             )
-            header['EXTNAME'] = key.upper()
+            header['EXTNAME'] = 'COUNT' if key == 'cnt' else key.upper()
             add_array_to_fits_file(
                 array_path,
                 arraymap[key],
@@ -499,9 +530,29 @@ def write_fits_array(
             )
             if clean_up:
                 del arraymap[key]
+        # writing coverage map
+        print(f"writing coverage map")
+        header = populate_fits_header(
+            ctx.band,
+            wcs,
+            arraymap["tranges"],
+            arraymap["exptimes"],
+            photon_count,
+            coverage_areas,
+            "coverage",
+            ctx
+        )
+        header['EXTNAME'] = 'COVERAGE'
+        add_array_to_fits_file(
+            array_path,
+            coverage_map,
+            header,
+            ctx.compression,
+            **ctx.hdu_constructor_kwargs
+        )
         outpaths = [array_path]
     if clean_up:
-        del arraymap
+        del coverage_map
     if ctx.compression != "gzip":
         return
     for path in outpaths:

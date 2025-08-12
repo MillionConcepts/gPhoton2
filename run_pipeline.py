@@ -16,10 +16,10 @@ if __name__ == "__main__":
         aperture_sizes=[12.8],
         # actually write image/movie products? otherwise hold in memory but
         # discard (possibly after performing photometry).
-        write={"movie": False, "image": True},
+        write={"movie": True, "image": True},
         coregister_lightcurves=False,
         # photonpipe, moviemaker, None (default None)
-        stop_after="photonpipe",
+        stop_after="moviemaker",
         photometry_only=False,
         # "none", "gzip", "rice"
         compression="rice",
@@ -31,5 +31,5 @@ if __name__ == "__main__":
         extended_flagging=False,
         verbose=2,
         #single_leg=1,
-        photonlist_cols = ('t', 'flags', 'ra', 'dec', 'detrad', 'mask', 'response','ya','col','row', 'q')
+        photonlist_cols = ('t', 'flags', 'ra', 'dec', 'detrad', 'mask', 'response','ya','col','row', 'q', "roll")
     )

@@ -41,7 +41,7 @@ from gPhoton.types import GalexBand
 
 # variables actually used later in the pipeline
 PIPELINE_VARIABLES = (
-    "ra", "dec", "t", "detrad", "flags", "response", "mask"
+    "ra", "dec", "t", "detrad", "flags", "response", "mask", "q", "col", "row", "ya"
 )
 
 
