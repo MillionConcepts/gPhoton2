@@ -41,6 +41,17 @@ def count_full_depth_image(
     )
     if ctx.source_catalog_file is None:
         # we don't want to run this for forced photometry
+        # pull mean col and row values to get general location
+        # on detector
+        x = np.rint(positions[:, 0]).astype(int)
+        y = np.rint(positions[:, 1]).astype(int)
+        col_vals = image_dict["col_mean"][y, x]
+        row_vals = image_dict["row_mean"][y, x]
+        source_table["mean_col"] = col_vals
+        source_table["mean_row"] = row_vals
+        del x, y, col_vals, row_vals
+        gc.collect()
+
         # aperture photometry of YA value, primarily for ghosts in post-CSP
         ya_apers = apertures.area_overlap(
             image_dict["ya"],
