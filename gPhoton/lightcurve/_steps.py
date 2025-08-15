@@ -23,14 +23,21 @@ from gPhoton.pretty import print_inline
 from gPhoton.types import Pathlike, GalexBand
 from gPhoton.lightcurve.photometry_utils import (mask_for_extended_sources,
                                                  check_point_in_extended)
+from gPhoton.reference import PipeContext
 
 def count_full_depth_image(
     source_table: pd.DataFrame,
     aperture_size: float,
     image_dict: Mapping[str, np.ndarray],
     system: astropy.wcs.WCS,
-    ctx
+    ctx: PipeContext
 ):
+    """
+    Runs aperture photometry on count and flag images, at a minimum.
+    "Extended photonlist" run types will collect photometry from more image
+    types.
+    """
+    # "photometry" that is run for ALL run types
     source_table = source_table.reset_index(drop=True)
     positions = source_table[["xcentroid", "ycentroid"]].to_numpy()
     apertures = CircularAperture(positions, r=aperture_size)
@@ -39,16 +46,23 @@ def count_full_depth_image(
         [source_table, phot_table[["xcenter", "ycenter", "aperture_sum"]]],
         axis=1,
     )
-    if ctx.source_catalog_file is None:
-        # we don't want to run this for forced photometry
-        # pull mean col and row values to get general location
-        # on detector
+    source_table["artifact_flag"] = bitwise_aperture_photometry(
+        image_dict["flag"],
+        apertures)
+
+    # photometry we only run if extended_photonlist = True
+    # we don't want to run this on images that don't exist!
+    # these also don't exist for photometry only runs bc
+    # they are not written
+    if not ctx.photometry_only and ctx.extended_photonlist:
+        # pull mean col and row values to get general location on detector
         x = np.rint(positions[:, 0]).astype(int)
         y = np.rint(positions[:, 1]).astype(int)
         col_vals = image_dict["col_mean"][y, x]
         row_vals = image_dict["row_mean"][y, x]
-        source_table["mean_col"] = col_vals
-        source_table["mean_row"] = row_vals
+        # scale up by 4 to match dose image
+        source_table["dose_col"] = col_vals * 4.0
+        source_table["dose_row"] = row_vals * 4.0
         del x, y, col_vals, row_vals
         gc.collect()
 
@@ -122,10 +136,6 @@ def count_full_depth_image(
         source_table["q_aperture_sum"] /= q_apers
         del q_apers
         gc.collect()
-
-    source_table["artifact_flag"] = bitwise_aperture_photometry(
-        image_dict["flag"],
-        apertures)
 
     # TODO: this isn't necessary for specified catalog positions. but
     #  should we do a sanity check?

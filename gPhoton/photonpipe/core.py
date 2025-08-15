@@ -110,14 +110,15 @@ def execute_photonpipe(ctx: PipeContext, raw6file: Optional[Pathlike] = None):
         chunk = legs[leg_ix].pop(chunk_ix)
         process_args = (
             aspect,
-            ctx.band,
             cal_data,
             chunk,
             title,
             stim_coefficients,
             xoffset,
             yoffset,
+            ctx.band,
             ctx.extended_photonlist,
+            ctx.post_csp,
             ctx.photonlist_cols
         )
         if pool is None:
@@ -151,7 +152,7 @@ def execute_photonpipe(ctx: PipeContext, raw6file: Optional[Pathlike] = None):
             leg_results[address[1]] = results.pop(address)
         array_dict = retrieve_leg_results(leg_results, share_memory)
         # ghost flag for post CSP
-        if eclipse > 37423:
+        if ctx.post_csp:
             print("running ghost flag")
             array_dict = flag_ghosts(array_dict)
         proc_count += len(array_dict["t"])

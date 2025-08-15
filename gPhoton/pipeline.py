@@ -224,9 +224,9 @@ def execute_pipeline(
         share_memory: use shared memory in photonpipe? default None, meaning
             do if running multithreaded, don't if not. True and False are
             also valid, and force use or non-use respectively.
-        extended_photonlist: write extended variables to photonlists?
-            these are not used in standard moviemaker/lightcurve pipelines.
-            they are principally useful for diagnostics and ancillary products.
+        extended_photonlist: Writes extended variables to photonlists, runs
+            additional photometry on images made from those variables (YA, Q,
+            col and row std etc). Images are not written as output.
         extended_flagging: to run extended source finding. Includes flagging
         for non-catalog runs.
         aspect: default is standard aspect table, aspect.parquet ('aspect') but
@@ -241,16 +241,15 @@ def execute_pipeline(
             "csv" or "parquet", currently only affects photometry files
         single_leg:  the leg number of a single leg, only for photometry_only
             runs ATP where the catalog and images are premade.
-        photonlist_cols: Specify a list of desired columns in the photonlist. If
-            't', 'flags', 'ra', 'dec', 'detrad', 'mask', 'response','ya','col', and
-            'row' are not included, steps past photonlist creation will not work. Use
-            at your own peril.
+        photonlist_cols: Specify a list of desired extra columns in the photonlist
+            from the raw6 table. Only affects photonlist output. Use at your own
+            peril (the columns must exist).
     Returns:
         str: `"return code: successful"` for fully successful execution;
             `"return code: {other_thing}"` for various known failure states
             (many of which produce a subset of valid output products)
     """
-    e_warn, e_error = check_eclipse(eclipse, aspect_dir=aspect_dir)
+    e_warn, e_error, post_csp = check_eclipse(eclipse, aspect_dir=aspect_dir)
     if (verbose > 0) and len(e_warn) > 0:
         print("\n".join(e_warn))
     if len(e_error) > 0:
@@ -270,6 +269,8 @@ def execute_pipeline(
     if source_catalog_file is not None and extended_flagging:
         print(f"source_catalog_file {source_catalog_file} in use, extended source finding will not work.")
         return("return code: forced photometry and extended source ID are incompatible.")
+        # this isn't technically true: you can ID the extended sources BUT you can't ID which point sources
+        # are in the extended sources because we don't have the segmentation images from pt source finding
     if single_leg is not None and (not photometry_only or not source_catalog_file):
         print(f"single leg runs can only be executed in photometry_only mode with a catalog input.")
         return("return code: photometry-only with catalog for single leg runs.")
@@ -295,6 +296,7 @@ def execute_pipeline(
         stop_after=stop_after,
         hdu_constructor_kwargs=hdu_constructor_kwargs,
         min_exptime=min_exptime,
+        photometry_only=photometry_only,
         burst=burst,
         chunksz=chunksz,
         share_memory=share_memory,
@@ -307,6 +309,7 @@ def execute_pipeline(
         ftype=ftype,
         single_leg=single_leg,
         photonlist_cols=photonlist_cols,
+        post_csp=post_csp
     )
     ctx.watch.start()
     if photometry_only:
@@ -354,7 +357,6 @@ def execute_full_pipeline(ctx):
         return "return code: successful (planned stop after photonpipe)"
     ctx.watch.click()
     from gPhoton.parquet_utils import get_parquet_stats
-
     ctx.start_time = get_parquet_stats(photonpaths[0], ['t'])['t']['min']
     leg_paths = []
     for path in photonpaths:

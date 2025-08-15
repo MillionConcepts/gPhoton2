@@ -133,48 +133,52 @@ def make_full_depth_image(
     # so we bail out if we stop at moviemaker.
     if ctx.stop_after == "moviemaker":
         return "successfully made image", output_dict
-    print("making row std image frame")
-    output_dict["row"] = make_frame(
-            map_ix_dict["cnt"]["foc"],
-            map_ix_dict["cnt"]["row_weights"],
-            "std",
-            imsz
-    )
-    print("making mean row image frame")
-    output_dict["row_mean"] = make_frame(
-            map_ix_dict["cnt"]["foc"],
-            map_ix_dict["cnt"]["row_weights"],
-            "mean",
-            imsz
-    )
-    print("making col std image frame")
-    output_dict["col"] = make_frame(
-            map_ix_dict["cnt"]["foc"],
-            map_ix_dict["cnt"]["col_weights"],
-            "std",
-            imsz
-    )
-    print("making mean col image frame")
-    output_dict["col_mean"] = make_frame(
-            map_ix_dict["cnt"]["foc"],
-            map_ix_dict["cnt"]["col_weights"],
-            "mean",
-            imsz
-    )
-    print("making mean ya image frame")
-    output_dict["ya"] = make_frame(
-            map_ix_dict["cnt"]["foc"],
-            map_ix_dict["cnt"]["ya_weights"],
-            "mean",
-            imsz
-    )
-    print("making mean Q image frame")
-    output_dict["q"] = make_frame(
-            map_ix_dict["cnt"]["foc"],
-            map_ix_dict["cnt"]["q_weights"],
-            "mean",
-            imsz
-    )
+    # these extra images are only possible if ctx.extended_photonlist is true
+    # OR you happened to define all these columns in ctx.photonlist_cols,
+    # but why would you do that and not just set extended_photonlist to true?
+    if ctx.extended_photonlist:
+        print("making row std image frame")
+        output_dict["row"] = make_frame(
+                map_ix_dict["cnt"]["foc"],
+                map_ix_dict["cnt"]["row_weights"],
+                "std",
+                imsz
+        )
+        print("making mean row image frame")
+        output_dict["row_mean"] = make_frame(
+                map_ix_dict["cnt"]["foc"],
+                map_ix_dict["cnt"]["row_weights"],
+                "mean",
+                imsz
+        )
+        print("making col std image frame")
+        output_dict["col"] = make_frame(
+                map_ix_dict["cnt"]["foc"],
+                map_ix_dict["cnt"]["col_weights"],
+                "std",
+                imsz
+        )
+        print("making mean col image frame")
+        output_dict["col_mean"] = make_frame(
+                map_ix_dict["cnt"]["foc"],
+                map_ix_dict["cnt"]["col_weights"],
+                "mean",
+                imsz
+        )
+        print("making mean ya image frame")
+        output_dict["ya"] = make_frame(
+                map_ix_dict["cnt"]["foc"],
+                map_ix_dict["cnt"]["ya_weights"],
+                "mean",
+                imsz
+        )
+        print("making mean Q image frame")
+        output_dict["q"] = make_frame(
+                map_ix_dict["cnt"]["foc"],
+                map_ix_dict["cnt"]["q_weights"],
+                "mean",
+                imsz
+        )
     return "successfully made image", output_dict
 
 
