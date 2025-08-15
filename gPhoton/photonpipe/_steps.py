@@ -37,24 +37,25 @@ from gPhoton.sharing import (
     send_to_shared_memory,
 )
 from gPhoton.types import GalexBand
+from gPhoton.reference import (
+    PIPELINE_VARIABLES,
+    EXTENDED_PIPELINE_VARIABLES,
+    POST_CSP_PIPELINE_VARIABLES,
+    PipeContext
 
-
-# variables actually used later in the pipeline
-PIPELINE_VARIABLES = (
-    "ra", "dec", "t", "detrad", "flags", "response", "mask", "q", "col", "row", "ya"
 )
-
 
 def process_chunk_in_unshared_memory(
     aspect,
-    band,
     cal_data,
     chunk,
     chunkid,
     stim_coefficients,
     xoffset,
     yoffset,
-    write_intermediate_variables,
+    band,
+    extended_photonlist,
+    post_csp,
     photonlist_cols
 ):
     chunk = apply_all_corrections(
@@ -68,12 +69,18 @@ def process_chunk_in_unshared_memory(
         yoffset,
     )
     output = chunk | calibrate_photons_inline(band, cal_data, chunk, chunkid)
-    # default make short photonlist, full photonlist if extended is set True,
-    # or use defined set of keys from photonlist_cols
-    if write_intermediate_variables is not True and photonlist_cols is None:
-        output = keyfilter(lambda key: key in PIPELINE_VARIABLES, output)
+    # default make minimum photonlist for image production and flagging
+    # if ctx.extended_photonlist is true, use the extended pipeline variables
+    # as well, enabling more photometry products.
+    # any additional desired columns can be specified by ctx.photonlist_cols.
+    desired_cols = set(PIPELINE_VARIABLES)
+    if extended_photonlist:
+        desired_cols |= set(EXTENDED_PIPELINE_VARIABLES)
+    if post_csp:
+        desired_cols |= {POST_CSP_PIPELINE_VARIABLES}
     if photonlist_cols is not None:
-        output = keyfilter(lambda key: key in photonlist_cols, output)
+        desired_cols |= set(photonlist_cols)
+    output = keyfilter(lambda key: key in desired_cols, output)
     return output
 
 
@@ -101,14 +108,15 @@ def apply_all_corrections(
 
 def process_chunk_in_shared_memory(
     aspect,
-    band,
     cal_block_info,
     block_info,
     chunk_title,
     stim_coefficients,
     xoffset,
     yoffset,
-    write_intermediate_variables,
+    band,
+    extended_photonlist,
+    post_csp,
     photonlist_cols
 ):
     chunk_blocks, chunk = reference_shared_memory_arrays(block_info)
@@ -129,12 +137,18 @@ def process_chunk_in_shared_memory(
         yoffset,
     )
     chunk |= calibrate_photons_inline(band, cal_data, chunk, chunk_title)
-    # default make short photonlist, full photonlist if extended is set True,
-    # or use defined set of keys from photonlist_cols
-    if write_intermediate_variables is not True  and photonlist_cols is None:
-        chunk = keyfilter(lambda key: key in PIPELINE_VARIABLES, chunk)
+    # default make minimum photonlist for image production and flagging
+    # if ctx.extended_photonlist is true, use the extended pipeline variables
+    # as well, enabling more photometry products.
+    # any additional desired columns can be specified by ctx.photonlist_cols.
+    desired_cols = set(PIPELINE_VARIABLES)
+    if extended_photonlist:
+        desired_cols |= set(EXTENDED_PIPELINE_VARIABLES)
+    if post_csp:
+        desired_cols |= {POST_CSP_PIPELINE_VARIABLES}
     if photonlist_cols is not None:
-        chunk = keyfilter(lambda key: key in photonlist_cols, chunk)
+        desired_cols |= set(photonlist_cols)
+    chunk = keyfilter(lambda key: key in desired_cols, chunk)
     processed_block_info = send_to_shared_memory(chunk)
     for block in chunk_blocks.values():
         block.close()

@@ -22,6 +22,14 @@ from gPhoton.eclipse import eclipse_to_paths
 from gPhoton.types import Pathlike, GalexBand
 
 
+# variables used later in photonpipe and moviemaker for different run types
+PIPELINE_VARIABLES = (
+    "ra", "dec", "t", "detrad", "flags", "response", "mask", "col", "row"
+)
+EXTENDED_PIPELINE_VARIABLES = ("q", "ya")
+POST_CSP_PIPELINE_VARIABLES = "ya"
+
+
 class FakeStopwatch:
     """fake simple timer object"""
 
@@ -208,7 +216,8 @@ class PipeContext:
         wide_edge_thresh: int = 350,
         narrow_edge_thresh: int = 370,
         single_leg: Optional[int] = None,
-        photonlist_cols: Sequence[str] = None
+        photonlist_cols: Sequence[str] = None,
+        post_csp: bool = False
     ):
         self.eclipse = eclipse
         self.band = band
@@ -248,6 +257,7 @@ class PipeContext:
         self.narrow_edge_thresh = narrow_edge_thresh
         self.single_leg = single_leg
         self.photonlist_cols = photonlist_cols
+        self.post_csp = post_csp
 
     def __repr__(self):
         params = [ f"{k}={v!r}" for k,v in self.__dict__ ]
@@ -327,6 +337,9 @@ def check_eclipse(eclipse, aspect_dir: None | str | Path = None):
     if 37423 < eclipse <= 38149:
         e_error.append(f"Eclipse {eclipse} is post-CSP and pre-TAC switch, "
                        "suspect data that should not be processed.")
+    # flag as post csp for context manager later.
+    # this means ghost flagging will be run.
+    post_csp = eclipse > 38149
     meta = aspect_tables(
         eclipse=eclipse, tables="metadata", aspect_dir=aspect_dir
     )[0]
@@ -341,4 +354,4 @@ def check_eclipse(eclipse, aspect_dir: None | str | Path = None):
             f"{nominal} legs, but only {actual} appear(s) to have "
             f"been completed. Obstype is {obstype}."
         )
-    return e_warn, e_error
+    return e_warn, e_error, post_csp

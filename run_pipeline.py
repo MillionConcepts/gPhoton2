@@ -2,9 +2,9 @@ from gPhoton.pipeline import execute_pipeline
 
 if __name__ == "__main__":
     execute_pipeline(
-        23456,
+        44405,
         "NUV",
-        depth=120,
+        depth=250,
         # integer; None to deactivate (default None)
         threads=4,
         # where to both write output data and look for input data
@@ -12,6 +12,7 @@ if __name__ == "__main__":
         # auxiliary remote location for input data
         # remote_root="/mnt/s3",
         recreate=True,
+        #source_catalog_file="/home/bekah/eclipse/e23456/e23456-fd-f0120-b00-movie-photom-12_8.csv",
         # list of floats; relevant only to lightcurve / photometry portion
         aperture_sizes=[12.8],
         # actually write image/movie products? otherwise hold in memory but
@@ -19,7 +20,7 @@ if __name__ == "__main__":
         write={"movie": True, "image": True},
         coregister_lightcurves=False,
         # photonpipe, moviemaker, None (default None)
-        stop_after="moviemaker",
+        stop_after=None,
         photometry_only=False,
         # "none", "gzip", "rice"
         compression="rice",
@@ -31,5 +32,5 @@ if __name__ == "__main__":
         extended_flagging=False,
         verbose=2,
         #single_leg=1,
-        photonlist_cols = ('t', 'flags', 'ra', 'dec', 'detrad', 'mask', 'response','ya','col','row', 'q', "roll")
+        photonlist_cols = None
     )

@@ -34,7 +34,12 @@ from gPhoton.coords.gnomonic import gnomfwd_simple, gnomrev_simple
 from gPhoton.constants import DETSIZE, PIXEL_SIZE
 from gPhoton.parquet_utils import parquet_to_ndarray
 from gPhoton.pretty import print_inline
-from gPhoton.reference import PipeContext
+from gPhoton.reference import (
+    PipeContext,
+    PIPELINE_VARIABLES,
+    EXTENDED_PIPELINE_VARIABLES,
+    POST_CSP_PIPELINE_VARIABLES,
+)
 from gPhoton.sharing import (
     reference_shared_memory_arrays,
     slice_into_memory,
@@ -161,27 +166,38 @@ def select_on_detector(
 
 
 def prep_image_inputs(photonfile, ctx):
-    event_table, exposure_array = load_image_tables(photonfile)
+    """ Prepares photonlist to make required images and movies. """
+    event_table, exposure_array = load_image_tables(photonfile, ctx)
     foc, wcs = generate_wcs_components(event_table)
     with warnings.catch_warnings():
         # don't bother us about divide-by-zero errors
         warnings.simplefilter("ignore")
         weights = 1.0 / event_table["response"].to_numpy()
     # for new hotspot masking
+    t = event_table["t"].to_numpy()
     col_weights = event_table["col"].to_numpy()
     row_weights = event_table["row"].to_numpy()
-    ya_weights = event_table["ya"].to_numpy()
-    q_weights = event_table["q"].to_numpy()
-    t = event_table["t"].to_numpy()
     # combine flag, mask, edge into "artifacts"
     artifact_flags = combine_artifacts(
         event_table,
         ctx.wide_edge_thresh,
         ctx.narrow_edge_thresh)
     artifact_ix = np.where(artifact_flags!= 0)
-    map_ix_dict = generate_indexed_values(foc, artifact_ix, artifact_flags, t,
-                                          weights, col_weights, row_weights,
-                                          ya_weights, q_weights)
+    ext_args = {} # for other cols we may want to index
+    if ctx.extended_photonlist:
+        ext_args = {
+            "ya_weights": event_table["ya"].to_numpy(),
+            "q_weights": event_table["q"].to_numpy()
+        }
+    map_ix_dict = generate_indexed_values(
+        foc=foc,
+        artifact_ix=artifact_ix,
+        artifact_flags=artifact_flags,
+        t=t,
+        weights=weights,
+        col_weights=col_weights,
+        row_weights=row_weights,
+        **ext_args)
     total_trange = (t.min(), t.max())
     return exposure_array, map_ix_dict, total_trange, wcs, len(event_table)
 
@@ -200,20 +216,36 @@ def combine_artifacts(event_table, wide_edge_thresh, narrow_edge_thresh):
     return artifacts
 
 
-def generate_indexed_values(foc, artifact_ix, artifact_flags, t, weights,
-                            col_weights, row_weights, ya_weights, q_weights):
+def generate_indexed_values(
+    foc,
+    artifact_ix,
+    artifact_flags,
+    t,
+    weights,
+    col_weights,
+    row_weights,
+    **kwargs
+):
+    """ Q and YA weights only used in the extended photonlist context,
+    currently input as kwargs. You could pass other photonlist cols as
+     weights here too. """
     indexed = NestingDict()
-    for value, value_name in zip((t, foc, weights, row_weights, col_weights, ya_weights, q_weights),
-                                 ("t", "foc", "weights", "row_weights", "col_weights", "ya_weights", "q_weights")):
-        for map_ix, map_name in zip(
-            (artifact_ix, slice(None)), ("flag", "cnt")
-        ):
+    weights_and_names = [
+        (t, "t"),
+        (foc, "foc"),
+        (weights, "weights"),
+        (row_weights, "row_weights"),
+        (col_weights, "col_weights"),
+    ]
+    for name, value in kwargs.items():
+        weights_and_names.append((value, name))
+    for value, value_name in weights_and_names:
+        for map_ix, map_name in zip((artifact_ix, slice(None)), ("flag", "cnt")):
             if map_name == "flag" and value_name == "weights":
-                    indexed[map_name][value_name] = artifact_flags[map_ix]
+                indexed[map_name][value_name] = artifact_flags[map_ix]
             else:
                 indexed[map_name][value_name] = value[map_ix]
     return indexed
-
 
 def slice_frame_into_memory(
     exposure_directory, map_ix_dict, map_name, frame_ix, trange
@@ -336,14 +368,17 @@ def generate_wcs_components(event_table):
 
 def load_image_tables(
     photonfile: Pathlike,
+    ctx
 ) -> tuple[pyarrow.Table, np.ndarray]:
     """
     read a photonlist file produced by `photonpipe` from a raw6 telemetry file;
     return event and exposure tables appropriate for making images / movies
     and performing photometry
     """
-    relevant_columns = ["ra", "dec", "response", "flags", "mask", "t", "detrad", "col", "row", "ya", "q"]
-    event_table = parquet.read_table(photonfile, columns=relevant_columns)
+    desired_cols = set(PIPELINE_VARIABLES)
+    if ctx.extended_photonlist:
+        desired_cols |= set(EXTENDED_PIPELINE_VARIABLES)
+    event_table = parquet.read_table(photonfile, columns=list(desired_cols))
     # retain time and flag for every event for exposure time computations
     exposure_array = parquet_to_ndarray(event_table, ["t", "flags"])
     # but otherwise only deal with data actually on the 800x800 detector grid
