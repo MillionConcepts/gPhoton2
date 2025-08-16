@@ -217,7 +217,7 @@ def apply_aspect_solution(aspect, chunk, chunkid):
         ok_indices,
     )
     print_inline(chunkid + "Mapping to sky...")
-    ra, dec = np.zeros(chunk["t"].shape), np.zeros(chunk["t"].shape)
+    ra, dec, roll = np.zeros(chunk["t"].shape), np.zeros(chunk["t"].shape), np.zeros(chunk["t"].shape)
     ra[ok_indices], dec[ok_indices] = gnomrev_simple(
         chunk["xi"][ok_indices] + dxi[ok_indices],
         chunk["eta"][ok_indices] + deta[ok_indices],
@@ -228,12 +228,14 @@ def apply_aspect_solution(aspect, chunk, chunkid):
         0.0,
         0.0
     )
+    roll[ok_indices] = -aspect["roll"][aspect_slice]
     null_ix, flags = find_null_indices(
         aspect["flags"], aspect_slice, aspect["time"], flags, ok_indices
     )
     ra[null_ix] = np.nan
     dec[null_ix] = np.nan
-    return {"ra": ra, "dec": dec, "flags": flags}
+    roll[null_ix] = np.nan
+    return {"ra": ra, "dec": dec, "flags": flags, "roll": roll}
 
 
 def apply_on_detector_corrections(
