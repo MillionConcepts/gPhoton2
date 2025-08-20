@@ -248,13 +248,17 @@ def create_images_and_movies(
     # of shapely polygon vertices. no longer saved in the
     # image dict, it is its own "results" dict entry
     # as it is used in both images and movies.
-    coverage_map, ring_area, full_area = make_coverage_backplane(
-        wcs,
-        imsz,
-        ctx.eclipse,
-        leg,
-        ctx.aspect_dir,
-    )
+    if ctx.coverage_map:
+        coverage_map, ring_area, full_area = make_coverage_backplane(
+            wcs,
+            imsz,
+            ctx.eclipse,
+            leg,
+            ctx.aspect_dir,
+        )
+    else:
+        ring_area, full_area = 0, 0
+        coverage_map = np.zeros(imsz, dtype=np.uint8)
 
     if (
         (ctx.min_exptime is not None)

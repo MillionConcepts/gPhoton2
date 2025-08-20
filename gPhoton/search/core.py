@@ -18,10 +18,10 @@ from gPhoton.aspect import aspect_tables
 
 # parquet filters implementing canonical definitions for specific eclipse types
 MISLIKE_FILTER = (
-    ("legs", "=", 0), ("obstype", "in", ["MIS", "DIS", "GII"])
+    ("planned_legs", "=", 0), ("plan_type", "in", ["MIS", "DIS", "GII"])
 )
 # 'big' eclipses, useful category for testing
-COMPLEX_FILTER = (("legs", ">", 0),)
+COMPLEX_FILTER = (("planned_legs", ">", 0),)
 
 
 def boundaries_of_a_square(x: float, y: float, size: float):

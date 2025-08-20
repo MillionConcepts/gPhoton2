@@ -2,7 +2,7 @@ from gPhoton.pipeline import execute_pipeline
 
 if __name__ == "__main__":
     execute_pipeline(
-        36690,
+        34737,
         "NUV",
         depth=250,
         # integer; None to deactivate (default None)
@@ -17,7 +17,7 @@ if __name__ == "__main__":
         aperture_sizes=[12.8],
         # actually write image/movie products? otherwise hold in memory but
         # discard (possibly after performing photometry).
-        write={"movie": False, "image": True},
+        write={"movie": True, "image": True},
         coregister_lightcurves=False,
         # photonpipe, moviemaker, None (default None)
         stop_after=None,

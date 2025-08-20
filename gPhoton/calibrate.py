@@ -477,9 +477,9 @@ def get_fuv_temp(eclipse: int, aspect_dir: None | str | Path = None) -> float:
     return aspect_tables(
         eclipse=eclipse,
         tables="metadata",
-        columns=["fuv_temp"],
+        columns=["fuv_tdc_temp"],
         aspect_dir=aspect_dir
-    )[0]["fuv_temp"][0].as_py()
+    )[0]["fuv_tdc_temp"][0].as_py()
 
 
 def find_fuv_offset(

@@ -163,7 +163,8 @@ def execute_pipeline(
     aspect_dir: None | str | Path = None,
     ftype: str = "csv",
     single_leg = None,
-    photonlist_cols: Sequence[str] = None
+    photonlist_cols: Sequence[str] = None,
+    coverage_map: bool = True
 ) -> str:
     """
     Args:
@@ -244,6 +245,10 @@ def execute_pipeline(
         photonlist_cols: Specify a list of desired extra columns in the photonlist
             from the raw6 table. Only affects photonlist output. Use at your own
             peril (the columns must exist).
+        coverage_map: Only recommended use is for testing eclipses without pre-computed
+            "coverage" maps in the aspect table "leg_aperture." Does not reduce image
+            file size, just saves a blank coverage backplane. Default is True, to make
+            coverage maps.
     Returns:
         str: `"return code: successful"` for fully successful execution;
             `"return code: {other_thing}"` for various known failure states
@@ -309,7 +314,8 @@ def execute_pipeline(
         ftype=ftype,
         single_leg=single_leg,
         photonlist_cols=photonlist_cols,
-        post_csp=post_csp
+        post_csp=post_csp,
+        coverage_map=coverage_map
     )
     ctx.watch.start()
     if photometry_only:
@@ -332,7 +338,7 @@ def execute_full_pipeline(ctx):
         )
         headline = (
             f"eclipse {ctx.eclipse} {ctx.band}  -- "
-            f"{metadata['obstype'][0].as_py()}; "
+            f"{metadata['plan_type'][0].as_py()}; "
             f"{actual} leg(s)"
         )
         if actual != nominal:

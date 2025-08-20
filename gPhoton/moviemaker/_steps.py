@@ -12,6 +12,7 @@ import warnings
 import fitsio
 import pyarrow
 from astropy.io import fits as pyfits
+from astropy.time import Time
 from dustgoggles.structures import NestingDict
 import numpy as np
 from pyarrow import parquet
@@ -405,8 +406,13 @@ def populate_fits_header(band, wcs, tranges, exptimes, photon_count, coverage_ar
     # 315964800 gps epoch
     utc_time_start = 315964800 +  np.array(tranges).min()
     utc_time_end = 315964800 +  np.array(tranges).max()
-    header['DATE-BEG'] = datetime.utcfromtimestamp(utc_time_start).replace(microsecond=0).isoformat()
-    header['DATE-END'] = datetime.utcfromtimestamp(utc_time_end).replace(microsecond=0).isoformat()
+    date_beg = datetime.utcfromtimestamp(utc_time_start).replace(microsecond=0).isoformat()
+    date_end = datetime.utcfromtimestamp(utc_time_end).replace(microsecond=0).isoformat()
+    header['DATE-BEG'] = date_beg
+    header['DATE-END'] = date_end
+    # so astropy stops throwing warnings we add MJD
+    header["MJD-BEG"] = Time(date_beg, format="isot", scale="utc").mjd
+    header["MJD-END"] = Time(date_end, format="isot", scale="utc").mjd
     header["TSTART"] = np.array(tranges).min() # was EXPSTART
     header["TSTOP"] = np.array(tranges).max() # was EXPEND
     header["TELAPSE"] = round(sum(t1 - t0 for (t0, t1) in tranges), 3) # was EXPTIME
@@ -666,75 +672,55 @@ def add_array_to_fits_file(
         fits_stream.close()
 
 
+def shapely_to_image_coords(shape, wcs):
+    poly = shapely.from_wkb(shape)
+    x, y = poly.exterior.coords.xy
+    image_coords = wcs.wcs_world2pix(np.column_stack((x, y)), 1)
+    return Polygon(image_coords)
+
+
 def make_coverage_backplane(wcs, imsz, eclipse, leg, aspect_dir):
     """
     Use precomputed shapely vertices in xi, eta coords to get coverage backplane
     in image coordinates, which will be its own backplane. Primarily used for
     masking during point source extraction.
     """
-    # load shapely shapes
-    shape = aspect_tables(
+    import pyarrow.compute as pc
+    masks = aspect_tables(
         eclipse=eclipse,
-        tables="exposure_rgns",
+        tables="leg-aperture",
         aspect_dir=aspect_dir,
     )
+    # filter by leg, # of legs should match new boresight table
+    partial = masks[0]['partial'][leg].as_py()
+    full_400 = masks[0]['full_400'][leg].as_py()
+    full_370 = masks[0]['full_370'][leg].as_py()
+    full_350 = masks[0]['full_350'][leg].as_py()
 
-    # reconstitute as polygons
-    full = shapely.from_wkb(shape[0]["full_exposure_area"][leg].as_py())
-    edge = shapely.from_wkb(shape[0]["partial_exposure_area"][leg].as_py())
-    ra0 = shape[0]["ra0"][leg].as_py()
-    dec0 = shape[0]["dec0"][leg].as_py()
-    roll = shape[0]["roll0"][leg].as_py()
+    edge = shapely_to_image_coords(partial, wcs)
+    image_370 = shapely_to_image_coords(full_370, wcs)
+    image_350 = shapely_to_image_coords(full_350, wcs)
+    image_full = shapely_to_image_coords(full_400, wcs)
 
-    # exterior coords for edge mask
-    x_edge, y_edge = edge.exterior.coords.xy
-    ra_poly_edge, dec_poly_edge = gnomrev_simple(
-        np.asarray(x_edge),
-        np.asarray(y_edge),
-        ra0,
-        dec0,
-        -roll,
-        1 / 36000.0,
-        0.0,
-        0.0,
-    )
-    image_coords_edge = wcs.wcs_world2pix(
-        np.column_stack((ra_poly_edge, dec_poly_edge)), 1
-    )
-    image_edge = Polygon(image_coords_edge)
-
-    # use exterior coordinates of the mask for full mask
-    x_full, y_full = full.exterior.coords.xy
-    ra_poly_full, dec_poly_full = gnomrev_simple(
-        np.asarray(x_full),
-        np.asarray(y_full),
-        ra0,
-        dec0,
-        -roll,
-        1 / 36000.0,
-        0.0,
-        0.0,
-    )
-    image_coords_full = wcs.wcs_world2pix(
-        np.column_stack((ra_poly_full, dec_poly_full)), 1
-    )
-    image_full = Polygon(image_coords_full)
-
-    # make mask array of annulus and inner full coverage area
-    # need an error case in which full and edge are in fact exactly the same?
-    ring = image_edge.difference(image_full)
+    # annulus for partial coverage
+    annulus = edge.difference(image_full)
     shapes = [
-        (ring, 2),
-        (image_full, 1),
+        (annulus, 1),  # annulus = bit 1
+        (image_370, 2),  # 370 = bit 2
+        (image_350, 4),  # 350 = bit 3
+        (image_full, 8),  # full = bit 4
     ]
-    coverage_map = rasterize(
-        shapes=shapes,
-        out_shape=imsz,
-        fill=0,
-        dtype='uint8',
-    )
+    coverage_map = np.zeros(imsz, dtype=np.uint8)
+    for poly, bit in shapes:
+        mask = rasterize(
+            [(poly, 1)],
+            out_shape=imsz,
+            fill=0,
+            dtype="uint8",
+        )
+        coverage_map |= mask * bit
 
-    return coverage_map, ring.area, image_full.area
+    return coverage_map, annulus.area, image_full.area
 
 
 def make_dose_frame(

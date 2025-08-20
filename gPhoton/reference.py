@@ -159,14 +159,20 @@ def get_legs(eclipse, aspect_dir: None | str | Path = None):
 @cache
 def titular_legs(eclipse, aspect_dir: None | str | Path = None):
     from gPhoton.aspect import aspect_tables
-
-    actual = len(get_legs(eclipse, aspect_dir=aspect_dir))
+    # from old metadata / boresight table
+    #actual = len(get_legs(eclipse, aspect_dir=aspect_dir))
+    actual = aspect_tables(
+        eclipse=eclipse,
+        tables="metadata",
+        columns=["observed_legs"],
+        aspect_dir=aspect_dir
+    )[0]["observed_legs"][0].as_py()
     nominal = aspect_tables(
         eclipse=eclipse,
         tables="metadata",
-        columns=["legs"],
+        columns=["planned_legs"],
         aspect_dir=aspect_dir
-    )[0]["legs"][0].as_py()
+    )[0]["planned_legs"][0].as_py()
     if (actual == 1) and (nominal == 0):
         return 0, 0
     return actual, nominal
@@ -217,7 +223,8 @@ class PipeContext:
         narrow_edge_thresh: int = 370,
         single_leg: Optional[int] = None,
         photonlist_cols: Sequence[str] = None,
-        post_csp: bool = False
+        post_csp: bool = False,
+        coverage_map: bool = True,
     ):
         self.eclipse = eclipse
         self.band = band
@@ -258,6 +265,7 @@ class PipeContext:
         self.single_leg = single_leg
         self.photonlist_cols = photonlist_cols
         self.post_csp = post_csp
+        self.coverage_map = coverage_map
 
     def __repr__(self):
         params = [ f"{k}={v!r}" for k,v in self.__dict__ ]
@@ -348,7 +356,7 @@ def check_eclipse(eclipse, aspect_dir: None | str | Path = None):
         return e_warn, e_error
     actual, nominal = titular_legs(eclipse, aspect_dir=aspect_dir)
     if actual != nominal:
-        obstype = meta['obstype'].to_pylist()[0]
+        obstype = meta['plan_type'].to_pylist()[0]
         e_warn.append(
             f"Note: e{eclipse} observation-level metadata specifies "
             f"{nominal} legs, but only {actual} appear(s) to have "
