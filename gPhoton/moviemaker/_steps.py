@@ -154,16 +154,19 @@ def select_on_detector(
     event_table: pyarrow.Table, threshold: int = 400
 ) -> pyarrow.Table:
     """
-    select events "on" the detector
+    select events "on" the detector & with real aspect solution
     :param event_table: pyarrow Table that contains a detector radius column
     :param threshold: how many pixels away from center still counts as "on"?
     :return: Table consisting of rows of event_table "on" detector
     """
     detrad = event_table["detrad"].to_numpy()
-    return event_table.take(
-        # TODO: is isfinite() necessary?
-        np.where(np.isfinite(detrad) & (detrad < threshold))[0]
+    ra = event_table["ra"].to_numpy()
+    mask = (
+        np.isfinite(detrad)
+        & (detrad < threshold)
+        & np.isfinite(ra)
     )
+    return event_table.take(np.where(mask)[0])
 
 
 def prep_image_inputs(photonfile, ctx):

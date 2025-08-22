@@ -304,7 +304,7 @@ def get_point_sources(cnt_image: np.ndarray, f_e_mask, photon_count, expt):
 
 
 def estimate_threshold(bkg_rms, photon_count, expt):
-    print("Calculating source threshold.")
+    print(f"Calculating source threshold with {photon_count}.")
     # was -0.15,4.3
     multiplier = -0.14 * np.log(photon_count) + 4.0
     minimum = minimum_elliot_sigmoid(photon_count)

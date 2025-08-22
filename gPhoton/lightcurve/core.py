@@ -19,6 +19,7 @@ from gPhoton.reference import FakeStopwatch, PipeContext
 from gPhoton.coadd import (zero_flag, flag_mask)
 from gPhoton import __version__
 
+
 def make_lightcurves(sky_arrays: Mapping, ctx: PipeContext):
     """
     make lightcurves from preprocessed structures generated from FITS images

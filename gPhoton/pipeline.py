@@ -490,14 +490,22 @@ def pick_and_copy_array(context, which="image"):
 
 
 def get_photon_counts(context):
-    if (phot_path := Path(context['photonfile'])).exists():
-        meta = parquet.read_metadata(phot_path)
-        return meta.num_rows
-    elif (phot_path := Path(context(remote=True)['photonfile'])).exists():
-        meta = parquet.read_metadata(phot_path)
-        return meta.num_rows
+    if (image_path := Path(context['image'])).exists():
+        try:
+            header = fits.getheader(image_path, ext=1)  # read only header of HDU 1
+            return header.get("PHOTCNT", 0)
+        except Exception as e:
+            print(f"error reading PHOTCNT from {image_path}: {e}")
+            return 0
+    elif (image_path := Path(context(remote=True)['image'])).exists():
+        try:
+            header = fits.getheader(image_path, ext=1)
+            return header.get("PHOTCNT", 0)
+        except Exception as e:
+            print(f"error reading PHOTCNT from {image_path}: {e}")
+            return 0
     else:
-        print("Photonlist not found, using photonlist length of 0.")
+        print("image file not found, using photon count of 0.")
         return 0
 
 
