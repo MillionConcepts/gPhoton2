@@ -40,7 +40,7 @@ def make_lightcurves(sky_arrays: Mapping, ctx: PipeContext):
         # edge mask just for source finding (not a flag, just demarcates
         # bad area for source finding @ image edge where there are no sources
         # or the coverage is not "full"
-        flag_edge_mask = (sky_arrays["coverage"] != 1)
+        flag_edge_mask = (sky_arrays["coverage"] & 2) == 0
         # mask hotspots
         masked_cnt_image = zero_flag(
             image_dict["cnt"],
