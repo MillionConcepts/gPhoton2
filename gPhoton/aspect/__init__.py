@@ -112,9 +112,13 @@ def distribute_legs(
             'dec0': np.full(len(leg_indices), leg['dec0']),
             'leg': np.full(len(leg_indices), leg_ix, dtype=np.uint8)
         }
-        legframes.append(pd.DataFrame(leg_arrays))
-    distributed = pd.concat(legframes).reset_index(drop=True)
-    return pd.concat([aspect, distributed], axis=1)
+        legframes.append(pd.DataFrame(leg_arrays, index=leg_indices))
+    # because of new boresight table, some aspect rows now get skipped
+    # so it's important to have aligned indices between distributed legs
+    # and the aspect table.
+    distributed = pd.concat(legframes)
+    aspect_and_leg = pd.concat([aspect, distributed], axis=1, join='inner')
+    return aspect_and_leg.reset_index(drop=True)
 
 
 def load_aspect_solution(

@@ -675,8 +675,7 @@ def add_array_to_fits_file(
         fits_stream.close()
 
 
-def shapely_to_image_coords(shape, wcs):
-    poly = shapely.from_wkb(shape)
+def shapely_to_image_coords(poly, wcs):
     x, y = poly.exterior.coords.xy
     image_coords = wcs.wcs_world2pix(np.column_stack((x, y)), 1)
     return Polygon(image_coords)
@@ -684,46 +683,53 @@ def shapely_to_image_coords(shape, wcs):
 
 def make_coverage_backplane(wcs, imsz, eclipse, leg, aspect_dir):
     """
-    Use precomputed shapely vertices in xi, eta coords to get coverage backplane
-    in image coordinates, which will be its own backplane. Primarily used for
+    Use precomputed 'coverage' aspect file with shapely polygons to get
+    coverage masks and convert to, stacking to make a backplane. Used for
     masking during point source extraction.
     """
-    import pyarrow.compute as pc
     masks = aspect_tables(
         eclipse=eclipse,
         tables="leg-aperture",
         aspect_dir=aspect_dir,
     )
-    # filter by leg, # of legs should match new boresight table
-    partial = masks[0]['partial'][leg].as_py()
-    full_400 = masks[0]['full_400'][leg].as_py()
-    full_370 = masks[0]['full_370'][leg].as_py()
-    full_350 = masks[0]['full_350'][leg].as_py()
-
-    edge = shapely_to_image_coords(partial, wcs)
-    image_370 = shapely_to_image_coords(full_370, wcs)
-    image_350 = shapely_to_image_coords(full_350, wcs)
-    image_full = shapely_to_image_coords(full_400, wcs)
-
-    # annulus for partial coverage
-    annulus = edge.difference(image_full)
-    shapes = [
-        (annulus, 1),  # annulus = bit 1
-        (image_370, 2),  # 370 = bit 2
-        (image_350, 4),  # 350 = bit 3
-        (image_full, 8),  # full = bit 4
-    ]
     coverage_map = np.zeros(imsz, dtype=np.uint8)
-    for poly, bit in shapes:
-        mask = rasterize(
-            [(poly, 1)],
-            out_shape=imsz,
-            fill=0,
-            dtype="uint8",
-        )
-        coverage_map |= mask * bit
-
-    return coverage_map, annulus.area, image_full.area
+    # filter by leg, # of legs should match new boresight table
+    partial = shapely.from_wkb(masks[0]['partial'][leg].as_py())
+    full_400 = shapely.from_wkb(masks[0]['full_400'][leg].as_py())
+    full_370 = shapely.from_wkb(masks[0]['full_370'][leg].as_py())
+    full_350 = shapely.from_wkb(masks[0]['full_350'][leg].as_py())
+    shape_list = [
+        (full_400, 8),  # full = bit 4
+        (full_370, 2),  # 370 = bit 2
+        (full_350, 4),  # 350 = bit 3
+        (partial, 1),   # partial coverage = bit 1
+    ]
+    full_area = 0
+    annulus_area = 0
+    for shape, bit in shape_list:
+        if shape.geom_type == 'Polygon':
+            polygon_list = [shape]
+        elif shape.geom_type == 'MultiPolygon':
+            polygon_list = list(shape.geoms)
+        for poly in polygon_list:
+            projected_shape = shapely_to_image_coords(poly, wcs)
+            # save areas of polygons, have to do it this way for multipolygons
+            if bit == 8:
+                full_area = full_area + poly.area
+            if bit == 1:
+                annulus_area = annulus_area + poly.area
+            mask = rasterize(
+                [(projected_shape, 1)],
+                out_shape=imsz,
+                fill=0,
+                dtype="uint8",
+            )
+            if bit == 1:
+                # for partial coverage area / annulus
+                coverage_map |= (mask & (coverage_map == 0)) * bit
+            else:
+                coverage_map |= mask * bit
+    return coverage_map, annulus_area-full_area, full_area
 
 
 def make_dose_frame(

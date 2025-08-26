@@ -492,14 +492,14 @@ def pick_and_copy_array(context, which="image"):
 def get_photon_counts(context):
     if (image_path := Path(context['image'])).exists():
         try:
-            header = fits.getheader(image_path, ext=1)  # read only header of HDU 1
+            header = get_fits_header(image_path, ext=1)  # read only header of HDU 1
             return header.get("PHOTCNT", 0)
         except Exception as e:
             print(f"error reading PHOTCNT from {image_path}: {e}")
             return 0
     elif (image_path := Path(context(remote=True)['image'])).exists():
         try:
-            header = fits.getheader(image_path, ext=1)
+            header = get_fits_header(image_path, ext=1)
             return header.get("PHOTCNT", 0)
         except Exception as e:
             print(f"error reading PHOTCNT from {image_path}: {e}")

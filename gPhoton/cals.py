@@ -46,7 +46,7 @@ def read_data(fn, dim=0):
     with importlib.resources.as_file(files / fn) as path:
         if ".fits" in fn:
             data = get_fits_data(path, dim=dim)
-            header = get_fits_header(path)
+            header = get_fits_header(path, ext=0)
             return enforce_native_byteorder(data), header
         elif ".tbl" in fn:
             return get_tbl_data(path)

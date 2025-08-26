@@ -134,7 +134,7 @@ def get_fits_data(filename, dim=0, verbose=0):
 # ------------------------------------------------------------------------------
 
 # ------------------------------------------------------------------------------
-def get_fits_header(filename):
+def get_fits_header(filename, ext):
     """
     Reads a FITS header. A wrapper for common astropy.io.fits commands.
 
@@ -142,12 +142,16 @@ def get_fits_header(filename):
 
     :type filename: str
 
+    :param ext: FITS file extension you want the header from.
+
+    :type ext: int
+
     :returns: Header instance -- The header from the primary HDU.
     """
 
     hdulist = astropy.io.fits.open(filename, memmap=1)
 
-    htab = hdulist[0].header
+    htab = hdulist[ext].header
 
     hdulist.close()
 
