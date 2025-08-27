@@ -23,6 +23,7 @@ from more_itertools import chunked
 
 import gPhoton.reference
 from gPhoton.reference import PipeContext, check_eclipse
+from gPhoton.io.fits_utils import get_fits_header
 from gPhoton.types import GalexBand
 
 # oh no! divide by zero! i am very distracting!
