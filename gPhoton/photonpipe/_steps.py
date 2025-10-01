@@ -45,6 +45,7 @@ from gPhoton.reference import (
 
 )
 
+
 def process_chunk_in_unshared_memory(
     aspect,
     cal_data,
@@ -217,7 +218,9 @@ def apply_aspect_solution(aspect, chunk, chunkid):
         ok_indices,
     )
     print_inline(chunkid + "Mapping to sky...")
-    ra, dec, roll = np.zeros(chunk["t"].shape), np.zeros(chunk["t"].shape), np.zeros(chunk["t"].shape)
+    ra = np.zeros(chunk["t"].shape)
+    dec = np.zeros(chunk["t"].shape)
+    roll = np.zeros(chunk["t"].shape)
     ra[ok_indices], dec[ok_indices] = gnomrev_simple(
         chunk["xi"][ok_indices] + dxi[ok_indices],
         chunk["eta"][ok_indices] + deta[ok_indices],
@@ -396,7 +399,7 @@ def perform_spatial_nonlinearity_correction(
     print_inline(chunkid + "Applying spatial non-linearity correction...")
     xp_as = (xdig - walkx) * c.ASPUM
     yp_as = (ydig - walky) * c.ASPUM
-    fptrx = xp_as / 10.0 + 240.0
+    fptrx = xp_as / 10.0 + 240.02
     fptry = yp_as / 10.0 + 240.0
     return fptrx, fptry, xp_as, yp_as
 
@@ -736,30 +739,30 @@ def create_ssd_from_decoded_data(data, band, eclipse, verbose, margin=90.001):
     avt, sep, num = [], [], []
 
     for i in range(0, len(stimt) - pinc, pinc):
-        ix1 = (stimix[i : i + pinc] == 1).nonzero()[0]
-        ix2 = (stimix[i : i + pinc] == 2).nonzero()[0]
-        ix3 = (stimix[i : i + pinc] == 3).nonzero()[0]
-        ix4 = (stimix[i : i + pinc] == 4).nonzero()[0]
+        ix1 = (stimix[i: i + pinc] == 1).nonzero()[0]
+        ix2 = (stimix[i: i + pinc] == 2).nonzero()[0]
+        ix3 = (stimix[i: i + pinc] == 3).nonzero()[0]
+        ix4 = (stimix[i: i + pinc] == 4).nonzero()[0]
         sx1, sy1 = (
-            np.mean(stimx_as[i : i + pinc][ix1]),
-            np.mean(stimy_as[i : i + pinc][ix1]),
+            np.mean(stimx_as[i: i + pinc][ix1]),
+            np.mean(stimy_as[i: i + pinc][ix1]),
         )
         sx2, sy2 = (
-            np.mean(stimx_as[i : i + pinc][ix2]),
-            np.mean(stimy_as[i : i + pinc][ix2]),
+            np.mean(stimx_as[i: i + pinc][ix2]),
+            np.mean(stimy_as[i: i + pinc][ix2]),
         )
         sx3, sy3 = (
-            np.mean(stimx_as[i : i + pinc][ix3]),
-            np.mean(stimy_as[i : i + pinc][ix3]),
+            np.mean(stimx_as[i: i + pinc][ix3]),
+            np.mean(stimy_as[i: i + pinc][ix3]),
         )
         sx4, sy4 = (
-            np.mean(stimx_as[i : i + pinc][ix4]),
-            np.mean(stimy_as[i : i + pinc][ix4]),
+            np.mean(stimx_as[i: i + pinc][ix4]),
+            np.mean(stimy_as[i: i + pinc][ix4]),
         )
         stim_sep = (
             (sx2 - sx1) + (sx4 - sx3) + (sy1 - sy3) + (sy2 - sy4)
         ) / 4.0
-        stim_avt = sum(stimt[i : i + pinc]) / len(stimt[i : i + pinc])
+        stim_avt = sum(stimt[i: i + pinc]) / len(stimt[i: i + pinc])
         stim_num = len(ix1) + len(ix2) + len(ix3) + len(ix4)
         avt.append(stim_avt)
         sep.append(stim_sep)
@@ -845,8 +848,11 @@ def load_cal_data(stims, band, eclipse):
 
 
 def flag_ghosts(leg_data):
-    """ flag for ghosts in post-CSP eclipses identified by low YA values. added photometry
-    of YA values (elsewhere) is a secondary check for ghostliness."""
+    """
+    Flag for ghosts in post-CSP eclipses identified by low YA values.
+    Added photometry of YA values (elsewhere) is a secondary check for
+    ghostliness.
+    """
     from quickbin import bin2d
 
     ra, dec, ya, col, row, flags = (
@@ -857,11 +863,19 @@ def flag_ghosts(leg_data):
         leg_data["row"],
         leg_data["flags"],
     )
+
+    # only use valid photons to bin mean YA value in RA/DEC space
     valid = (col >= 0) & (col <= 800) & (row >= 0) & (row <= 800)
     valid &= ~np.isnan(ya) & ~np.isnan(ra) & ~np.isnan(dec)
     ra_valid, dec_valid, ya_valid = ra[valid], dec[valid], ya[valid]
     n_bins = 1600
-    binned = bin2d(ra_valid, dec_valid, ya_valid, ('mean', 'count'), n_bins=n_bins)
+    binned = bin2d(
+        ra_valid,
+        dec_valid,
+        ya_valid,
+        ('mean', 'count'),
+        n_bins=n_bins
+    )
 
     # cutoffs for ID as a ghost
     filtered = (binned['mean'] < 6) & (binned['count'] > 15)
@@ -879,6 +893,7 @@ def flag_ghosts(leg_data):
         (dec_ix >= 0) & (dec_ix < n_bins) &
         ~np.isnan(ra) & ~np.isnan(dec)
     )
+
     ra_ix_valid = ra_ix[valid_bins]
     dec_ix_valid = dec_ix[valid_bins]
 
@@ -888,6 +903,7 @@ def flag_ghosts(leg_data):
     mask_indices = flag_map[ra_ix_valid, dec_ix_valid]
     mask[np.flatnonzero(valid_bins)] = mask_indices
 
-    # flag as 120
+    # flag ghosts as 120
     flags[mask] = 120
+
     return leg_data

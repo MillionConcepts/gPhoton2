@@ -106,7 +106,8 @@ def avg_stimpos(band, eclipse):
 
     :type band: str
 
-    :param eclipse: The eclipse number to return the average stim positions for.
+    :param eclipse: The eclipse number to return the average stim positions
+    for.
 
     :type eclipse: int
 
@@ -165,8 +166,8 @@ def find_stims_index(x, y, band, eclipse, margin=90.001):
     """
     Given a list of detector x,y positions of events, returns four
         arrays that contain the indices of likely stim events for that stim,
-        i.e., the first array contains positions for stim1, the second array has
-        positions of stim2, etc.
+        i.e., the first array contains positions for stim1, the second array
+        has positions of stim2, etc.
 
         Example of how the return indexes are used: x[index1], y[index1] would
         give all of the event positions for stim1.
@@ -183,7 +184,8 @@ def find_stims_index(x, y, band, eclipse, margin=90.001):
 
     :type band: str
 
-    :param eclipse: The eclipse number to return the average stim positions for.
+    :param eclipse: The eclipse number to return the average stim positions
+    for.
 
     :type eclipse: int
 
@@ -403,14 +405,14 @@ def flat_scale_parameters(band):
     if band == "NUV":
         # flat_correct and flat_t0 never get used.
         # They are only retained in this code for historical purposes.
-        flat_correct = -0.0154
-        flat_t0 = 840418779.02
+        # flat_correct = -0.0154
+        # flat_t0 = 840418779.02
         flat_correct_0 = 1.9946352
         flat_correct_1 = -1.9679445e-09
         flat_correct_2 = 9.3025231e-19
     elif band == "FUV":
-        flat_correct = -0.0031
-        flat_t0 = 840418779.02
+        # flat_correct = -0.0031
+        # flat_t0 = 840418779.02
         flat_correct_0 = 1.2420282
         flat_correct_1 = -2.8843099e-10
         flat_correct_2 = 0.000
@@ -492,6 +494,7 @@ def find_fuv_offset(
     state) file -- this generally indicates observations for which the FUV
     detector wasn't actually powered on.
     :param eclipse: GALEX eclipse number.
+    :param aspect_dir: Aspect director.
     :returns: tuple -- A two-element tuple containing the x and y offsets.
     """
     fodx_coef_0, fody_coef_0, fodx_coef_1, _ = (0.0, 0.0, 0.0, 0.0)
@@ -521,7 +524,13 @@ def plus7_mod32_minus16(array):
 
 
 @njit(
-    (numba.int16[:], numba.int16[:], numba.int16[:], numba.int16, numba.int16, numba.int16[:], numba.int16[:]),
+    (numba.int16[:],
+     numba.int16[:],
+     numba.int16[:],
+     numba.int16,
+     numba.int16,
+     numba.int16[:],
+     numba.int16[:]),
     cache=True
 )
 def center_scale_step_1(xa, yb, xb, xclk, yclk, xamc, yamc):

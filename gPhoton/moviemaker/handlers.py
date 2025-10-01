@@ -106,7 +106,7 @@ def make_movies(
 
 def make_full_depth_image(
     ctx, exposure_array, map_ix_dict, total_trange, imsz, band="NUV",
-): # -> tuple[str, dict]:  we're not ready to typecheck this function yet
+):  # -> tuple[str, dict]:  we're not ready to typecheck this function yet
     interval = total_trange[1] - total_trange[0]
     trange = np.arange(total_trange[0], total_trange[1] + interval, interval)
     exptime = unshared_compute_exptime(exposure_array, band, trange)
@@ -223,10 +223,11 @@ def create_images_and_movies(
     imsz = (
         int((wcs.wcs.crpix[1] - 0.5) * 2), int((wcs.wcs.crpix[0] - 0.5) * 2)
     )
+
     # to check that the dimensions of the image are at least 1x1
     # for images where everything is flagged it could get to this point
-    # and the imsz is 0,0 and image making returns []. could maybe be a better fix
-    # catching this earlier in the pipeline maybe?
+    # and the imsz is 0,0 and image making returns []. could maybe be a better
+    # fix catching this earlier in the pipeline maybe?
     if sum(imsz) <= 1:
         raise ValueError("image size is less than 1x1, "
                          "photonlist is likely all flagged.")

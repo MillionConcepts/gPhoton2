@@ -1,3 +1,4 @@
+import gc
 from typing import Mapping
 from datetime import datetime, timezone
 import warnings
@@ -18,6 +19,7 @@ from gPhoton.lightcurve.photometry_utils import (
 from gPhoton.reference import FakeStopwatch, PipeContext
 from gPhoton.coadd import (zero_flag, flag_mask)
 from gPhoton import __version__
+from gPhoton.pretty import print_inline
 
 
 def make_lightcurves(sky_arrays: Mapping, ctx: PipeContext):
@@ -35,7 +37,6 @@ def make_lightcurves(sky_arrays: Mapping, ctx: PipeContext):
 
         # preparing images for source finding
         exptime = image_dict["exptimes"][0]
-
 
         # edge mask just for source finding (not a flag, just demarcates
         # bad area for source finding @ image edge where there are no sources
@@ -55,8 +56,11 @@ def make_lightcurves(sky_arrays: Mapping, ctx: PipeContext):
         # for input point source catalog
         sources = load_source_catalog(ctx.source_catalog_file, ctx.eclipse)
         if not len(sources):
-            print(f"skipped photometry because no sources were found {ctx.source_catalog_file}")
-            return f"skipped photometry because no sources were found {ctx.source_catalog_file}"
+            print_inline(f"skipped photometry because no sources were "
+                         f"found {ctx.source_catalog_file}")
+            # TODO: change this return?
+            return f"skipped photometry because no sources were " \
+                   f"found {ctx.source_catalog_file}"
         source_table = format_source_catalog(sources, sky_arrays["wcs"])
     else:
         # if there's no input catalog
@@ -69,9 +73,10 @@ def make_lightcurves(sky_arrays: Mapping, ctx: PipeContext):
     # set all extended sources IDs for point sources as Null unless
     # extended source finding is run
     source_table["extended_source"] = None
-    source_table["extended_source"] = source_table["extended_source"].astype(pd.Int16Dtype())
+    source_table["extended_source"] = source_table["extended_source"]\
+        .astype(pd.Int16Dtype())
 
-    if ctx.extended_flagging:
+    if ctx.extended_flagging and ctx.source_catalog_file is None:
         # find extended sources, tag point source catalog with
         # applicable extended source IDs
         masks, extended_source_cat = mask_for_extended_sources(
@@ -85,7 +90,8 @@ def make_lightcurves(sky_arrays: Mapping, ctx: PipeContext):
                 extended_source_cat)
             # drop rows where there are no point sources ID'd
             extended_source_cat = extended_source_cat[
-                ~((extended_source_cat['area_density'] == 0) | (extended_source_cat['source_count'] == 0))
+                ~((extended_source_cat['area_density'] == 0)
+                    | (extended_source_cat['source_count'] == 0))
             ]
             del outline_seg_map
         if extended_source_cat is not None:
@@ -116,7 +122,10 @@ def make_lightcurves(sky_arrays: Mapping, ctx: PipeContext):
             ctx
         )
         # add full depth image exposure time as exptime
-        photometry_table['exptime'] = round(sum(sky_arrays["image_dict"]["exptimes"]), 3)
+        photometry_table['exptime'] = round(sum(
+            sky_arrays["image_dict"]["exptimes"]),
+            3
+        )
         ctx.watch.click()
         if sky_arrays['movie_dict'] is not None:
             if len(sky_arrays['movie_dict']) > 0:
@@ -128,11 +137,13 @@ def make_lightcurves(sky_arrays: Mapping, ctx: PipeContext):
                 )
 
         photomfile = ctx(aperture=aperture_size)['photomfile']
-        print(f"writing source table to {photomfile}")
+        print_inline(f"Writing source table to {photomfile}")
         if ctx.ftype == "parquet":
             import pyarrow as pa
-            # idk if pandas is a problem here
-            photometry_table = pa.Table.from_pandas(photometry_table, preserve_index=False)
+            photometry_table = pa.Table.from_pandas(
+                photometry_table,
+                preserve_index=False
+            )
             metadata = {
                 b"TELESCOP": b"GALEX",
                 b"ECLIPSE": str(ctx.eclipse).encode(),
@@ -140,12 +151,17 @@ def make_lightcurves(sky_arrays: Mapping, ctx: PipeContext):
                 b"BANDNAME": str(ctx.band).encode(),
                 b"BAND": str(1 if ctx.band == "NUV" else 2).encode(),
                 b"ORIGIN": b"Million Concepts",
-                b"DATE": datetime.now(timezone.utc).replace(microsecond=0).isoformat().encode(),
+                b"DATE": datetime.now(timezone.utc).replace(
+                    microsecond=0).isoformat().encode(),
                 b"TIMESYS": b"UTC",
                 b"VERSION": f"v{__version__}".encode(),
-                b"XPOSURE": str(round(sum(sky_arrays["image_dict"]["exptimes"]), 3)).encode() # same as col value in photom table
+                b"XPOSURE": str(round(sum(
+                    sky_arrays["image_dict"]["exptimes"]),
+                    3)).encode()  # same as col value in photom table
             }
-            photometry_table = photometry_table.replace_schema_metadata(metadata)
+            photometry_table = photometry_table.replace_schema_metadata(
+                metadata
+            )
             pa.parquet.write_table(
                 photometry_table,
                 photomfile,

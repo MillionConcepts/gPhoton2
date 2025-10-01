@@ -11,25 +11,22 @@ import pyarrow
 from pyarrow import parquet
 
 from gPhoton.aspect import load_aspect_solution
-from gPhoton.calibrate import find_fuv_offset
 from gPhoton.io.mast import retrieve_raw6
 from gPhoton.io.raw6 import load_raw6, get_eclipse_from_header
 from gPhoton.photonpipe._steps import (
+    chunk_data,
     create_ssd_from_decoded_data,
-    perform_yac_correction,
     load_cal_data,
     process_chunk_in_shared_memory,
-    chunk_data,
     process_chunk_in_unshared_memory,
-    flag_ghosts
 )
 from gPhoton.pretty import print_inline
 from gPhoton.reference import PipeContext
 from gPhoton.sharing import (
-    unlink_nested_block_dict,
-    slice_into_shared_chunks,
-    send_mapping_to_shared_memory,
     get_column_from_shared_memory,
+    send_mapping_to_shared_memory,
+    slice_into_shared_chunks,
+    unlink_nested_block_dict,
 )
 from gPhoton.types import Pathlike
 
@@ -59,12 +56,13 @@ def execute_photonpipe(ctx: PipeContext, raw6file: Optional[Pathlike] = None):
     startt = time.time()
     # download raw6 if local file is not passed
     if raw6file is None:
-        print(f"downloading raw6file")
+        print_inline(f"Downloading raw6file")
         raw6file = retrieve_raw6(ctx.eclipse, ctx.band, ctx.eclipse_path())
     # get / check eclipse # from raw6 header --
     eclipse = get_eclipse_from_header(raw6file, ctx.eclipse)
-    print(f"Processing eclipse {eclipse}")
+    print_inline(f"Processing eclipse {eclipse}")
     if ctx.band == "FUV":
+        from gPhoton.calibrate import find_fuv_offset
         xoffset, yoffset = find_fuv_offset(eclipse, aspect_dir=ctx.aspect_dir)
     else:
         xoffset, yoffset = 0.0, 0.0
@@ -86,8 +84,9 @@ def execute_photonpipe(ctx: PipeContext, raw6file: Optional[Pathlike] = None):
         stims, stim_coefficients = create_ssd_from_decoded_data(
             data, ctx.band, eclipse, ctx.verbose, margin=20
         )
-    # Post-CSP 'yac' corrections.
     if eclipse > 37423:
+        # Post-CSP 'yac' corrections.
+        from gPhoton.photonpipe._steps import perform_yac_correction
         data = perform_yac_correction(ctx.band, eclipse, stims, data)
     cal_data = load_cal_data(stims, ctx.band, eclipse)
     if share_memory is True:
@@ -153,11 +152,12 @@ def execute_photonpipe(ctx: PipeContext, raw6file: Optional[Pathlike] = None):
         array_dict = retrieve_leg_results(leg_results, share_memory)
         # ghost flag for post CSP
         if ctx.post_csp:
-            print("running ghost flag")
+            from gPhoton.photonpipe._steps import flag_ghosts
+            print_inline("Running ghost flag on post-CSP eclipse.")
             array_dict = flag_ghosts(array_dict)
         proc_count += len(array_dict["t"])
         # noinspection PyArgumentList
-        print(f"writing table to {leg_ctx['photonfile']}")
+        print_inline(f"Writing table to {leg_ctx['photonfile']}")
         parquet.write_table(
             pyarrow.Table.from_arrays(
                 list(array_dict.values()), names=list(array_dict.keys())

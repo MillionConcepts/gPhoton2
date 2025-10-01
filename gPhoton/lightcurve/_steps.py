@@ -6,24 +6,23 @@ part of the course of running gPhoton.lightcurve.core.make_lightcurves(), and
 may not suitable for independent use.
 """
 
-from multiprocessing import Pool
-from pathlib import Path
-from typing import Union, Optional, Mapping
+import gc
 import warnings
 
+from multiprocessing import Pool
+from pathlib import Path
+from typing import Mapping, Optional, Union
+
 import astropy.wcs
-import gc
 import numpy as np
 import pandas as pd
-from photutils.detection import DAOStarFinder
-from photutils.aperture import CircularAperture, aperture_photometry
 import scipy.sparse
+from photutils.aperture import aperture_photometry
 
 from gPhoton.pretty import print_inline
-from gPhoton.types import Pathlike, GalexBand
-from gPhoton.lightcurve.photometry_utils import (mask_for_extended_sources,
-                                                 check_point_in_extended)
 from gPhoton.reference import PipeContext
+from gPhoton.types import GalexBand, Pathlike
+
 
 def count_full_depth_image(
     source_table: pd.DataFrame,
@@ -36,33 +35,48 @@ def count_full_depth_image(
     Runs aperture photometry on count and flag images, at a minimum.
     "Extended photonlist" run types will collect photometry from more image
     types.
+
+    We are pretty fastidious about garbage collection in this function because
+    historically it became quite bloated in memory.
+
+    All aperture_photometry calls use the "exact" method, which calculates
+    the proportion of each pixel overlapped by the aperture.
     """
-    # "photometry" that is run for ALL run types
+    from photutils.aperture import CircularAperture
+
+    # make apertures from source list
     source_table = source_table.reset_index(drop=True)
     positions = source_table[["xcentroid", "ycentroid"]].to_numpy()
     apertures = CircularAperture(positions, r=aperture_size)
-    phot_table = aperture_photometry(image_dict["cnt"], apertures, method='exact').to_pandas()
+
+    # run photometry on count & flag images, this is run for all run types
+    phot_table = aperture_photometry(
+        image_dict["cnt"],
+        apertures,
+        method='exact'
+    ).to_pandas()
     source_table = pd.concat(
         [source_table, phot_table[["xcenter", "ycenter", "aperture_sum"]]],
         axis=1,
     )
     source_table["artifact_flag"] = bitwise_aperture_photometry(
         image_dict["flag"],
-        apertures)
+        apertures
+    )
 
-    # photometry we only run if extended_photonlist = True
-    # we don't want to run this on images that don't exist!
-    # these also don't exist for photometry only runs bc
-    # they are not written
+    # photometry we only run if extended_photonlist = True, we don't want to
+    # run this on images that don't exist! these also don't exist for
+    # photometry only runs bc they are not written
     if not ctx.photometry_only and ctx.extended_photonlist:
-        # pull mean col and row values to get general location on detector
+        # pull mean col and row values to get average location on detector
+        # obviously the accuracy varies depending on the dither pattern &
+        # aspect solution quality.
         x = np.rint(positions[:, 0]).astype(int)
         y = np.rint(positions[:, 1]).astype(int)
         col_vals = image_dict["col_mean"][y, x]
         row_vals = image_dict["row_mean"][y, x]
-        # scale up by 4 to match dose image
-        source_table["dose_col"] = col_vals * 4.0
-        source_table["dose_row"] = row_vals * 4.0
+        source_table["dose_col"] = col_vals * 4.0  # x4 to match dose image
+        source_table["dose_row"] = row_vals * 4.0  # x4 to match dose image
         del x, y, col_vals, row_vals
         gc.collect()
 
@@ -140,30 +154,42 @@ def count_full_depth_image(
     # TODO: this isn't necessary for specified catalog positions. but
     #  should we do a sanity check?
     if "ra" not in source_table.columns:
-        world = system.wcs_pix2world(apertures.positions, 1, ra_dec_order=True)
+        world = system.wcs_pix2world(
+            apertures.positions,
+            1,
+            ra_dec_order=True
+        )
         source_table["ra"] = world[:, 0]
         source_table["dec"] = world[:, 1]
     return source_table, apertures
 
 
 def bitwise_aperture_photometry(artifact_map: np.ndarray, apertures):
-    """ Run aperture photometry on each bit in artifact flag backplane.
-    Non-zero results mean that bit is flagged. Only 4 bits set rn. """
-    bitmask_column= np.zeros(len(apertures), dtype=np.uint8)
-    # add check to see if there are any bits in the map?
+    """
+    Run aperture photometry on each bit in artifact flag backplane.
+    Non-zero results mean that bit is flagged. Only 4 bits set rn.
+    """
+    bitmask_column = np.zeros(len(apertures), dtype=np.uint8)
+
+    # check to see if anything is flagged in the map, if not there's no
+    # point in running the aperture photometry
     for bit in range(4):
         if not np.any(artifact_map & (1 << bit)):
             # most useful for skipping ghost flag in eclipses pre-CSP
             continue
         bit_image = (artifact_map & (1 << bit)) > 0
-        bit_flag_table = aperture_photometry(bit_image.astype(int), apertures).to_pandas()
-        bitmask_column |= (bit_flag_table["aperture_sum"].to_numpy() > 0).astype(np.uint8) << bit
+        bit_flag_table = aperture_photometry(
+            bit_image.astype(int),
+            apertures
+        ).to_pandas()
+        bitmask_column |= (bit_flag_table["aperture_sum"].to_numpy()
+                           > 0).astype(np.uint8) << bit
     return bitmask_column
 
 
-def check_empty_image(eclipse:int, band:GalexBand, image_dict):
+def check_empty_image(eclipse: int, band: GalexBand, image_dict):
     if not image_dict["cnt"].max():
-        print(f"{eclipse} appears to contain nothing in {band}.")
+        print_inline(f"{eclipse} appears to contain nothing in {band}.")
         # do we want to return a file when the image is empty?
         # realistically it probably means there's something wrong
         # with the observation
@@ -192,7 +218,10 @@ def _extract_photometry_threaded(movie, apertures, threads, key):
     pool = Pool(threads)
     photometry = {}
     for ix, frame in enumerate(movie):
-        photometry[ix] = pool.apply_async(extract_frame, (frame, apertures, key))
+        photometry[ix] = pool.apply_async(
+            extract_frame,
+            (frame, apertures, key)
+        )
     pool.close()
     pool.join()
     return {ix: result.get() for ix, result in photometry.items()}
@@ -202,7 +231,7 @@ def extract_photometry(movie_dict, source_table, apertures, threads):
     photometry_tables = []
     for key in ["cnt", "flag"]:
         title = "primary movie" if key == "cnt" else f"{key} map"
-        print(f"extracting photometry from {title}")
+        print_inline(f"extracting photometry from {title}")
         if threads is None:
             photometry = _extract_photometry_unthreaded(
                 movie_dict[key], apertures, key
@@ -212,7 +241,7 @@ def extract_photometry(movie_dict, source_table, apertures, threads):
                 movie_dict[key], apertures, threads, key
             )
         frame_indices = sorted(photometry.keys())
-        if key in ("flag"):
+        if key in "flag":
             column_prefix = f"artifact_flag"
         else:
             column_prefix = "aperture_sum"
@@ -220,8 +249,7 @@ def extract_photometry(movie_dict, source_table, apertures, threads):
             f"{column_prefix}_{ix}": photometry[ix] for ix in frame_indices
         }
         if key == "cnt":
-            # add exposure time info
-            # only need to do this once though
+            # add exposure time info, only do once
             expt_dict = {
                 "expt": movie_dict["exptimes"],
                 "t0": [trange[0] for trange in movie_dict["tranges"]],
@@ -229,7 +257,7 @@ def extract_photometry(movie_dict, source_table, apertures, threads):
             }
             for name, values in expt_dict.items():
                 for i, val in enumerate(values):
-                    photometry[f"{name}_{i}"] = round(val,3)
+                    photometry[f"{name}_{i}"] = round(val, 3)
 
         photometry_tables.append(pd.DataFrame.from_dict(photometry))
     return pd.concat([source_table, *photometry_tables], axis=1)
@@ -243,7 +271,7 @@ def write_exptime_file(expfile: Pathlike, movie_dict) -> None:
             "t1": [trange[1] for trange in movie_dict["tranges"]],
         }
     )
-    print(f"writing exposure time table to {expfile}")
+    print_inline(f"writing exposure time table to {expfile}")
     # noinspection PyTypeChecker
     exptime_table.to_csv(expfile, index=False)
 
@@ -309,7 +337,7 @@ def load_source_catalog(
 
 
 def format_source_catalog(source_table, wcs):
-    print(f"Using specified catalog of {len(source_table)} sources.")
+    print_inline(f"Using specified catalog of {len(source_table)} sources.")
     positions = np.vstack(
         [
             wcs.wcs_world2pix([position], 1, ra_dec_order=True)

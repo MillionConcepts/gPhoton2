@@ -4,41 +4,40 @@
    processes. generally should not be called on their own.
 """
 from datetime import datetime, timezone
-
 from pathlib import Path
-from typing import Mapping, Sequence, Literal
+from typing import Mapping, Sequence, Literal, Optional
+
 import warnings
 
 import fitsio
-import pyarrow
-from astropy.io import fits as pyfits
-from astropy.time import Time
-from dustgoggles.structures import NestingDict
 import numpy as np
+import pyarrow
 from pyarrow import parquet
+from astropy.io import fits
+from astropy.time import Time
+import astropy.wcs
+from astropy.wcs import WCS
 import scipy.sparse
 import sh
 from quickbin import bin2d
-
 from rasterio.features import rasterize
 from rasterio.transform import from_origin
-from astropy.wcs import WCS
-from astropy.io import fits
 import shapely
 from shapely.geometry import Polygon
+from dustgoggles.structures import NestingDict
 
 from gPhoton import __version__
 from gPhoton.aspect import aspect_tables
 from gPhoton.calibrate import compute_exptime
-from gPhoton.coords.wcs import make_bounding_wcs
 from gPhoton.coords.gnomonic import gnomfwd_simple, gnomrev_simple
+from gPhoton.coords.wcs import make_bounding_wcs
 from gPhoton.constants import DETSIZE, PIXEL_SIZE
 from gPhoton.parquet_utils import parquet_to_ndarray
 from gPhoton.pretty import print_inline
 from gPhoton.reference import (
+    EXTENDED_PIPELINE_VARIABLES,
     PipeContext,
     PIPELINE_VARIABLES,
-    EXTENDED_PIPELINE_VARIABLES,
     POST_CSP_PIPELINE_VARIABLES,
 )
 from gPhoton.sharing import (
@@ -81,7 +80,7 @@ def make_frame(
     """
     frame = np.zeros(imsz, dtype=np.uint8)
     # less than 0 foc values break bin2d, greater than imsz values do too
-    min_max = np.min([imsz[0],imsz[1]])
+    min_max = np.min([imsz[0], imsz[1]])
     cut = np.all((foc >= .5) & (foc <= min_max+.5), axis=1)
     foc = foc[cut]
     weights = weights[cut]
@@ -186,8 +185,8 @@ def prep_image_inputs(photonfile, ctx):
         event_table,
         ctx.wide_edge_thresh,
         ctx.narrow_edge_thresh)
-    artifact_ix = np.where(artifact_flags!= 0)
-    ext_args = {} # for other cols we may want to index
+    artifact_ix = np.where(artifact_flags != 0)
+    ext_args = {}  # for other cols we may want to index
     if ctx.extended_photonlist:
         ext_args = {
             "ya_weights": event_table["ya"].to_numpy(),
@@ -214,8 +213,9 @@ def combine_artifacts(event_table, wide_edge_thresh, narrow_edge_thresh):
     mask_bit = (event_table['mask'].to_numpy() == 1) * 1
     flag_bit = (event_table['flags'].to_numpy() == 120) * 2
     # hard coded narrow (360) and wide (340) edge setting in ctx
-    wide_edge_bit = (event_table['detrad'].to_numpy() > wide_edge_thresh) * 4
-    narrow_edge_bit = (event_table['detrad'].to_numpy() > narrow_edge_thresh) * 8
+    detrad = event_table['detrad'].to_numpy()
+    wide_edge_bit = (detrad > wide_edge_thresh) * 4
+    narrow_edge_bit = (detrad > narrow_edge_thresh) * 8
     artifacts = mask_bit | flag_bit | wide_edge_bit | narrow_edge_bit
     return artifacts
 
@@ -244,12 +244,13 @@ def generate_indexed_values(
     for name, value in kwargs.items():
         weights_and_names.append((value, name))
     for value, value_name in weights_and_names:
-        for map_ix, map_name in zip((artifact_ix, slice(None)), ("flag", "cnt")):
+        for map_ix, map_name in ((artifact_ix, "flag"), (slice(None), "cnt")):
             if map_name == "flag" and value_name == "weights":
                 indexed[map_name][value_name] = artifact_flags[map_ix]
             else:
                 indexed[map_name][value_name] = value[map_ix]
     return indexed
+
 
 def slice_frame_into_memory(
     exposure_directory, map_ix_dict, map_name, frame_ix, trange
@@ -349,7 +350,7 @@ def sm_make_map(block_directory, map_name, imsz):
     transform it into a "map" by taking its 2-D hstogram
     """
     if block_directory[map_name] is None:
-        dtype = np.uint8 if map_name in ("flag") else np.float64
+        dtype = np.uint8 if map_name in "flag" else np.float64
         return np.zeros(imsz, dtype)
     _, map_arrays = reference_shared_memory_arrays(block_directory[map_name])
     if map_name == "flag":
@@ -390,44 +391,52 @@ def load_image_tables(
     return event_table, exposure_array
 
 
-def populate_fits_header(band, wcs, tranges, exptimes, photon_count, coverage_areas, key, ctx):
+def populate_fits_header(
+        wcs: astropy.wcs.WCS,
+        tranges,
+        exptimes,
+        photon_count: int,
+        key: str,
+        ctx,
+        coverage_areas: Optional[tuple[float, ...]] = None
+):
     """
     create an astropy.io.fits.Header object containing our canonical
     metadata values
     """
-    header = pyfits.Header()
+    header = fits.Header()
     header['TELESCOP'] = 'GALEX'
     header["ECLIPSE"] = ctx.eclipse
     header["LEG"] = ctx.leg
     header['BANDNAME'] = ctx.band
-    header["BAND"] = 1 if band == "NUV" else 2
+    header["BAND"] = 1 if ctx.band == "NUV" else 2
 
     # time stuff
     header['TIMESYS'] = 'UTC'
     header['TIMEUNIT'] = 's'
     # not dead time corrected first and last photon
     # 315964800 gps epoch
-    utc_time_start = 315964800 +  np.array(tranges).min()
-    utc_time_end = 315964800 +  np.array(tranges).max()
-    date_beg = datetime.utcfromtimestamp(utc_time_start).replace(microsecond=0).isoformat()
-    date_end = datetime.utcfromtimestamp(utc_time_end).replace(microsecond=0).isoformat()
+    utc_start = 315964800 + np.array(tranges).min()
+    utc_end = 315964800 + np.array(tranges).max()
+    date_beg = datetime.utcfromtimestamp(utc_start).replace(microsecond=0).isoformat()
+    date_end = datetime.utcfromtimestamp(utc_end).replace(microsecond=0).isoformat()
     header['DATE-BEG'] = date_beg
     header['DATE-END'] = date_end
     # so astropy stops throwing warnings we add MJD
     header["MJD-BEG"] = Time(date_beg, format="isot", scale="utc").mjd
     header["MJD-END"] = Time(date_end, format="isot", scale="utc").mjd
-    header["TSTART"] = np.array(tranges).min() # was EXPSTART
-    header["TSTOP"] = np.array(tranges).max() # was EXPEND
-    header["TELAPSE"] = round(sum(t1 - t0 for (t0, t1) in tranges), 3) # was EXPTIME
+    header["TSTART"] = np.array(tranges).min()  # was EXPSTART
+    header["TSTOP"] = np.array(tranges).max()  # was EXPEND
+    header["TELAPSE"] = round(sum(t1 - t0 for (t0, t1) in tranges), 3)
     # corrected times
-    header['XPOSURE'] =round(sum(exptimes), 3) # will equal EXPT_1 for images
+    header['XPOSURE'] = round(sum(exptimes), 3)  # will equal EXPT_1 for images
     for i, trange in enumerate(tranges):
         header["T0_{i}".format(i=i)] = trange[0]
         header["T1_{i}".format(i=i)] = trange[1]
         header["EXPT_{i}".format(i=i)] = round(exptimes[i], 3)
 
     header["PHOTCNT"] = photon_count
-    header["N_FRAME"] = len(tranges) # this is 1 for images
+    header["N_FRAME"] = len(tranges)  # this is 1 for images
     if key == "dose":
         # area of shapely polygons in image coords
         # dose doesn't have a WCS like the other images
@@ -448,15 +457,15 @@ def populate_fits_header(band, wcs, tranges, exptimes, photon_count, coverage_ar
 
     header['ZCMPTYPE'] = 'RICE_1'
     header['ORIGIN'] = 'Million Concepts'
-    header["VERSION"] = "v{v}".format(v=__version__) # pipeline version
-    header['DATE'] = datetime.now(timezone.utc).replace(microsecond=0).isoformat() # date pipeline is run?
+    header["VERSION"] = "v{v}".format(v=__version__)  # pipeline version
+    header['DATE'] = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
     # comments are added based on key / image type
     comment = {
         "cnt": "Sky-projected histograms of photon counts.",
         "flag": (
-            "Sky-projected bitmap of flags, where any flagged photon in that bin "
-            "defines the flag for that whole bin. "
+            "Sky-projected bitmap of flags, where any flagged photon in that "
+            "bin defines the flag for that whole bin. "
             "Flag 1: Mission hotspot mask. "
             "Flag 2: Post-CSP ghost flag. "
             "Flag 4: Wide edge flag. "
@@ -465,9 +474,9 @@ def populate_fits_header(band, wcs, tranges, exptimes, photon_count, coverage_ar
         ),
         "dose": "Detector-space histogram of photon counts.",
         "coverage": (
-            "Aspect-derived maps in sky-projected space. Coverage varies due to "
-            "dither patterns. Full coverage during observation: 1. Partial coverage "
-            "during observation: 2."
+            "Aspect-derived maps in sky-projected space. Coverage varies due "
+            "to dither patterns. 1. Full coverage during observation. "
+            "2. Partial coverage during observation."
         ),
     }
     header['COMMENT'] = comment[key]
@@ -484,7 +493,14 @@ def initialize_fits_file(array_path):
 
 
 def write_fits_array(
-    ctx: PipeContext, arraymap, coverage_map, wcs, photon_count, coverage_areas=None, is_movie=True, clean_up=True
+    ctx: PipeContext,
+    arraymap,
+    coverage_map,
+    wcs: astropy.wcs.WCS,
+    photon_count: int,
+    coverage_areas=None,
+    is_movie=True,
+    clean_up=True
 ):
     """
     convert an intermediate movie or image dictionary, perhaps previously
@@ -511,7 +527,12 @@ def write_fits_array(
             for key in ["cnt", "flag"]:
                 print(f"writing frame {frame} {key} map")
                 header = populate_fits_header(
-                    ctx.band, wcs, arraymap["tranges"], arraymap["exptimes"], photon_count, key, ctx
+                    wcs,
+                    arraymap["tranges"],
+                    arraymap["exptimes"],
+                    photon_count,
+                    key,
+                    ctx,
                 )
                 header['EXTNAME'] = 'COUNT' if key == 'cnt' else key.upper()
                 add_array_to_fits_file(
@@ -524,14 +545,13 @@ def write_fits_array(
             # write coverage map (for full length of eclipse)
             print(f"writing coverage map")
             header = populate_fits_header(
-                ctx.band,
                 wcs,
                 arraymap["tranges"],
                 arraymap["exptimes"],
                 photon_count,
-                coverage_areas,
                 "coverage",
-                ctx
+                ctx,
+                coverage_areas
             )
             header['EXTNAME'] = 'COVERAGE'
             add_array_to_fits_file(
@@ -555,14 +575,13 @@ def write_fits_array(
         for key in backplanes:
             print(f"writing {key} map")
             header = populate_fits_header(
-                ctx.band,
                 wcs,
                 arraymap["tranges"],
                 arraymap["exptimes"],
                 photon_count,
-                coverage_areas,
                 key,
-                ctx
+                ctx,
+                coverage_areas,
             )
             header['EXTNAME'] = 'COUNT' if key == 'cnt' else key.upper()
             add_array_to_fits_file(
@@ -577,14 +596,13 @@ def write_fits_array(
         # writing coverage map
         print(f"writing coverage map")
         header = populate_fits_header(
-            ctx.band,
             wcs,
             arraymap["tranges"],
             arraymap["exptimes"],
             photon_count,
-            coverage_areas,
             "coverage",
-            ctx
+            ctx,
+            coverage_areas,
         )
         header['EXTNAME'] = 'COVERAGE'
         add_array_to_fits_file(
@@ -709,7 +727,7 @@ def make_coverage_backplane(wcs, imsz, eclipse, leg, aspect_dir):
     for shape, bit in shape_list:
         if shape.geom_type == 'Polygon':
             polygon_list = [shape]
-        elif shape.geom_type == 'MultiPolygon':
+        else:  # for shape.geom_type == 'MultiPolygon'
             polygon_list = list(shape.geoms)
         for poly in polygon_list:
             projected_shape = shapely_to_image_coords(poly, wcs)

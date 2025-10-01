@@ -4,9 +4,9 @@
 """
 from typing import Optional, Literal, Mapping, cast
 
+import numpy as np
 from astropy.io import fits as pyfits
 import fitsio
-import numpy as np
 
 from gPhoton.calibrate import center_and_scale
 from gPhoton.pretty import print_inline

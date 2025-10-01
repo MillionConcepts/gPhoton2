@@ -8,6 +8,7 @@ from functools import cache
 from math import modf
 from pathlib import Path
 from typing import Any, Callable, Literal, TYPE_CHECKING
+
 if TYPE_CHECKING:
     from _typeshed import ConvertibleToFloat
 

@@ -1,6 +1,7 @@
 import numpy as np
 import warnings
 
+
 def counts2mag(cps, band):
     """
     Converts GALEX counts per second to AB magnitudes.
@@ -27,6 +28,7 @@ def counts2mag(cps, band):
             mag = -2.5 * np.log10(cps) + scale
 
     return mag
+
 
 def mag2counts(mag, band):
     """
