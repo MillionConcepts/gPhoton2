@@ -20,6 +20,7 @@ dependencies:
   - rich
   - rasterio
   - scikit-image>=0.20
+  - scikit-learn
   - scipy
   - sh
   - shapely

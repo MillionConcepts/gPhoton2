@@ -8,7 +8,7 @@ if __name__ == "__main__":
         # integer; None to deactivate (default None)
         threads=3,
         # where to both write output data and look for input data
-        local_root="/home/bekah/eclipse",
+        local_root="",
         # auxiliary remote location for input data
         # remote_root="/mnt/s3",
         recreate=True,
