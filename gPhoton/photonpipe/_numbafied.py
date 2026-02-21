@@ -26,7 +26,7 @@ def find_null_indices(
     asptime: np.ndarray,
     flags: np.ndarray,
     ok_indices: np.ndarray,
-) -> (np.ndarray, np.ndarray):
+) -> tuple[np.ndarray, np.ndarray]:
     flag_slice = flags[ok_indices]
     cut = (
         ((asptime[aspect_slice + 1] - asptime[aspect_slice]) == 1)

@@ -1,0 +1,105 @@
+[project]
+name        = "gPhoton"
+version     = "0.1.0"
+description = "Data processing pipeline for the GALEX ultraviolet telescope"
+readme      = "README.md"
+license     = { file = "LICENSE" }
+
+authors     =  [
+    { name = "Chase Million",     email = "chase@millionconcepts.com"    },
+    { name = "Michael St. Clair", email = "mstclair@millionconcepts.com" },
+    { name = "Beka Albach",       email = "ralbach@millionconcepts.com"  },
+]
+
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "License :: OSI Approved :: BSD License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+]
+
+requires-python = ">=3.11"
+dependencies = [
+    "astropy",
+    "dustgoggles",
+    "fast-histogram",
+    "fitsio",
+    "matplotlib",
+    "more-itertools",
+    "numba",
+    "numpy >= 2.2",
+    "pandas",
+    "photutils >= 2.0",
+    "pip",
+    "pyarrow",
+    "rasterio",
+    "requests",
+    "rich",
+    "scikit-image >= 0.20",
+    "scipy",
+    "sh",
+    "shapely",
+    "scikit-learn",
+    "quickbin",
+]
+
+[project.optional-dependencies]
+cli       = ["fire"]
+gzip      = ["isal"]
+hulls     = ["matplotlib"]
+search    = ["astroquery"]
+x86_64    = ["icc_rt"]
+tests     = ["pytest"]
+typecheck = ["pandas-stubs", "types-requests"]
+
+[project.urls]
+Repository = "https://github.com/MillionConcepts/gphoton2"
+
+[build-system]
+requires = ["setuptools >= 64"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["gPhoton", "gPhoton.*"]
+namespaces = false
+
+[tool.setuptools.package-data]
+"*" = ["*.csv", "*.fits", "*.md", "*.tbl"]
+
+# Recommended for new projects by pytest manual.
+[tool.pytest.ini_options]
+addopts = [
+    "--import-mode=importlib"
+]
+
+[tool.mypy]
+packages = "gPhoton"
+exclude = [
+   # experimental code with dependencies not listed above
+   '_dev/profile\.py$',
+]
+# things like 'leg = str(leg)' are idiomatic in this codebase
+allow_redefinition = true
+
+[[tool.mypy.overrides]]
+# dependencies that currently (2025-01-17) don't have type annotations
+# yes, you have to say "astropy.*" separately from "astropy", barf
+module = [
+    "astropy",
+    "astropy.*",
+    "astroquery",
+    "cytoolz",
+    "dustgoggles",
+    "dustgoggles.*",
+    "fast_histogram",
+    "fitsio",
+    "numba",
+    "photutils",
+    "photutils.*",
+    "pyarrow",
+    "scipy",
+    "scipy.*",
+    "sh",
+]
+ignore_missing_imports = true

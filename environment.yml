@@ -3,22 +3,27 @@ channels:
   - numba
   - conda-forge
 dependencies:
-  - python=3.10
+  - python>=3.10
   - astropy
   - dustgoggles
   - fast-histogram
   - fitsio
   - more-itertools
+  - matplotlib
   - numba
-  - numpy
+  - numpy>=2.2
   - pandas
-  - photutils<2.0
+  - photutils>=2.0
   - pip
   - pyarrow
   - requests
   - rich
+  - rasterio
+  - scikit-image>=0.20
+  - scikit-learn
   - scipy
   - sh
+  - shapely
   # optional, used in pipeline CLI
   - fire
   # optional, used for some gzip-handling features
@@ -28,3 +33,6 @@ dependencies:
   - icc_rt
   # optional, only required for object-search functions
   - astroquery
+  # optional, only required for tests
+  - pytest
+  - quickbin

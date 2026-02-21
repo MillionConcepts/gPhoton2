@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import TypeVar, Literal
+from typing import Literal
 
-Pathlike = TypeVar("Pathlike", str, Path)
+Pathlike = str | Path
 GalexBand = Literal["NUV", "FUV"]

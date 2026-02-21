@@ -27,7 +27,7 @@ def load_aspect_files(aspfiles: Sequence[str]):
     ra, dec = np.array([]), np.array([])
     twist, time, aspflags = np.array([]), np.array([]), np.array([])
 
-    header = {"RA": [], "DEC": [], "ROLL": []}
+    header = {"RA": np.array([]), "DEC": np.array([]), "ROLL": np.array([])}
     for aspfile in aspfiles:
         print("         ", aspfile)
         hdulist = pyfits.open(aspfile, memmap=1)

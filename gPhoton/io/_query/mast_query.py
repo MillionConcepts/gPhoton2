@@ -2,6 +2,8 @@
 holding module for mostly-deprecated MAST query functions, still desired by
 some external legacy code. We do not recommend using them for anything at all.
 """
+from pathlib import Path
+
 import numpy as np
 
 from gPhoton.io.mast import (
@@ -169,7 +171,7 @@ def aspect_ecl(eclipse):
 
 def retrieve_scstfile(
     eclipse: int, outbase: Pathlike = ".", verbose: int = 0
-) -> str:
+) -> Path:
     """retrieve SCST (aspect) file from MAST. Not currently in use."""
     scstfile = download_data(eclipse, "scst", datadir=outbase, verbose=verbose)
     if scstfile is None:

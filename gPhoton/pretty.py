@@ -199,15 +199,13 @@ def print_stats(watch, netstat):
 
 
 def make_monitors(
-    fake: bool = False, silent: bool = True, round_to: int = None
+    fake: bool = False, silent: bool = True, round_to: int | None = None
 ) -> tuple[Callable, Callable]:
-    if fake is True:
-        stat, note = zero, zero
-    else:
-        log, watch, netstat = (
-            {}, Stopwatch(silent=silent, digits=round_to), Netstat()
-        )
-        stat, note = print_stats(watch, netstat), notary(log)
+    if fake:
+        return zero, zero
+
+    stat = print_stats(Stopwatch(silent=silent, digits=round_to), Netstat())
+    note = notary({})
     return stat, note
 
 

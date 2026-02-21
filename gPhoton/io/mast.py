@@ -12,6 +12,7 @@
 
 import os
 import time
+from pathlib import Path
 from typing import Optional, Literal
 
 import requests
@@ -57,12 +58,18 @@ def get_raw_paths(eclipse: int, verbose: int = 0) -> dict[str, Optional[str]]:
     if verbose > 1:
         print(url)
     response = manage_networked_sql_request(url)
-    out = {"NUV": None, "FUV": None, "scst": None}
+    if response is None:
+        raise RuntimeError(f"gave up trying to retrieve {url}")
+    out: dict[str, Optional[str]] = {"NUV": None, "FUV": None, "scst": None}
     for f in response.json()["data"]["Tables"][0]["Rows"]:
-        if (f[1].strip() == "NUV") or (f[1].strip() == "FUV"):
-            out[f[1].strip()] = f[2]
-        elif f[1].strip() == "BOTH":  # misnamed scst path
+        band = f[1].strip()
+        if band in ("NUV", "FUV", "scst"):
+            out[band] = f[2]
+        elif band == "BOTH":  # misnamed scst path
             out["scst"] = f[2]
+        else:
+            if verbose > 1:
+                print(f"ignoring unrecognized band {band}")
     return out
 
 
@@ -70,19 +77,22 @@ def download_data(
     eclipse: int,
     ftype: Literal["raw6", "scst"],
     band: Optional[GalexBand] = None,
-    datadir: str = "./",
+    datadir: Pathlike = ".",
     verbose: int = 0,
-) -> Optional[str]:
+) -> Path | None:
     """
     download a raw6 (L0 telemetry) or scst (aspect solution) file for a given
     eclipse from MAST to datadir.
     """
     urls = get_raw_paths(eclipse, verbose=verbose)
-    if ftype not in ["raw6", "scst"]:
+    if ftype == "raw6":
+        if band not in ("NUV", "FUV"):
+            raise ValueError("band must be either NUV or FUV")
+        url = urls[band]
+    elif ftype == "scst":
+        url = urls["scst"]
+    else:
         raise ValueError("ftype must be either raw6 or scst")
-    if ftype == "raw6" and band not in ["NUV", "FUV"]:
-        raise ValueError("band must be either NUV or FUV")
-    url = urls[band] if ftype == "raw6" else urls["scst"]
     if not url:
         print(f"Unable to locate {ftype} file on MAST server.")
         return None
@@ -92,12 +102,12 @@ def download_data(
         print(url)
     if not datadir:
         datadir = "."
-    if datadir and datadir[-1] != "/":
-        datadir += "/"
+    if not isinstance(datadir, Path):
+        datadir = Path(datadir)
     filename = url.split("/")[-1]
-    opath = f"{datadir}{filename}"
+    opath = datadir / filename
     if os.path.isfile(opath):
-        print(f"Using {ftype} file already at {os.path.abspath(opath)}")
+        print(f"Using {ftype} file already at {opath.resolve()}")
     else:
         # TODO: investigate handling options for different error cases
         try:
@@ -123,7 +133,7 @@ def raw_data_paths(eclipse):
     return mast_url(f"spGetRawUrls {eclipse}")
 
 
-def retrieve_raw6(eclipse: int, band: GalexBand, outbase: Pathlike) -> str:
+def retrieve_raw6(eclipse: int, band: GalexBand, outbase: Pathlike) -> Path:
     """retrieve raw6 (L0 telemetry) file from MAST and save it to outbase."""
     raw6file = download_data(
         eclipse, "raw6", band, datadir=os.path.dirname(outbase),
@@ -182,18 +192,12 @@ def manage_networked_sql_request(
     # Keep track of the number of failures.
     cnt = 0
 
-    # This will keep track of whether we've gotten at least one
-    # successful response.
-    successful_response = False
-
     while cnt < maxcnt:
         if cnt > 1:
             time.sleep(wait)
+
         try:
             response = requests.get(query, timeout=timeout)
-            successful_response = True
-        except KeyboardInterrupt:
-            raise
         except requests.exceptions.ConnectTimeout:
             if verbose:
                 print("Connection timed out.")
@@ -209,26 +213,27 @@ def manage_networked_sql_request(
                 print(f"bad query? {query}: {type(ex)}: {ex}")
             cnt += 1
             continue
-        if response.json()["status"] == "EXECUTING":
+
+        json = response.json()
+        status = json.get("status", "<status missing>")
+
+        if status == "COMPLETE":
+            if verbose > 1:
+                print_inline("COMPLETE")
+            return response
+
+        if status == "EXECUTING":
             if verbose > 1:
                 print_inline("EXECUTING")
             cnt = 0
             continue
-        elif response.json()["status"] == "COMPLETE":
-            if verbose > 1:
-                print_inline("COMPLETE")
-            break
-        elif response.json()["status"] == "ERROR":
+
+        if status == "ERROR":
             print("ERROR")
             print(f"Unsuccessful query: {query}")
-            raise ValueError(response.json()["msg"])
-        else:
-            print(f"Unknown return: {response.json()['status']}")
-            cnt += 1
-            continue
+            raise ValueError(json["msg"])
 
-    if successful_response is not True:
-        response = None
+        print(f"Unknown response status {status}, retrying...")
+        cnt += 1
 
-    # noinspection PyUnboundLocalVariable
-    return response
+    return None

@@ -21,7 +21,7 @@ def gnomrev_simple(
     """
     A reverse gnomonic projection.
 
-    :param xi: Detector-space coordinte.
+    :param xi: Detector-space coordinate.
 
     :type xi: numpy.ndarray
 

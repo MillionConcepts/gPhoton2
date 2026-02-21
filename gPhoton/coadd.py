@@ -22,7 +22,7 @@ from gPhoton.io.fits_utils import (
     AgnosticHDUL,
     AgnosticHDU,
 )
-from gPhoton.reference import eclipse_to_paths
+from gPhoton.eclipse import eclipse_to_paths
 from gPhoton.types import Pathlike
 
 
@@ -38,7 +38,8 @@ def get_image_fns(*eclipses, band="NUV", root="test_data"):
 
     """
     return [
-        eclipse_to_paths(eclipse, root)[band]["image"] for eclipse in eclipses
+        eclipse_to_paths(eclipse, band=band, root=root)["image"]
+        for eclipse in eclipses
     ]
 
 
@@ -89,16 +90,27 @@ def make_shared_wcs(wcs_sequence):
     return make_bounding_wcs(np.array([[ra_min, dec_min], [ra_max, dec_max]]))
 
 
-def zero_flag_and_edge(cnt, flag, edge):
+def zero_flag(cnt, flag, copy=False):
+    # copy is for making masked cnt for lightcurve use
+    if copy is True:
+        cnt = cnt.copy()
     cnt[~np.isfinite(cnt)] = 0
-    cnt[np.nonzero(flag)] = 0
-    cnt[np.nonzero(edge)] = 0
+    # mask hotspots
+    cnt[(flag & 0b0001) != 0] = 0
     return cnt
 
+def flag_mask(cnt, flag):
+    mask = np.full_like(cnt, False, dtype=bool)
+    mask[~np.isfinite(cnt)] = True
+    # mask narrow edge and hotspots
+    mask |= ((flag & 0b0001) != 0) | ((flag & 0b1000) != 0)
+    return mask
 
 # TODO: this version is compatible with RICE compression, but is relatively
 #  inefficient. needs to be juiced up.
 # TODO: update for everything-has-four-HDUs
+
+
 def project_to_shared_wcs(
     fits_path: Union[str, Path],
     shared_wcs: astropy.wcs.WCS,
@@ -117,8 +129,8 @@ def project_to_shared_wcs(
     import fitsio
 
     hdul = fitsio.FITS(fits_path)
-    cnt, flag, edge = [hdul[ix + hdu_offset].read() for ix in range(3)]
-    cnt = zero_flag_and_edge(cnt, flag, edge)
+    cnt, flag = [hdul[ix + hdu_offset].read() for ix in range(2)]
+    cnt = zero_flag(cnt, flag)
     if nonzero is True:
         y_ix, x_ix = np.nonzero(cnt)
     else:
@@ -240,8 +252,8 @@ def cut_skybox_from_file(
     path: Pathlike,
     ra: float,
     dec: float,
-    ra_x: float = None,
-    dec_x: float = None,
+    ra_x: Optional[float] = None,
+    dec_x: Optional[float] = None,
     system: Optional[astropy.wcs.WCS] = None,
     loader: Optional[Callable] = None,
     hdu_indices: tuple[int] = (0,),
@@ -306,7 +318,7 @@ def coadd_image_slices(
         solo = image_slices[0]
         scaler = 1 / solo['exptime'] if scale is not None else 1
         return (
-            zero_flag_and_edge(*solo["arrays"]) * scaler,
+            zero_flag(*solo["arrays"]) * scaler,
             solo['system'],
             solo['exptime']
         )
@@ -320,7 +332,7 @@ def coadd_image_slices(
     binned_images = []
     for image in image_slices:
         projection = project_slice_to_shared_wcs(
-            zero_flag_and_edge(*image["arrays"]),
+            zero_flag(*image["arrays"]),
             image["system"],
             shared_wcs,
             image["coords"][0],

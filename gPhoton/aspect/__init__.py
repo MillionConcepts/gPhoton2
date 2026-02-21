@@ -4,44 +4,85 @@ aspect solution tables
 """
 
 from pathlib import Path
-from typing import Mapping, Collection, Literal, Dict, Hashable
+from typing import Any, Iterable, Literal, Sequence, cast, get_args
 
 import numpy as np
 import pandas as pd
 import pyarrow as pa
 from pyarrow import parquet
 
-from gPhoton import ASPECT_DIR
+from gPhoton import DEFAULT_ASPECT_DIR
 from gPhoton.coords.gnomonic import gnomfwd_simple
 from gPhoton.parquet_utils import parquet_to_ndarrays
 from gPhoton.pretty import print_inline
 
-# fully-qualified paths to aspect table files
-# aspect2 for alternative aspect solution files
-TABLE_PATHS = {
-    "aspect": Path(ASPECT_DIR, "aspect.parquet"),
-    "aspect2": Path(ASPECT_DIR, "aspect2.parquet"),
-    "boresight": Path(ASPECT_DIR, "boresight.parquet"),
-    "metadata": Path(ASPECT_DIR, "metadata.parquet"),
-}
-
+ASPECT_TABLE_TYPE = Literal["aspect", "aspect2", "boresight", "metadata", "exposure_rgns"]
+# This odd-looking construct is needed because get_args returns
+# tuple[Any, ...]; we're essentially saying 'trust me, in this case
+# the elements of the tuple are all appropriate strings'.
+# Literal guarantees to deduplicate its args but not necessarily to
+# give them back in any particular order
+ALL_ASPECT_TABLES = \
+    cast(list[ASPECT_TABLE_TYPE], sorted(get_args(ASPECT_TABLE_TYPE)))
 
 def aspect_tables(
-    eclipse: int,
-    tables: Collection[
-        Literal["aspect", "boresight", "metadata"]
-    ] = ("aspect", "boresight", "metadata"),
+    eclipse: None | int,
+    tables: None | ASPECT_TABLE_TYPE | Iterable[ASPECT_TABLE_TYPE] =
+        ["aspect", "boresight", "metadata", "leg-aperture"],
+    # The type specification for pyarrow filter expressions is too
+    # complicated (and probably variable depending on pyarrow version)
+    # to replicate.  It might be worth revisiting this after pyarrow
+    # itself grows type annotations, if it ever does.
+    filters: Any = None,
+    aspect_dir: None | str | Path = None,
+    **kwargs: Any # additional arguments passed to parquet.read_table
 ) -> list[pa.Table]:
     """
     fetch full-resolution aspect, per-leg boresight, and/or general metadata
     for a particular eclipse.
     """
-    if tables is None:
-        paths = TABLE_PATHS.values()
+    if aspect_dir is None:
+        aspect_dir = DEFAULT_ASPECT_DIR
+    if not isinstance(aspect_dir, Path):
+        aspect_dir = Path(aspect_dir)
+
+    if isinstance(tables, str):
+        tables = [tables]
+    elif tables is None:
+        tables = ALL_ASPECT_TABLES
     else:
-        paths = [TABLE_PATHS[table_name] for table_name in tables]
-    filters = [("eclipse", "=", eclipse)]
-    return [parquet.read_table(path, filters=filters) for path in paths]
+        tables = sorted(set(tables))
+        if not tables:
+            tables = ALL_ASPECT_TABLES
+
+    if not filters:
+        if eclipse is None:
+            filters = None
+        else:
+            filters = [("eclipse", "=", eclipse)]
+
+    else:
+        if eclipse is not None:
+            # adding a conjunctive clause to filters is too difficult,
+            # given the variety of things filters could be, and the
+            # lack of any "convert this filter argument to an Expression"
+            # utility in pyarrow (that I can find); it'll be easier
+            # for the caller
+            raise NotImplementedError(
+                "sorry, not implemented: automatically combining filters="
+                " with eclipse= (note: eclipse=N is shorthand for"
+                " filters=[('eclipse', '=', N)])"
+            )
+
+    if filters is None:
+        del kwargs["filters"] # this should be impossible but just in case
+    else:
+        kwargs["filters"] = filters
+
+    return [
+        parquet.read_table(aspect_dir / (table + ".parquet"), **kwargs)
+        for table in tables
+    ]
 
 
 def distribute_legs(
@@ -71,13 +112,20 @@ def distribute_legs(
             'dec0': np.full(len(leg_indices), leg['dec0']),
             'leg': np.full(len(leg_indices), leg_ix, dtype=np.uint8)
         }
-        legframes.append(pd.DataFrame(leg_arrays))
-    distributed = pd.concat(legframes).reset_index(drop=True)
-    return pd.concat([aspect, distributed], axis=1)
+        legframes.append(pd.DataFrame(leg_arrays, index=leg_indices))
+    # because of new boresight table, some aspect rows now get skipped
+    # so it's important to have aligned indices between distributed legs
+    # and the aspect table.
+    distributed = pd.concat(legframes)
+    aspect_and_leg = pd.concat([aspect, distributed], axis=1, join='inner')
+    return aspect_and_leg.reset_index(drop=True)
 
 
 def load_aspect_solution(
-    eclipse: int, aspect, verbose: int = 0
+    eclipse: int,
+    aspect: Literal["aspect", "aspect2"],
+    verbose: int = 0,
+    aspect_dir: None | str | Path = None,
 ) -> pd.DataFrame:
     """
     loads full-resolution aspect solution + per-leg boresight solution for
@@ -92,7 +140,11 @@ def load_aspect_solution(
         print_inline("Loading aspect solution from disk...")
     aspect, boresight = [
         tab.to_pandas()
-        for tab in aspect_tables(eclipse, (aspect, "boresight"))
+        for tab in aspect_tables(
+            eclipse=eclipse,
+            tables=(aspect, "boresight"),
+            aspect_dir=aspect_dir
+        )
     ]
     if "ra" not in aspect.columns:
         print("Using aspect2.parquet")

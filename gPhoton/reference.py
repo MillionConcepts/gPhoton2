@@ -14,12 +14,20 @@ import subprocess
 import time
 from functools import cache
 from inspect import getmodule
-from math import floor
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Callable, Sequence, Mapping, Optional, Literal
+from typing import Any, Sequence, Mapping, Optional, Literal
 
+from gPhoton.eclipse import eclipse_to_paths
 from gPhoton.types import Pathlike, GalexBand
+
+
+# variables used later in photonpipe and moviemaker for different run types
+PIPELINE_VARIABLES = (
+    "ra", "dec", "t", "detrad", "flags", "response", "mask", "col", "row"
+)
+EXTENDED_PIPELINE_VARIABLES = ("q", "ya")
+POST_CSP_PIPELINE_VARIABLES = "ya"
 
 
 class FakeStopwatch:
@@ -127,90 +135,47 @@ class Netstat:
 
 def crudely_find_library(obj: Any) -> str:
     if isinstance(obj, functools.partial):
-        if len(obj.args) > 0:
-            if isinstance(obj.args[0], Callable):
-                return crudely_find_library(obj.args[0])
+        if obj.args and callable(obj.args[0]):
+            return crudely_find_library(obj.args[0])
         return crudely_find_library(obj.func)
-    return getmodule(obj).__name__.split(".")[0]
+    mod = getmodule(obj)
+    if mod is None:
+        raise ImportError("could not find a library for " + repr(obj))
+    return mod.__name__.split(".")[0]
 
 
 @cache
-def get_legs(eclipse):
+def get_legs(eclipse, aspect_dir: None | str | Path = None):
     from gPhoton.aspect import aspect_tables
 
-    return tuple(range(len(aspect_tables(eclipse, ("boresight",))[0]["time"])))
+    return tuple(range(len(aspect_tables(
+        eclipse=eclipse,
+        tables="boresight",
+        columns=["time"],
+        aspect_dir=aspect_dir,
+    )[0]["time"])))
 
 
 @cache
-def titular_legs(eclipse):
+def titular_legs(eclipse, aspect_dir: None | str | Path = None):
     from gPhoton.aspect import aspect_tables
-
-    actual = len(get_legs(eclipse))
-    nominal = aspect_tables(eclipse, ("metadata",))[0]["legs"][0].as_py()
+    # from old metadata / boresight table
+    #actual = len(get_legs(eclipse, aspect_dir=aspect_dir))
+    actual = aspect_tables(
+        eclipse=eclipse,
+        tables="metadata",
+        columns=["observed_legs"],
+        aspect_dir=aspect_dir
+    )[0]["observed_legs"][0].as_py()
+    nominal = aspect_tables(
+        eclipse=eclipse,
+        tables="metadata",
+        columns=["planned_legs"],
+        aspect_dir=aspect_dir
+    )[0]["planned_legs"][0].as_py()
     if (actual == 1) and (nominal == 0):
         return 0, 0
     return actual, nominal
-
-
-def intfill(obj, zfill=4):
-    obj = float(obj)
-    integer = str(floor(obj)).zfill(zfill)
-    if (decimal := obj - floor(obj)) > 0:
-        # round for floating-point error
-        return integer + str(round(decimal, 4))[2:]
-    return integer
-
-
-def eclipse_to_paths(
-    eclipse: int,
-    band: GalexBand = "NUV",
-    depth: Optional[int] = None,
-    compression: Literal["none", "gzip", "rice"] = "gzip",
-    root: Pathlike = "data",
-    start: Optional[float] = None,
-    mode: str = "direct",
-    leg: int = 0,
-    aperture: Optional[float] = None,
-    **kwargs,
-) -> dict[str, str]:
-    """
-    generate canonical paths for files associated with a given eclipse,
-    optionally including files at a specific depth
-    """
-    root = "data" if root is None else root
-    zpad, leg = str(eclipse).zfill(5), str(leg).zfill(2)
-    eclipse_path = f"{root}/e{zpad}/"
-    eclipse_base = f"{eclipse_path}e{zpad}"
-    if kwargs.get("emoji") is True:
-        from gPhoton.__emoji import emojified
-
-        return emojified(compression, depth, leg, band, eclipse_base, start)
-    ext = {"gzip": ".fits.gz", "none": ".fits", "rice": ".fits"}[compression]
-    comp = {"gzip": "g", "none": "u", "rice": "r"}[compression]
-    mode = {"direct": "d", "grism": "g", "opaque": "o"}[mode]
-    start = "movie" if start is None else f"t{intfill(start)}"
-    depth = None if depth is None else f"f{intfill(depth)}"
-    prefix = f"{eclipse_base}-{band[0].lower()}{mode}"
-    aper = "" if aperture is None else str(aperture).replace(".", "_")
-    file_dict = {
-        "raw6": f"{prefix}-raw6.fits.gz",
-        "photonfile": f"{prefix}-b{leg}.parquet",
-        "image": f"{prefix}-b{leg}-ffull-image-{comp}{ext}",
-        # TODO: frames, etc. -- decide exactly how once we are using
-        #  extended source detection on movies
-        "extended_catalog": f"{prefix}-b{leg}-extended-sources.csv",
-    }
-    if depth is not None:
-        file_dict |= {
-            "movie": f"{prefix}-b{leg}-{depth}-{start}-{comp}{ext}",
-            "photomfile": f"{prefix}-{depth}-b{leg}-{start}-photom-{aper}.csv",
-            "expfile": f"{prefix}-{depth}-b{leg}-{start}-exptime.csv",
-        }
-    else:
-        file_dict[
-            "photomfile"
-        ] = f"{prefix}-b{leg}-ffull-image-photom-{aper}.csv"
-    return file_dict
 
 
 class PipeContext:
@@ -247,9 +212,19 @@ class PipeContext:
         share_memory: Optional[bool] = None,
         chunksz: Optional[int] = 1000000,
         extended_photonlist: bool = False,
-        aspect: str = "aspect",
+        extended_flagging: bool = False,
+        aspect: Literal["aspect", "aspect2"] = "aspect",
         start_time: Optional[float] = None,
-        snippet: Optional[tuple] = None
+        snippet: Optional[tuple] = None,
+        suffix: Optional[str] = None,
+        aspect_dir: None | str | Path = None,
+        ftype: str = "csv",
+        wide_edge_thresh: int = 350,
+        narrow_edge_thresh: int = 370,
+        single_leg: Optional[int] = None,
+        photonlist_cols: Sequence[str] = None,
+        post_csp: bool = False,
+        coverage_map: bool = True,
     ):
         self.eclipse = eclipse
         self.band = band
@@ -276,21 +251,26 @@ class PipeContext:
         self.threads = threads
         self.watch = watch if watch is not None else Stopwatch()
         self.extended_photonlist = extended_photonlist
+        self.extended_flagging = extended_flagging
         self.chunksz = chunksz
         self.share_memory = share_memory
         self.aspect = aspect
         self.start_time = start_time
         self.snippet = snippet
-
+        self.suffix = suffix
+        self.aspect_dir = aspect_dir
+        self.ftype = ftype
+        self.wide_edge_thresh = wide_edge_thresh
+        self.narrow_edge_thresh = narrow_edge_thresh
+        self.single_leg = single_leg
+        self.photonlist_cols = photonlist_cols
+        self.post_csp = post_csp
+        self.coverage_map = coverage_map
 
     def __repr__(self):
-        return (
-            f"PipeContext(eclipse={self.eclipse}, band={self.band}, "
-            f"depth={self.depth}, compression={self.compression}, "
-            f"frame={self.frame}, mode={self.mode}, leg={self.leg}, "
-            f"apertures={self.aperture_sizes}, local={self.local}, "
-            f"remote={self.remote}"
-        )
+        params = [ f"{k}={v!r}" for k,v in self.__dict__ ]
+        params.sort()
+        return "PipeContext(" + ", ".join(params) + ")"
 
     def __str__(self):
         return repr(self)
@@ -307,39 +287,12 @@ class PipeContext:
             "mode": self.mode,
             "leg": self.leg,
             "aperture_sizes": self.aperture_sizes,
+            "suffix": self.suffix,
+            "ftype": self.ftype
         }
 
     def asdict(self) -> dict[str, Any]:
-        return {
-            "eclipse": self.eclipse,
-            "band": self.band,
-            "depth": self.depth,
-            "compression": self.compression,
-            "local": self.local,
-            "remote": self.remote,
-            "frame": self.frame,
-            "mode": self.mode,
-            "leg": self.leg,
-            "aperture_sizes": self.aperture_sizes,
-            "download": self.download,
-            "recreate": self.recreate,
-            "verbose": self.verbose,
-            "source_catalog_file": self.source_catalog_file,
-            "write": self.write,
-            "lil": self.lil,
-            "coregister_lightcurves": self.coregister_lightcurves,
-            "stop_after": self.stop_after,
-            "min_exptime": self.min_exptime,
-            "photometry_only": self.photometry_only,
-            "burst": self.burst,
-            "hdu_constructor_kwargs": self.hdu_constructor_kwargs,
-            "threads": self.threads,
-            "watch": self.watch,
-            "chunksz": self.chunksz,
-            "share_memory": self.share_memory,
-            "extended_photonlist": self.extended_photonlist,
-            "start_time": self.start_time
-        }
+        return self.__dict__.copy()
 
     def eclipse_path(self, remote=False):
         root = self.local if remote is False else self.remote
@@ -351,12 +304,23 @@ class PipeContext:
 
     def __call__(self, remote=False, **kwargs):
         kwargs = self.pathdict() | kwargs
+
         apertures = kwargs.pop("aperture_sizes")
-        if "aperture" not in kwargs.keys():
-            kwargs["aperture"] = apertures[0]
-        if "root" not in kwargs.keys():
-            kwargs["root"] = self.remote if remote is True else self.local
-        kwargs.pop("local"), kwargs.pop("remote")
+        kwargs.setdefault("aperture", apertures[0])
+
+        local_base = kwargs.pop("local")
+        remote_base = kwargs.pop("remote")
+        root = kwargs.pop("root", None)
+        if root is None:
+            root = remote_base if remote is True else local_base
+        if not isinstance(root, Path):
+            root = Path(root)
+        kwargs["root"] = root
+
+        frame = kwargs.pop("frame", None)
+        if frame is not None and kwargs.get("start") is None:
+            kwargs["start"] = frame
+
         return eclipse_to_paths(**kwargs)
 
     def __getitem__(self, key):
@@ -366,31 +330,36 @@ class PipeContext:
         """
         generate a list of PipeContexts, one for each leg of the eclipse
         """
-        legs = get_legs(self.eclipse)
+        legs = get_legs(self.eclipse, aspect_dir=self.aspect_dir)
         kdict = self.asdict()
         del kdict['leg']
         return [PipeContext(leg=leg, **kdict) for leg in legs]
 
 
-def check_eclipse(eclipse):
+def check_eclipse(eclipse, aspect_dir: None | str | Path = None):
     from gPhoton.aspect import aspect_tables
-    e_warn, e_error = [], []
+    e_warn: list[str] = []
+    e_error: list[str] = []
     if eclipse > 47000:
         e_error.append("CAUSE data w/eclipse>47000 are not yet supported.")
-    meta = aspect_tables(eclipse, ("metadata",))[0]
+    if 37423 < eclipse <= 38149:
+        e_error.append(f"Eclipse {eclipse} is post-CSP and pre-TAC switch, "
+                       "suspect data that should not be processed.")
+    # flag as post csp for context manager later.
+    # this means ghost flagging will be run.
+    post_csp = eclipse > 38149
+    meta = aspect_tables(
+        eclipse=eclipse, tables="metadata", aspect_dir=aspect_dir
+    )[0]
     if len(meta) == 0:
         e_error.append(f"No metadata found for e{eclipse}.")
         return e_warn, e_error
-    obstype = meta['obstype'].to_pylist()[0]
-    actual, nominal = titular_legs(eclipse)
-    if obstype == 'CAI':
-        e_error.append('CAI mode is not yet supported.')
-    elif (obstype in ("MIS", "GII")) and (actual == 1) and (nominal > 0):
-        e_error.append('petal pattern is not yet supported.')
-    elif actual != nominal:
+    actual, nominal = titular_legs(eclipse, aspect_dir=aspect_dir)
+    if actual != nominal:
+        obstype = meta['plan_type'].to_pylist()[0]
         e_warn.append(
             f"Note: e{eclipse} observation-level metadata specifies "
             f"{nominal} legs, but only {actual} appear(s) to have "
-            f"been completed."
+            f"been completed. Obstype is {obstype}."
         )
-    return e_warn, e_error
+    return e_warn, e_error, post_csp

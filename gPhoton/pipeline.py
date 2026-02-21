@@ -13,6 +13,7 @@ import re
 import shutil
 import warnings
 from pathlib import Path
+from pyarrow import parquet
 from time import time
 from types import MappingProxyType
 from typing import Optional, Sequence, Mapping, Literal
@@ -22,9 +23,11 @@ from more_itertools import chunked
 
 import gPhoton.reference
 from gPhoton.reference import PipeContext, check_eclipse
+from gPhoton.io.fits_utils import get_fits_header
 from gPhoton.types import GalexBand
 
 # oh no! divide by zero! i am very distracting!
+# (we love dividing by zero. dividing by zero is cool.)
 warnings.filterwarnings(action="ignore", category=RuntimeWarning)
 
 
@@ -89,6 +92,26 @@ def find_photonfiles(context: PipeContext):
 
 def execute_photometry_only(ctx: PipeContext):
     errors = []
+
+    if ctx.single_leg is not None:
+        leg_step = ctx.explode_legs()[ctx.single_leg]
+        loaded_arrays = load_moviemaker_results(leg_step, ctx.lil)
+        # this is an error code
+        if isinstance(loaded_arrays, str):
+            errors.append(loaded_arrays)
+
+        from gPhoton.lightcurve import make_lightcurves
+
+        result = make_lightcurves(loaded_arrays, leg_step)
+        if result != "successful":
+            errors.append(result)
+        print(
+            f"{round(time() - ctx.watch.start_time, 2)} seconds for execution"
+        )
+        if len(errors) > 0:
+            return "return code: " + ";".join(errors)
+        return "return code: successful"
+
     for leg_step in ctx.explode_legs():
         loaded_arrays = load_moviemaker_results(leg_step, ctx.lil)
         # this is an error code
@@ -113,7 +136,7 @@ def execute_photometry_only(ctx: PipeContext):
 def execute_pipeline(
     eclipse: int,
     band: GalexBand,
-    depth: Optional[float] = None,
+    depth: Optional[int] = None,
     threads: Optional[int] = None,
     local_root: str = "test_data",
     remote_root: Optional[str] = None,
@@ -134,8 +157,15 @@ def execute_pipeline(
     chunksz: int = 1000000,
     share_memory: Optional[bool] = None,
     extended_photonlist: bool = False,
-    aspect: str = 'aspect',
-    override_eclipse_limits: bool = False
+    extended_flagging: bool = False,
+    aspect: Literal['aspect', 'aspect2'] = 'aspect',
+    override_eclipse_limits: bool = False,
+    suffix: Optional[str] = None,
+    aspect_dir: None | str | Path = None,
+    ftype: str = "csv",
+    single_leg = None,
+    photonlist_cols: Sequence[str] = None,
+    coverage_map: bool = True
 ) -> str:
     """
     Args:
@@ -196,21 +226,36 @@ def execute_pipeline(
         share_memory: use shared memory in photonpipe? default None, meaning
             do if running multithreaded, don't if not. True and False are
             also valid, and force use or non-use respectively.
-        extended_photonlist: write extended variables to photonlists?
-            these are not used in standard moviemaker/lightcurve pipelines.
-            they are principally useful for diagnostics and ancillary products.
+        extended_photonlist: Writes extended variables to photonlists, runs
+            additional photometry on images made from those variables (YA, Q,
+            col and row std etc). Images are not written as output.
+        extended_flagging: to run extended source finding. Includes flagging
+        for non-catalog runs.
         aspect: default is standard aspect table, aspect.parquet ('aspect') but
             can designate to use alt aspect table, 'aspect2', which should be in the
             aspect directory and be named 'aspect2.parquet'
         override_eclipse_limits: attempt to execute pipeline even if metadata
             and/or support for this eclipse appear to be limited or absent?
             note that the pipeline will most likely still fail in these cases.
+        suffix: optional string to append to the end of the output filenames
+        aspect_dir: specifies the location of aspect tables
+        ftype: file type desired for output files; can be either
+            "csv" or "parquet", currently only affects photometry files
+        single_leg:  the leg number of a single leg, only for photometry_only
+            runs ATP where the catalog and images are premade.
+        photonlist_cols: Specify a list of desired extra columns in the photonlist
+            from the raw6 table. Only affects photonlist output. Use at your own
+            peril (the columns must exist).
+        coverage_map: Only recommended use is for testing eclipses without pre-computed
+            "coverage" maps in the aspect table "leg_aperture." Does not reduce image
+            file size, just saves a blank coverage backplane. Default is True, to make
+            coverage maps.
     Returns:
         str: `"return code: successful"` for fully successful execution;
             `"return code: {other_thing}"` for various known failure states
             (many of which produce a subset of valid output products)
     """
-    e_warn, e_error = check_eclipse(eclipse)
+    e_warn, e_error, post_csp = check_eclipse(eclipse, aspect_dir=aspect_dir)
     if (verbose > 0) and len(e_warn) > 0:
         print("\n".join(e_warn))
     if len(e_error) > 0:
@@ -219,6 +264,25 @@ def execute_pipeline(
             print("Bailing out.")
             return f"return code: {';'.join(e_error)}"
         print("override_eclipse_limits=True, continuing anyway")
+    if lil==False:
+        warnings.warn("lil=False is deprecated and will be removed in a future release. Defaulting to lil=True.")
+    if aspect not in ("aspect", "aspect2"):
+        print(f"Invalid aspect argument {aspect}, bailing out.")
+        return f"return code: invalid aspect argument {aspect}"
+    if source_catalog_file is not None and not Path(source_catalog_file).exists():
+        print(f"source_catalog_file {source_catalog_file} not found, bailing out.")
+        return("return code: source catalog file not found")
+    if source_catalog_file is not None and extended_flagging:
+        print(f"source_catalog_file {source_catalog_file} in use, extended source finding will not work.")
+        return("return code: forced photometry and extended source ID are incompatible.")
+        # this isn't technically true: you can ID the extended sources BUT you can't ID which point sources
+        # are in the extended sources because we don't have the segmentation images from pt source finding
+    if single_leg is not None and (not photometry_only or not source_catalog_file):
+        print(f"single leg runs can only be executed in photometry_only mode with a catalog input.")
+        return("return code: photometry-only with catalog for single leg runs.")
+    if not depth: # movie-writing has no meaning here
+        write = dict(write)
+        write['movie']=False
     ctx = PipeContext(
         eclipse,
         band,
@@ -233,17 +297,26 @@ def execute_pipeline(
         verbose=verbose,
         source_catalog_file=source_catalog_file,
         write=write,
-        lil=lil,
+        lil=True,
         coregister_lightcurves=coregister_lightcurves,
         stop_after=stop_after,
         hdu_constructor_kwargs=hdu_constructor_kwargs,
         min_exptime=min_exptime,
+        photometry_only=photometry_only,
         burst=burst,
         chunksz=chunksz,
         share_memory=share_memory,
         extended_photonlist=extended_photonlist,
+        extended_flagging=extended_flagging,
         aspect=aspect,
-        start_time=1000
+        start_time=1000, # this is a no-op
+        suffix=suffix,
+        aspect_dir=aspect_dir,
+        ftype=ftype,
+        single_leg=single_leg,
+        photonlist_cols=photonlist_cols,
+        post_csp=post_csp,
+        coverage_map=coverage_map
     )
     ctx.watch.start()
     if photometry_only:
@@ -256,11 +329,17 @@ def execute_full_pipeline(ctx):
     if ctx.verbose > 1:
         from gPhoton.aspect import aspect_tables
 
-        metadata = aspect_tables(ctx.eclipse, ("metadata",))[0]
-        actual, nominal = gPhoton.reference.titular_legs(ctx.eclipse)
+        metadata = aspect_tables(
+            eclipse=ctx.eclipse,
+            tables="metadata",
+            aspect_dir=ctx.aspect_dir
+        )[0]
+        actual, nominal = gPhoton.reference.titular_legs(
+            ctx.eclipse, aspect_dir=ctx.aspect_dir
+        )
         headline = (
             f"eclipse {ctx.eclipse} {ctx.band}  -- "
-            f"{metadata['obstype'][0].as_py()}; "
+            f"{metadata['plan_type'][0].as_py()}; "
             f"{actual} leg(s)"
         )
         if actual != nominal:
@@ -285,7 +364,6 @@ def execute_full_pipeline(ctx):
         return "return code: successful (planned stop after photonpipe)"
     ctx.watch.click()
     from gPhoton.parquet_utils import get_parquet_stats
-
     ctx.start_time = get_parquet_stats(photonpaths[0], ['t'])['t']['min']
     leg_paths = []
     for path in photonpaths:
@@ -293,7 +371,8 @@ def execute_full_pipeline(ctx):
         if (p_stats["flags"]["min"] > 6) or (p_stats["ra"]["max"] is None):
             print(f"no unflagged data in {path}, not processing")
             leg_paths.append(False)
-        leg_paths.append(path)
+        else:
+            leg_paths.append(path)
     if all(l is False for l in leg_paths):
         print("no usable legs, bailing out.")
         return "return code: no unflagged data (stopped after photon list)"
@@ -314,10 +393,11 @@ def execute_full_pipeline(ctx):
             print(f"processing leg {leg_step.leg + 1} of {len(photonpaths)}")
         try:
             results = create_images_and_movies(
-                ctx, path, fixed_start_time=fixed_start_time
+                ctx, leg_step.leg, path, fixed_start_time=fixed_start_time
             )
-        except ValueError:
-            print(f"failed to create images and movies for leg {leg_step.leg}")
+        except ValueError as e:
+            print(f"failed to create images and movies for leg {leg_step.leg+1}")
+            print(f"Error: {e}")
             continue
         ctx.watch.click()
         if not (results["status"].startswith("successful")):
@@ -384,8 +464,8 @@ def load_moviemaker_results(context, lil):
         if movie is None:
             print("Photometry-only run, but movie not found. Skipping.")
             return f"leg {context.leg}: movie not found"
-    image_result = unpack_image(image, context.compression)
-    results = {'wcs': image_result['wcs'], 'image_dict': image_result}
+    image_result, coverage_map = unpack_image(image, context.compression)
+    results = {'wcs': image_result['wcs'], 'image_dict': image_result, 'coverage': coverage_map}
     if context.depth is not None:
         # noinspection PyUnboundLocalVariable
         results |= {
@@ -393,6 +473,8 @@ def load_moviemaker_results(context, lil):
         }
     else:
         results['movie_dict'] = {}
+    photon_count = get_photon_counts(context)
+    results['photon_count'] = photon_count
     return results
 
 
@@ -406,6 +488,26 @@ def pick_and_copy_array(context, which="image"):
     print(f"making temp copy of {which} from remote")
     shutil.copy(context(remote=True)[which], context.temp_path())
     return Path(context.temp_path(), Path(context[which]).name)
+
+
+def get_photon_counts(context):
+    if (image_path := Path(context['image'])).exists():
+        try:
+            header = get_fits_header(image_path, ext=1)  # read only header of HDU 1
+            return header.get("PHOTCNT", 0)
+        except Exception as e:
+            print(f"error reading PHOTCNT from {image_path}: {e}")
+            return 0
+    elif (image_path := Path(context(remote=True)['image'])).exists():
+        try:
+            header = get_fits_header(image_path, ext=1)
+            return header.get("PHOTCNT", 0)
+        except Exception as e:
+            print(f"error reading PHOTCNT from {image_path}: {e}")
+            return 0
+    else:
+        print("image file not found, using photon count of 0.")
+        return 0
 
 
 def create_local_paths(context: PipeContext) -> None:
@@ -457,7 +559,7 @@ def check_fixed_start_time(ctx: PipeContext) -> Optional[str]:
     return coreg_exptime["t0"].iloc[0]
 
 
-def load_array_file(array_file, compression):
+def load_array_file(array_file, compression, movie=False):
     import astropy.wcs
     import fitsio
     from gPhoton.io.fits_utils import AgnosticHDUL, pyfits_open_igzip
@@ -465,21 +567,34 @@ def load_array_file(array_file, compression):
         hdul = AgnosticHDUL(pyfits_open_igzip(array_file))
     else:
         hdul = AgnosticHDUL(fitsio.FITS(array_file))
-    cnt_hdu, flag_hdu, edge_hdu = (hdul[i + 1] for i in range(3))
-    headerdict = dict(cnt_hdu.header)
-    tranges = keyfilter(lambda k: re.match(r"T[01]", k), headerdict)
-    tranges = tuple(chunked(tranges.values(), 2))
-    exptimes = tuple(
-        keyfilter(lambda k: re.match(r"EXPT_", k), headerdict).values()
-    )
-    wcs = astropy.wcs.WCS(cnt_hdu.header)
-    results = {"exptimes": exptimes, "tranges": tranges, "wcs": wcs}
-    return (cnt_hdu, edge_hdu, flag_hdu), results
+    if not movie:
+        # dose map is 3rd hdu now for images
+        cnt_hdu, flag_hdu, coverage_hdu = (hdul[i] for i in (1, 2, 4))
+        headerdict = dict(cnt_hdu.header)
+        tranges = keyfilter(lambda k: re.match(r"T[01]", k), headerdict)
+        tranges = tuple(chunked(tranges.values(), 2))
+        exptimes = tuple(
+            keyfilter(lambda k: re.match(r"EXPT_", k), headerdict).values()
+        )
+        wcs = astropy.wcs.WCS(cnt_hdu.header)
+        results = {"exptimes": exptimes, "tranges": tranges, "wcs": wcs}
+        return (cnt_hdu, flag_hdu, coverage_hdu), results
+    else:
+        cnt_hdu, flag_hdu = (hdul[i + 1] for i in range(2))
+        headerdict = dict(cnt_hdu.header)
+        tranges = keyfilter(lambda k: re.match(r"T[01]", k), headerdict)
+        tranges = tuple(chunked(tranges.values(), 2))
+        exptimes = tuple(
+            keyfilter(lambda k: re.match(r"EXPT_", k), headerdict).values()
+        )
+        wcs = astropy.wcs.WCS(cnt_hdu.header)
+        results = {"exptimes": exptimes, "tranges": tranges, "wcs": wcs}
+        return (cnt_hdu, flag_hdu), results
 
 
 def unpack_movie(movie_file, compression, lil):
-    hdus, results = load_array_file(movie_file, compression)
-    planes = ([], [], [])
+    hdus, results = load_array_file(movie_file, compression, True)
+    planes = ([], [])
     if lil is True:
         import scipy.sparse
 
@@ -487,19 +602,21 @@ def unpack_movie(movie_file, compression, lil):
         constructor = scipy.sparse.coo_matrix
     else:
         constructor = identity
+
     for hdu, plane in zip(hdus, planes):
+        array = hdu.data
         for frame_ix in range(len(results['exptimes'])):
-            # deal with array slice difference between fitsio and astropy
-            cut = hdu[frame_ix, :, :]
-            if len(cut.shape) == 3:
-                cut = cut[0]
+            cut = array[frame_ix]
             plane.append(constructor(cut))
-    return results | {"cnt": planes[0], "flag": planes[1], "edge": planes[2]}
+    return results | {"cnt": planes[0], "flag": planes[1]}
 
 
 def unpack_image(image_file, compression):
     hdus, results = load_array_file(image_file, compression)
     planes = {
-        "cnt": hdus[0].data, "flag": hdus[1].data, "edge": hdus[2].data
+        "cnt": hdus[0].data, "flag": hdus[1].data
     }
-    return results | planes
+    coverage_map = hdus[2].data # keep this separate bc it is used
+                                # by both images and movies from
+                                # results dict
+    return results | planes, coverage_map

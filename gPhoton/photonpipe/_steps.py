@@ -30,36 +30,34 @@ from gPhoton.photonpipe._numbafied import (
     sum_corners
 )
 
-# TODO, IMPORTANT: flag 7 is intended to be for gaps >= 2s in aspect_data sol
-#  or actually-bad flags. in post-CSP aspect_data solutions, it's possible that
-#  all data has some flag that we should ignore; examine aspect_data solution for
-#  propagated flag.
-#  flag 12 is intended to be for gaps < 2s in aspect_data sol. we will (eventually)
-#  use 12 in photometry but not 7.
+
 from gPhoton.pretty import print_inline
 from gPhoton.sharing import (
     reference_shared_memory_arrays,
     send_to_shared_memory,
 )
 from gPhoton.types import GalexBand
+from gPhoton.reference import (
+    PIPELINE_VARIABLES,
+    EXTENDED_PIPELINE_VARIABLES,
+    POST_CSP_PIPELINE_VARIABLES,
+    PipeContext
 
-
-# variables actually used later in the pipeline
-PIPELINE_VARIABLES = (
-    "ra", "dec", "t", "detrad", "flags", "response", "mask"
 )
 
 
 def process_chunk_in_unshared_memory(
     aspect,
-    band,
     cal_data,
     chunk,
     chunkid,
     stim_coefficients,
     xoffset,
     yoffset,
-    write_intermediate_variables
+    band,
+    extended_photonlist,
+    post_csp,
+    photonlist_cols
 ):
     chunk = apply_all_corrections(
         aspect,
@@ -72,8 +70,18 @@ def process_chunk_in_unshared_memory(
         yoffset,
     )
     output = chunk | calibrate_photons_inline(band, cal_data, chunk, chunkid)
-    if write_intermediate_variables is not True:
-        output = keyfilter(lambda key: key in PIPELINE_VARIABLES, output)
+    # default make minimum photonlist for image production and flagging
+    # if ctx.extended_photonlist is true, use the extended pipeline variables
+    # as well, enabling more photometry products.
+    # any additional desired columns can be specified by ctx.photonlist_cols.
+    desired_cols = set(PIPELINE_VARIABLES)
+    if extended_photonlist:
+        desired_cols |= set(EXTENDED_PIPELINE_VARIABLES)
+    if post_csp:
+        desired_cols |= {POST_CSP_PIPELINE_VARIABLES}
+    if photonlist_cols is not None:
+        desired_cols |= set(photonlist_cols)
+    output = keyfilter(lambda key: key in desired_cols, output)
     return output
 
 
@@ -101,14 +109,16 @@ def apply_all_corrections(
 
 def process_chunk_in_shared_memory(
     aspect,
-    band,
     cal_block_info,
     block_info,
     chunk_title,
     stim_coefficients,
     xoffset,
     yoffset,
-    write_intermediate_variables
+    band,
+    extended_photonlist,
+    post_csp,
+    photonlist_cols
 ):
     chunk_blocks, chunk = reference_shared_memory_arrays(block_info)
     cal_data = {}
@@ -128,8 +138,18 @@ def process_chunk_in_shared_memory(
         yoffset,
     )
     chunk |= calibrate_photons_inline(band, cal_data, chunk, chunk_title)
-    if write_intermediate_variables is not True:
-        chunk = keyfilter(lambda key: key in PIPELINE_VARIABLES, chunk)
+    # default make minimum photonlist for image production and flagging
+    # if ctx.extended_photonlist is true, use the extended pipeline variables
+    # as well, enabling more photometry products.
+    # any additional desired columns can be specified by ctx.photonlist_cols.
+    desired_cols = set(PIPELINE_VARIABLES)
+    if extended_photonlist:
+        desired_cols |= set(EXTENDED_PIPELINE_VARIABLES)
+    if post_csp:
+        desired_cols |= {POST_CSP_PIPELINE_VARIABLES}
+    if photonlist_cols is not None:
+        desired_cols |= set(photonlist_cols)
+    chunk = keyfilter(lambda key: key in desired_cols, chunk)
     processed_block_info = send_to_shared_memory(chunk)
     for block in chunk_blocks.values():
         block.close()
@@ -198,7 +218,9 @@ def apply_aspect_solution(aspect, chunk, chunkid):
         ok_indices,
     )
     print_inline(chunkid + "Mapping to sky...")
-    ra, dec = np.zeros(chunk["t"].shape), np.zeros(chunk["t"].shape)
+    ra = np.zeros(chunk["t"].shape)
+    dec = np.zeros(chunk["t"].shape)
+    roll = np.zeros(chunk["t"].shape)
     ra[ok_indices], dec[ok_indices] = gnomrev_simple(
         chunk["xi"][ok_indices] + dxi[ok_indices],
         chunk["eta"][ok_indices] + deta[ok_indices],
@@ -209,12 +231,14 @@ def apply_aspect_solution(aspect, chunk, chunkid):
         0.0,
         0.0
     )
+    roll[ok_indices] = -aspect["roll"][aspect_slice]
     null_ix, flags = find_null_indices(
         aspect["flags"], aspect_slice, aspect["time"], flags, ok_indices
     )
     ra[null_ix] = np.nan
     dec[null_ix] = np.nan
-    return {"ra": ra, "dec": dec, "flags": flags}
+    roll[null_ix] = np.nan
+    return {"ra": ra, "dec": dec, "flags": flags, "roll": roll}
 
 
 def apply_on_detector_corrections(
@@ -375,7 +399,7 @@ def perform_spatial_nonlinearity_correction(
     print_inline(chunkid + "Applying spatial non-linearity correction...")
     xp_as = (xdig - walkx) * c.ASPUM
     yp_as = (ydig - walky) * c.ASPUM
-    fptrx = xp_as / 10.0 + 240.0
+    fptrx = xp_as / 10.0 + 240.02
     fptry = yp_as / 10.0 + 240.0
     return fptrx, fptry, xp_as, yp_as
 
@@ -715,30 +739,30 @@ def create_ssd_from_decoded_data(data, band, eclipse, verbose, margin=90.001):
     avt, sep, num = [], [], []
 
     for i in range(0, len(stimt) - pinc, pinc):
-        ix1 = (stimix[i : i + pinc] == 1).nonzero()[0]
-        ix2 = (stimix[i : i + pinc] == 2).nonzero()[0]
-        ix3 = (stimix[i : i + pinc] == 3).nonzero()[0]
-        ix4 = (stimix[i : i + pinc] == 4).nonzero()[0]
+        ix1 = (stimix[i: i + pinc] == 1).nonzero()[0]
+        ix2 = (stimix[i: i + pinc] == 2).nonzero()[0]
+        ix3 = (stimix[i: i + pinc] == 3).nonzero()[0]
+        ix4 = (stimix[i: i + pinc] == 4).nonzero()[0]
         sx1, sy1 = (
-            np.mean(stimx_as[i : i + pinc][ix1]),
-            np.mean(stimy_as[i : i + pinc][ix1]),
+            np.mean(stimx_as[i: i + pinc][ix1]),
+            np.mean(stimy_as[i: i + pinc][ix1]),
         )
         sx2, sy2 = (
-            np.mean(stimx_as[i : i + pinc][ix2]),
-            np.mean(stimy_as[i : i + pinc][ix2]),
+            np.mean(stimx_as[i: i + pinc][ix2]),
+            np.mean(stimy_as[i: i + pinc][ix2]),
         )
         sx3, sy3 = (
-            np.mean(stimx_as[i : i + pinc][ix3]),
-            np.mean(stimy_as[i : i + pinc][ix3]),
+            np.mean(stimx_as[i: i + pinc][ix3]),
+            np.mean(stimy_as[i: i + pinc][ix3]),
         )
         sx4, sy4 = (
-            np.mean(stimx_as[i : i + pinc][ix4]),
-            np.mean(stimy_as[i : i + pinc][ix4]),
+            np.mean(stimx_as[i: i + pinc][ix4]),
+            np.mean(stimy_as[i: i + pinc][ix4]),
         )
         stim_sep = (
             (sx2 - sx1) + (sx4 - sx3) + (sy1 - sy3) + (sy2 - sy4)
         ) / 4.0
-        stim_avt = sum(stimt[i : i + pinc]) / len(stimt[i : i + pinc])
+        stim_avt = sum(stimt[i: i + pinc]) / len(stimt[i: i + pinc])
         stim_num = len(ix1) + len(ix2) + len(ix3) + len(ix4)
         avt.append(stim_avt)
         sep.append(stim_sep)
@@ -793,7 +817,7 @@ def load_cal_data(stims, band, eclipse):
     #  ...actually just document the data flow here better, as best we can,
     #  given our limited knowledge
     print_inline("Loading distortion files...")
-    if eclipse > 37460:
+    if eclipse > 37423:
         stimsep = compute_stimstats_2(stims, band)[-2]
     else:
         stimsep = c.STIMSEP
@@ -821,3 +845,65 @@ def load_cal_data(stims, band, eclipse):
         ]
     )
     return cal_data
+
+
+def flag_ghosts(leg_data):
+    """
+    Flag for ghosts in post-CSP eclipses identified by low YA values.
+    Added photometry of YA values (elsewhere) is a secondary check for
+    ghostliness.
+    """
+    from quickbin import bin2d
+
+    ra, dec, ya, col, row, flags = (
+        leg_data["ra"],
+        leg_data["dec"],
+        leg_data["ya"],
+        leg_data["col"],
+        leg_data["row"],
+        leg_data["flags"],
+    )
+
+    # only use valid photons to bin mean YA value in RA/DEC space
+    valid = (col >= 0) & (col <= 800) & (row >= 0) & (row <= 800)
+    valid &= ~np.isnan(ya) & ~np.isnan(ra) & ~np.isnan(dec)
+    ra_valid, dec_valid, ya_valid = ra[valid], dec[valid], ya[valid]
+    n_bins = 1600
+    binned = bin2d(
+        ra_valid,
+        dec_valid,
+        ya_valid,
+        ('mean', 'count'),
+        n_bins=n_bins
+    )
+
+    # cutoffs for ID as a ghost
+    filtered = (binned['mean'] < 6) & (binned['count'] > 15)
+
+    # bin indices and widths, roughly
+    ra_min, ra_max = ra_valid.min(), ra_valid.max()
+    dec_min, dec_max = dec_valid.min(), dec_valid.max()
+    ra_bin_width = (ra_max - ra_min) / n_bins
+    dec_bin_width = (dec_max - dec_min) / n_bins
+    ra_ix = ((ra - ra_min) / ra_bin_width).astype(int)
+    dec_ix = ((dec - dec_min) / dec_bin_width).astype(int)
+
+    valid_bins = (
+        (ra_ix >= 0) & (ra_ix < n_bins) &
+        (dec_ix >= 0) & (dec_ix < n_bins) &
+        ~np.isnan(ra) & ~np.isnan(dec)
+    )
+
+    ra_ix_valid = ra_ix[valid_bins]
+    dec_ix_valid = dec_ix[valid_bins]
+
+    flag_map = np.zeros((n_bins, n_bins), dtype=bool)
+    flag_map[filtered] = True
+    mask = np.zeros_like(ra, dtype=bool)
+    mask_indices = flag_map[ra_ix_valid, dec_ix_valid]
+    mask[np.flatnonzero(valid_bins)] = mask_indices
+
+    # flag ghosts as 120
+    flags[mask] = 120
+
+    return leg_data

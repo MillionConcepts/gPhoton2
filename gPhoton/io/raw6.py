@@ -2,11 +2,11 @@
 .. module:: raw6
    :synopsis: Methods for reading GALEX L0 telemetry ("raw6") files
 """
-from typing import Optional, Literal, Mapping
+from typing import Optional, Literal, Mapping, cast
 
+import numpy as np
 from astropy.io import fits as pyfits
 import fitsio
-import numpy as np
 
 from gPhoton.calibrate import center_and_scale
 from gPhoton.pretty import print_inline
@@ -30,7 +30,7 @@ def load_raw6(raw6file: Pathlike, verbose: int):
     raw6hdulist = fitsio.FITS(raw6file)
     raw6header = raw6hdulist[0].read_header()
     raw6htab = raw6hdulist[1].read_header()
-    band = "NUV" if raw6header["BAND"] == 1 else "FUV"
+    band: GalexBand = "NUV" if raw6header["BAND"] == 1 else "FUV"
     eclipse = raw6header["ECLIPSE"]
     nphots = raw6htab["NAXIS2"]
     if verbose > 1:
@@ -83,12 +83,13 @@ def unpack_raw6(raw6hdulist: fitsio.FITS) -> dict[
     photonbytes_as_short = table_data[photonbyte_cols].astype(
         [(col, np.int16) for col in photonbyte_cols]
     )
-    photonbytes = {}
+    # mypy can't see that `for byte in range(5)` returns values that
+    # satisfy the Literal spec on the return value
+    photonbytes: dict[str | int, np.ndarray] = {}
     for byte in range(5):
         photonbytes[byte + 1] = photonbytes_as_short[photonbyte_cols[byte]]
     photonbytes["t"] = table_data["t"]
-    # noinspection PyTypeChecker
-    return photonbytes
+    return cast(dict[Literal["t", 1, 2, 3, 4, 5], np.ndarray], photonbytes)
 
 
 def bitwise_decode_photonbytes(
@@ -100,24 +101,24 @@ def bitwise_decode_photonbytes(
     this function 'decodes' these packed bytes into physically meaningful
     values.
     """
-    data = {"t": photonbytes["t"]}
-    data["xb"] = photonbytes[1] >> 5
-    data["xamc"] = (
-        np.array(((photonbytes[1] & 31) << 7), dtype="int16")
-        + np.array(((photonbytes[2] & 254) >> 1), dtype="int16")
-        - np.array(((photonbytes[1] & 16) << 8), dtype="int16")
-    )
-    data["yb"] = ((photonbytes[2] & 1) << 2) + ((photonbytes[3] & 192) >> 6)
-    data["yamc"] = (
-        np.array(((photonbytes[3] & 63) << 6), dtype="int16")
-        + np.array(((photonbytes[4] & 252) >> 2), dtype="int16")
-        - np.array(((photonbytes[3] & 32) << 7), dtype="int16")
-    )
-    data["q"] = ((photonbytes[4] & 3) << 3) + ((photonbytes[5] & 224) >> 5)
-    data["xa"] = (
-        ((photonbytes[5] & 16) >> 4)
-        + ((photonbytes[5] & 3) << 3)
-        + ((photonbytes[5] & 12) >> 1)
-    )
-    # noinspection PyTypeChecker
-    return data
+    return {
+        "t": photonbytes["t"],
+        "xb": photonbytes[1] >> 5,
+        "xamc": (
+            np.array(((photonbytes[1] & 31) << 7), dtype="int16")
+            + np.array(((photonbytes[2] & 254) >> 1), dtype="int16")
+            - np.array(((photonbytes[1] & 16) << 8), dtype="int16")
+        ),
+        "yb": ((photonbytes[2] & 1) << 2) + ((photonbytes[3] & 192) >> 6),
+        "yamc": (
+            np.array(((photonbytes[3] & 63) << 6), dtype="int16")
+            + np.array(((photonbytes[4] & 252) >> 2), dtype="int16")
+            - np.array(((photonbytes[3] & 32) << 7), dtype="int16")
+        ),
+        "q": ((photonbytes[4] & 3) << 3) + ((photonbytes[5] & 224) >> 5),
+        "xa": (
+            ((photonbytes[5] & 16) >> 4)
+            + ((photonbytes[5] & 3) << 3)
+            + ((photonbytes[5] & 12) >> 1)
+        )
+    }

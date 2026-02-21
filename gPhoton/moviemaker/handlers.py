@@ -1,7 +1,7 @@
 """top-level handler module for gPhoton.moviemaker"""
 
 from multiprocessing import Pool
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 from dustgoggles.structures import NestingDict
 from more_itertools import windowed
@@ -13,8 +13,11 @@ from gPhoton.moviemaker._steps import (
     sm_compute_movie_frame,
     unshared_compute_exptime,
     make_frame,
+    make_dose_frame,
+    make_mask_frame,
     write_fits_array,
     prep_image_inputs,
+    make_coverage_backplane
 )
 from gPhoton.reference import PipeContext
 from gPhoton.types import Pathlike
@@ -26,12 +29,12 @@ def make_movies(
     map_ix_dict: dict,
     total_trange: tuple[int, int],
     imsz: tuple[int, int],
-    fixed_start_time: Optional[float] = None,
+    fixed_start_time: Optional[int] = None,
 ) -> tuple[str, dict]:
     """
     :param ctx: PipeContext options handler
     :param exposure_array: t and flags, _including_ off-detector, for exptime
-    :param map_ix_dict: cnt, edge, and mask indices for weights, t, and foc
+    :param map_ix_dict: cnt and mask indices for weights, t, and foc
     :param total_trange: (time minimum, time maximum) for on-detector events
     :param imsz: size of each frame, as given by upstream WCS object
     :param fixed_start_time: externally-defined time for start of first frame,
@@ -39,6 +42,7 @@ def make_movies(
     """
     if fixed_start_time is not None:
         total_trange = (fixed_start_time, total_trange[1])
+    assert ctx.depth is not None
     t0s = np.arange(total_trange[0], total_trange[1] + ctx.depth, ctx.depth)
     tranges = list(windowed(t0s, 2))
     # TODO, maybe: at very short depths, slicing arrays into memory becomes a
@@ -48,7 +52,6 @@ def make_movies(
     #  needed _is_ an option if rigorous thread safety is practiced, although
     #  this will significantly increase the memory pressure of this portion
     #  of the execute_pipeline.
-    print("slicing exposure array into memory")
     exposure_directory = slice_exposure_into_memory(exposure_array, tranges)
     del exposure_array
     map_directory = NestingDict()
@@ -56,10 +59,6 @@ def make_movies(
         for frame_ix, trange in enumerate(tranges):
             # 0-count exposure times have 'None' entries assigned in
             # slice_exposure_into_memory
-            print(
-                f"slicing {map_name} data {frame_ix + 1} of {len(tranges)} "
-                f"into memory"
-            )
             map_directory[frame_ix][map_name] = slice_frame_into_memory(
                 exposure_directory, map_ix_dict, map_name, frame_ix, trange
             )
@@ -92,10 +91,10 @@ def make_movies(
         pool.join()
         results = {task: result.get() for task, result in results.items()}
     frame_indices = sorted(results.keys())
-    movies = {"cnt": [], "flag": [], "edge": []}
+    movies: dict[str, list[Any]] = {"cnt": [], "flag": []}
     exptimes = []
     for frame_ix in frame_indices:
-        for map_name in ("cnt", "flag", "edge"):
+        for map_name in ("cnt", "flag"):
             movies[map_name].append(results[frame_ix][map_name])
         exptimes.append(results[frame_ix]["exptime"])
         del results[frame_ix]
@@ -106,51 +105,133 @@ def make_movies(
 
 
 def make_full_depth_image(
-    exposure_array, map_ix_dict, total_trange, imsz, band="NUV"
-) -> tuple[str, dict]:
-    # TODO: this weird arithmetic cartwheel doesn't seem _wrong_, but it can't
-    #  be _necessary_, right?
+    ctx, exposure_array, map_ix_dict, total_trange, imsz, band="NUV",
+):  # -> tuple[str, dict]:  we're not ready to typecheck this function yet
     interval = total_trange[1] - total_trange[0]
     trange = np.arange(total_trange[0], total_trange[1] + interval, interval)
     exptime = unshared_compute_exptime(exposure_array, band, trange)
     output_dict = {"tranges": [trange], "exptimes": [exptime]}
-    for map_name in ("cnt", "flag", "edge"):
-        output_dict[map_name] = make_frame(
-            map_ix_dict[map_name]["foc"],
-            map_ix_dict[map_name]["weights"],
-            imsz,
-            booleanize=map_name in ("flag", "edge"),
+    print("making count image frame")
+    output_dict["cnt"] = make_frame(
+            map_ix_dict["cnt"]["foc"],
+            map_ix_dict["cnt"]["weights"],
+            "sum",
+            imsz
+    )
+    print("making artifact mask image frame")
+    output_dict["flag"] = make_mask_frame(
+            map_ix_dict['flag']["foc"],
+            map_ix_dict['flag']["weights"],
+            imsz
+    )
+    print("making dose map image frame")
+    output_dict["dose"] = make_dose_frame(
+            map_ix_dict['cnt']["col_weights"],
+            map_ix_dict['cnt']["row_weights"],
+    )
+    # we only need the following images if photometry is being run,
+    # so we bail out if we stop at moviemaker.
+    if ctx.stop_after == "moviemaker":
+        return "successfully made image", output_dict
+    # these extra images are only possible if ctx.extended_photonlist is true
+    # OR you happened to define all these columns in ctx.photonlist_cols,
+    # but why would you do that and not just set extended_photonlist to true?
+    if ctx.extended_photonlist:
+        print("making row std image frame")
+        output_dict["row"] = make_frame(
+                map_ix_dict["cnt"]["foc"],
+                map_ix_dict["cnt"]["row_weights"],
+                "std",
+                imsz
+        )
+        print("making mean row image frame")
+        output_dict["row_mean"] = make_frame(
+                map_ix_dict["cnt"]["foc"],
+                map_ix_dict["cnt"]["row_weights"],
+                "mean",
+                imsz
+        )
+        print("making col std image frame")
+        output_dict["col"] = make_frame(
+                map_ix_dict["cnt"]["foc"],
+                map_ix_dict["cnt"]["col_weights"],
+                "std",
+                imsz
+        )
+        print("making mean col image frame")
+        output_dict["col_mean"] = make_frame(
+                map_ix_dict["cnt"]["foc"],
+                map_ix_dict["cnt"]["col_weights"],
+                "mean",
+                imsz
+        )
+        print("making mean ya image frame")
+        output_dict["ya"] = make_frame(
+                map_ix_dict["cnt"]["foc"],
+                map_ix_dict["cnt"]["ya_weights"],
+                "mean",
+                imsz
+        )
+        print("making mean Q image frame")
+        output_dict["q"] = make_frame(
+                map_ix_dict["cnt"]["foc"],
+                map_ix_dict["cnt"]["q_weights"],
+                "mean",
+                imsz
         )
     return "successfully made image", output_dict
 
 
 def write_moviemaker_results(results, ctx):
     if ctx.write["image"] and (results["image_dict"] != {}):
-        write_fits_array(ctx, results["image_dict"], results["wcs"], False)
+        write_fits_array(
+            ctx,
+            results["image_dict"],
+            results["coverage"],
+            results["wcs"],
+            results["photon_count"],
+            results["coverage_areas"],
+            False)
     del results["image_dict"]
     ctx.watch.click()
     if ctx.write["movie"] and (results["movie_dict"] != {}):
-        write_fits_array(ctx, results["movie_dict"], results["wcs"])
+        write_fits_array(
+            ctx,
+            results["movie_dict"],
+            results["coverage"],
+            results["wcs"],
+            results["photon_count"],
+            is_movie=True)
         ctx.watch.click()
     return "successful"
 
 
 def create_images_and_movies(
     ctx: PipeContext,
+    leg: int,
     photonfile: Pathlike,
-    fixed_start_time: Optional[int] = None,
-    edge_threshold: int = 350,
+    fixed_start_time: Optional[int] = None
 ) -> Union[dict, str]:
     print(f"making images from {photonfile}")
     print("indexing data and making WCS solution")
-    movie_dict, image_dict, status = {}, {}, "started"
-    exposure_array, map_ix_dict, total_trange, wcs = prep_image_inputs(
-        photonfile, edge_threshold
+    movie_dict = {}
+    status = "started"
+    exposure_array, map_ix_dict, total_trange, wcs, photons = prep_image_inputs(
+        photonfile,
+        ctx
     )
     imsz = (
         int((wcs.wcs.crpix[1] - 0.5) * 2), int((wcs.wcs.crpix[0] - 0.5) * 2)
     )
-    print(f"image size: {imsz}")
+
+    # to check that the dimensions of the image are at least 1x1
+    # for images where everything is flagged it could get to this point
+    # and the imsz is 0,0 and image making returns []. could maybe be a better
+    # fix catching this earlier in the pipeline maybe?
+    if sum(imsz) <= 1:
+        raise ValueError("image size is less than 1x1, "
+                         "photonlist is likely all flagged.")
+
     render_kwargs = {
         "exposure_array": exposure_array,
         "map_ix_dict": map_ix_dict,
@@ -159,7 +240,27 @@ def create_images_and_movies(
     }
     print(f"making full-depth image")
     # don't be careful about memory wrt sparsification, just go for it
-    status, image_dict = make_full_depth_image(**render_kwargs)
+    # makes cnt, flag, ya, col, row, dose, q map frames
+    # only cnt, flag, dose and coverage (made later) are eventually output,
+    # so only they are generated if the pipeline stops at moviemaker.
+    status, image_dict = make_full_depth_image(ctx, **render_kwargs)
+
+    # load exposure backplane info from precomputed table
+    # of shapely polygon vertices. no longer saved in the
+    # image dict, it is its own "results" dict entry
+    # as it is used in both images and movies.
+    if ctx.coverage_map:
+        coverage_map, ring_area, full_area = make_coverage_backplane(
+            wcs,
+            imsz,
+            ctx.eclipse,
+            leg,
+            ctx.aspect_dir,
+        )
+    else:
+        ring_area, full_area = 0, 0
+        coverage_map = np.zeros(imsz, dtype=np.uint8)
+
     if (
         (ctx.min_exptime is not None)
         and (image_dict["exptimes"][0] < ctx.min_exptime)
@@ -168,6 +269,9 @@ def create_images_and_movies(
             "wcs": wcs,
             "movie_dict": {},
             "image_dict": image_dict,
+            "coverage": coverage_map,
+            "photon_count": photons,
+            "coverage_areas": (ring_area, full_area),
             "status": (
                 f"exptime {round(image_dict['exptimes'][0])} "
                 f"< min_exptime {ctx.min_exptime}"
@@ -182,5 +286,8 @@ def create_images_and_movies(
         "wcs": wcs,
         "movie_dict": movie_dict,
         "image_dict": image_dict,
+        "coverage": coverage_map,
+        "photon_count": photons,
+        "coverage_areas": (ring_area, full_area),
         "status": status,
     }

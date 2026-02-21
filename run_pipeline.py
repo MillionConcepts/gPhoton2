@@ -2,33 +2,35 @@ from gPhoton.pipeline import execute_pipeline
 
 if __name__ == "__main__":
     execute_pipeline(
-        580,
+        26047,
         "NUV",
-        depth=120,
+        depth=100,
         # integer; None to deactivate (default None)
-        threads=4,
+        threads=3,
         # where to both write output data and look for input data
-        local_root="test_data",
+        local_root="",
         # auxiliary remote location for input data
         # remote_root="/mnt/s3",
         recreate=True,
+        #source_catalog_file="",
         # list of floats; relevant only to lightcurve / photometry portion
         aperture_sizes=[12.8],
         # actually write image/movie products? otherwise hold in memory but
         # discard (possibly after performing photometry).
-        write={"movie": False, "image": False},
+        write={"movie": True, "image": True},
         coregister_lightcurves=False,
         # photonpipe, moviemaker, None (default None)
-        stop_after='photonpipe',
+        stop_after=None,
         photometry_only=False,
-        # None, "gzip", "rice"
+        # "none", "gzip", "rice"
         compression="rice",
         # use array sparsification on movie frames?
         lil=True,
         # write movie frames as separate files
         burst=False,
         extended_photonlist=True,
-        # aspect file, don't need to set unless need to use alt
-        # file, 'aspect2.parquet'
-        aspect="aspect2"
+        extended_flagging=True,
+        verbose=4,
+        #single_leg=1,
+        #photonlist_cols=
     )
