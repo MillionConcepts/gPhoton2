@@ -2,13 +2,13 @@ from gPhoton.pipeline import execute_pipeline
 
 if __name__ == "__main__":
     execute_pipeline(
-        26047,
+        23456,
         "NUV",
-        depth=100,
+        depth=600,
         # integer; None to deactivate (default None)
         threads=3,
         # where to both write output data and look for input data
-        local_root="",
+        #local_root=,
         # auxiliary remote location for input data
         # remote_root="/mnt/s3",
         recreate=True,
@@ -29,7 +29,7 @@ if __name__ == "__main__":
         # write movie frames as separate files
         burst=False,
         extended_photonlist=True,
-        extended_flagging=True,
+        extended_flagging=False,
         verbose=4,
         #single_leg=1,
         #photonlist_cols=
