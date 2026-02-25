@@ -13,7 +13,7 @@ import pandas as pd
 from astropy.coordinates import angular_separation
 from pyarrow import parquet
 
-from gPhoton.aspect import aspect_tables
+from gPhoton.aspect import aspect_tables, DEFAULT_ASPECT_DIR
 
 
 # parquet filters implementing canonical definitions for specific eclipse types
@@ -72,14 +72,14 @@ def galex_cone_search(ra: float, dec: float, arcseconds=2250, legs=False,
     the min/max RA/Dec of the boresight during the eclipse, and the FUV detector
     temperature (used in calibration).
     """
-    bore = aspect_tables(
-        eclipse=None, filters=None, aspect_dir=aspect_dir,
-        tables="boresight", columns=['eclipse', 'ra0', 'dec0']
-    )[0].to_pandas()
-    meta = aspect_tables(
-        eclipse=None, filters=None, aspect_dir=aspect_dir,
-        tables="metadata"
-    )[0].to_pandas()
+    _aspect_dir = Path(aspect_dir) if aspect_dir is not None else Path(DEFAULT_ASPECT_DIR)
+    bore = parquet.read_table(
+        _aspect_dir / "boresight.parquet",
+        columns=['eclipse', 'ra0', 'dec0']
+    ).to_pandas()
+    meta = parquet.read_table(
+        _aspect_dir / "metadata.parquet"
+    ).to_pandas()
 
     offsets = angular_separation(
         *tuple(map(np.deg2rad, (bore['ra0'], bore['dec0'], ra, dec)))
