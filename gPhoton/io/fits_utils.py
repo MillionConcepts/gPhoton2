@@ -224,16 +224,25 @@ def first_fits_header(path: Pathlike, header_records: int = 1):
         return astropy.io.fits.open(head)[0].header
 
 
-def read_wcs_from_fits(*fits_paths: Pathlike) -> tuple[
+def read_wcs_from_fits(*fits_paths: Pathlike, hdu: int = 0) -> tuple[
     Sequence[astropy.io.fits.header.Header], Sequence[astropy.wcs.WCS]
 ]:
     """
     Construct a WCS object for each FITS file in fits_paths.
 
-    TODO: This function is obsolete and must be rewritten to handle RICE
-     compression.
+    :param fits_paths: Paths to FITS files.
+    :param hdu: HDU number to extract WCS from (0=Primary, 1=First Extension, etc).
+    
+    :returns: Tuple of (headers, wcs_objects) from the specified HDU.
     """
-    headers = [first_fits_header(path) for path in fits_paths]
-    systems = [astropy.wcs.WCS(header) for header in headers]
+    headers = []
+    systems = []
+    
+    for path in fits_paths:
+        with astropy.io.fits.open(path) as hdul:
+            header = hdul[hdu].header
+            headers.append(header)
+            systems.append(astropy.wcs.WCS(header))
+    
     return headers, systems
 
