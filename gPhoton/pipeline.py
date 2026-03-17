@@ -540,7 +540,9 @@ def check_fixed_start_time(ctx: PipeContext) -> Optional[str]:
     other = "NUV" if ctx.band == "FUV" else "FUV"
     expfile = None
     for root in filter(None, (ctx.remote, ctx.local)):
-        exp_fn = ctx(root=root, band=other)["expfile"]
+        # we got rid of exp time files and now just store them in the
+        # photometry file as t0_0 etc
+        exp_fn = ctx(root=root, band=other)["photomfile"]
         if Path(exp_fn).exists():
             expfile = exp_fn
             break
@@ -555,8 +557,20 @@ def check_fixed_start_time(ctx: PipeContext) -> Optional[str]:
     print(f"pinning first bin to first bin from {expfile}")
     # these files are small enough that we do not need to bother scratching
     # them to disk, even from a remote / fake filesystem
-    coreg_exptime = pd.read_csv(expfile)
-    return coreg_exptime["t0"].iloc[0]
+    if ctx.ftype == "csv":
+        # change this to something more efficient since it's now photom table?
+        coreg_exptime = pd.read_csv(expfile)
+    elif ctx.ftype == "parquet":
+        import pyarrow.parquet as pq
+        coreg_exptime = pq.read_table(expfile, columns=['t0_0',]).to_pandas()
+    else:
+        print(
+            f"Cross-band frame coregistration requested, but exposure "
+            f"time table at this depth for {other} was not found."
+        )
+        return None
+
+    return coreg_exptime["t0_0"].iloc[0]
 
 
 def load_array_file(array_file, compression, movie=False):
