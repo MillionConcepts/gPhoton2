@@ -275,9 +275,7 @@ def get_point_sources(
     # documentation
     columns = ['label', 'xcentroid', 'ycentroid', 'area', 'segment_flux',
                'elongation', 'eccentricity', 'equivalent_radius',
-               'orientation', 'max_value', 'maxval_xindex', 'maxval_yindex',
-               'min_value', 'minval_xindex', 'minval_yindex', 'bbox_xmin',
-               'bbox_xmax', 'bbox_ymin', 'bbox_ymax']
+               'orientation', 'max_value', 'min_value']
 
     # if 0 sources are found, the segment map will be None and deblending
     # will return an error
@@ -303,8 +301,17 @@ def get_point_sources(
         outline_seg_map = np.zeros_like(segment_map)
     del segment_map
 
-    seg_sources.astype({'label': 'int32'})
-    seg_sources = seg_sources.set_index("label", drop=True)
+    seg_sources = seg_sources.astype({
+        'label': 'int32',
+        'area': 'float32',
+        'segment_flux': 'float32',
+        'elongation': 'float32',
+        'eccentricity': 'float32',
+        'equivalent_radius': 'float32',
+        'orientation': 'float32',
+        'max_value': 'float32',
+        'min_value': 'float32',
+    }).set_index("label", drop=True)
     # removed so labels align with outline_seg_map
     # .dropna(axis=0, how='any')
 

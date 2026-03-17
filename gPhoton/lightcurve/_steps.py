@@ -49,16 +49,19 @@ def count_full_depth_image(
     positions = source_table[["xcentroid", "ycentroid"]].to_numpy()
     apertures = CircularAperture(positions, r=aperture_size)
 
-    # run photometry on count & flag images, this is run for all run types
-    phot_table = aperture_photometry(
+    # run photometry on count images, this is run for all run types
+    cnt_result = aperture_photometry(
         image_dict["cnt"],
         apertures,
-        method='exact'
-    ).to_pandas()
-    source_table = pd.concat(
-        [source_table, phot_table[["xcenter", "ycenter", "aperture_sum"]]],
-        axis=1,
+        method='exact',
     )
+    source_table["xcenter"] = cnt_result["xcenter"].data
+    source_table["ycenter"] = cnt_result["ycenter"].data
+    source_table["aperture_sum"] = cnt_result["aperture_sum"].data.astype("float32")
+    del cnt_result
+    gc.collect()
+
+    # flag aperture photometry, all run types
     source_table["artifact_flag"] = bitwise_aperture_photometry(
         image_dict["flag"],
         apertures
@@ -68,99 +71,78 @@ def count_full_depth_image(
     # run this on images that don't exist! these also don't exist for
     # photometry only runs bc they are not written
     if not ctx.photometry_only and ctx.extended_photonlist:
+        # DOSE COL / ROW
         # pull mean col and row values to get average location on detector
         # obviously the accuracy varies depending on the dither pattern &
         # aspect solution quality.
         x = np.rint(positions[:, 0]).astype(int)
         y = np.rint(positions[:, 1]).astype(int)
-        col_vals = image_dict["col_mean"][y, x]
-        row_vals = image_dict["row_mean"][y, x]
-        source_table["dose_col"] = col_vals * 4.0  # x4 to match dose image
-        source_table["dose_row"] = row_vals * 4.0  # x4 to match dose image
-        del x, y, col_vals, row_vals
+        source_table["dose_col"] = (image_dict["col_mean"][y, x] * 4.0).astype("float32")
+        source_table["dose_row"] = (image_dict["row_mean"][y, x] * 4.0).astype("float32")
+        del x, y
         gc.collect()
 
-        # aperture photometry of YA value, primarily for ghosts in post-CSP
-        ya_apers = apertures.area_overlap(
-            image_dict["ya"],
-            mask=np.isnan(image_dict["ya"]),
-            method="exact",
-        )
-        ya_phot_table = aperture_photometry(
+        # YA
+        ya_mask = np.isnan(image_dict["ya"])
+        ya_apers = apertures.area_overlap(image_dict["ya"],
+                                          mask=ya_mask,
+                                          method="exact")
+        ya_result = aperture_photometry(
             image_dict["ya"],
             apertures,
-            mask=np.isnan(image_dict["ya"]),
+            mask=ya_mask,
             method="exact",
-        ).to_pandas()
-        ya_phot_table = ya_phot_table.rename(
-            columns={"aperture_sum": "ya_aperture_sum"}
         )
-        source_table = pd.concat(
-            [source_table, ya_phot_table[["ya_aperture_sum"]]],
-            axis=1,
-        )
-        source_table["ya_aperture_sum"] /= ya_apers
-        del ya_apers
+        del ya_mask
+        source_table["ya_aperture_sum"] = (
+            ya_result["aperture_sum"].data / ya_apers
+        ).astype("float32")
+        del ya_apers, ya_result
         gc.collect()
 
-        # col / row dispersion aperture photometry
-        colrow_sum = image_dict["col"] + image_dict["row"]
-        disp_apers = apertures.area_overlap(
-            colrow_sum,
-            mask=np.isnan(colrow_sum),
-            method="exact",
-        )
-        stdcolrow_phot_table = aperture_photometry(
+        # col+row dispersion (masked)
+        colrow_sum = np.empty_like(image_dict["col"])
+        np.add(image_dict["col"], image_dict["row"], out=colrow_sum)
+        colrow_mask = np.isnan(colrow_sum)
+        disp_apers = apertures.area_overlap(colrow_sum, mask=colrow_mask,
+                                            method="exact")
+        disp_result = aperture_photometry(
             colrow_sum,
             apertures,
-            mask=np.isnan(colrow_sum),
+            mask=colrow_mask,
             method="exact",
-        ).to_pandas()
-        stdcolrow_phot_table = stdcolrow_phot_table.rename(
-            columns={"aperture_sum": "stdcolrow_aperture_sum"}
         )
-        source_table = pd.concat(
-            [source_table, stdcolrow_phot_table[["stdcolrow_aperture_sum"]]],
-            axis=1,
-        )
-        source_table["stdcolrow_aperture_sum"] /= disp_apers
-        del disp_apers
+        del colrow_sum, colrow_mask
+        source_table["stdcolrow_aperture_sum"] = (
+            disp_result["aperture_sum"].data / disp_apers
+        ).astype("float32")
+        del disp_apers, disp_result
         gc.collect()
 
-        # Q (pulse height) aperture photometry
-        q_apers = apertures.area_overlap(
-            image_dict["q"],
-            mask=np.isnan(image_dict["q"]),
-            method="exact",
-        )
-        q_phot_table = aperture_photometry(
+        # Q / pulse height (masked)
+        q_mask = np.isnan(image_dict["q"])
+        q_apers = apertures.area_overlap(image_dict["q"], mask=q_mask,
+                                         method="exact")
+        q_result = aperture_photometry(
             image_dict["q"],
             apertures,
-            mask=np.isnan(image_dict["q"]),
+            mask=q_mask,
             method="exact",
-        ).to_pandas()
-        q_phot_table = q_phot_table.rename(
-            columns={"aperture_sum": "q_aperture_sum"}
         )
-
-        source_table = pd.concat(
-            [source_table, q_phot_table[["q_aperture_sum"]]],
-            axis=1,
-        )
-        source_table["q_aperture_sum"] /= q_apers
-        del q_apers
+        del q_mask
+        source_table["q_aperture_sum"] = (
+            q_result["aperture_sum"].data / q_apers
+        ).astype("float32")
+        del q_apers, q_result
         gc.collect()
 
-    # TODO: this isn't necessary for specified catalog positions. but
-    #  should we do a sanity check?
+    #  TODO: this isn't necessary for specified catalog positions. but
+    #   should we do a sanity check?
     if "ra" not in source_table.columns:
-        world = system.wcs_pix2world(
-            apertures.positions,
-            1,
-            ra_dec_order=True
-        )
+        world = system.wcs_pix2world(apertures.positions, 1, ra_dec_order=True)
         source_table["ra"] = world[:, 0]
         source_table["dec"] = world[:, 1]
+
     return source_table, apertures
 
 
@@ -201,7 +183,7 @@ def extract_frame(frame, apertures, key):
         frame = frame.toarray()
     if key == "flag":
         return bitwise_aperture_photometry(frame, apertures)
-    return aperture_photometry(frame, apertures)["aperture_sum"].data
+    return aperture_photometry(frame, apertures)["aperture_sum"].data.astype("float32")
 
 
 def _extract_photometry_unthreaded(movie, apertures, key):
