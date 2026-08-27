@@ -142,8 +142,7 @@ array sparsity.
 
 ### dependencies
 
-gPhoton 2 requires Python 3.9 or 3.10. 3.10 is recommended. (3.11 support 
-pends upstream changes in `numba` and is anticipated sometime in Q1 2023.)
+gPhoton2 requires Python>=3.10.
 
 It also depends on the following Python libraries:
 * astropy
