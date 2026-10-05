@@ -170,10 +170,16 @@ def aspect_ecl(eclipse):
 
 
 def retrieve_scstfile(
-    eclipse: int, outbase: Pathlike = ".", verbose: int = 0
+    eclipse: int,
+    outbase: Pathlike = ".",
+    verbose: int = 0,
+    aspect_dir: None | str | Path = None,
 ) -> Path:
     """retrieve SCST (aspect) file from MAST. Not currently in use."""
-    scstfile = download_data(eclipse, "scst", datadir=outbase, verbose=verbose)
+    scstfile = download_data(
+        eclipse, "scst", datadir=outbase, verbose=verbose,
+        aspect_dir=aspect_dir,
+    )
     if scstfile is None:
         raise ValueError("Unable to retrieve SCST file for this eclipse.")
     return scstfile

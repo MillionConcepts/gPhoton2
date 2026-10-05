@@ -57,7 +57,9 @@ def execute_photonpipe(ctx: PipeContext, raw6file: Optional[Pathlike] = None):
     # download raw6 if local file is not passed
     if raw6file is None:
         print_inline(f"Downloading raw6file")
-        raw6file = retrieve_raw6(ctx.eclipse, ctx.band, ctx.eclipse_path())
+        raw6file = retrieve_raw6(
+            ctx.eclipse, ctx.band, ctx.eclipse_path(), aspect_dir=ctx.aspect_dir
+        )
     # get / check eclipse # from raw6 header --
     eclipse = get_eclipse_from_header(raw6file, ctx.eclipse)
     print_inline(f"Processing eclipse {eclipse}")

@@ -258,13 +258,13 @@ def get_point_sources(
     convolved_data = convolve(cnt_image, kernel)
     convolved_mask = convolve(f_e_mask, kernel)
 
-    # changing "npixels" in detect sources to <4 ID's more small sources
+    # changing "n_pixels" in detect sources to <4 ID's more small sources
     # but also more spurious looking ones..
     print_inline("Segmenting and deblending point sources.")
     segment_map = detect_sources(
         convolved_data,
         threshold,
-        npixels=2,
+        n_pixels=2,
         connectivity=4,
         mask=convolved_mask
     )
@@ -273,10 +273,10 @@ def get_point_sources(
 
     # can add more columns w/ outputs listed in photutils image seg
     # documentation
-    columns = ['label', 'xcentroid', 'ycentroid', 'area', 'segment_flux',
+    columns = ['label', 'x_centroid', 'y_centroid', 'area', 'segment_flux',
                'elongation', 'eccentricity', 'equivalent_radius',
-               'orientation', 'max_value', 'maxval_xindex', 'maxval_yindex',
-               'min_value', 'minval_xindex', 'minval_yindex', 'bbox_xmin',
+               'orientation', 'max_value', 'max_value_xindex', 'max_value_yindex',
+               'min_value', 'min_value_xindex', 'min_value_yindex', 'bbox_xmin',
                'bbox_xmax', 'bbox_ymin', 'bbox_ymax']
 
     # if 0 sources are found, the segment map will be None and deblending
@@ -284,13 +284,13 @@ def get_point_sources(
     if segment_map is not None:
         deblended_segment_map = deblend_sources(convolved_data,
                                                 segment_map,
-                                                npixels=3,
-                                                nlevels=60,
+                                                n_pixels=3,
+                                                n_levels=60,
                                                 contrast=0.001,
                                                 mode='exponential',
                                                 progress_bar=False)
         # 0.004, contrast, then .003 (happy with this)
-        # npixels was 8, mode was linear, nlevels was 20
+        # n_pixels was 8, mode was linear, n_levels was 20
         outline_seg_map = outline_segments(deblended_segment_map)
         seg_sources = SourceCatalog(
             cnt_image,

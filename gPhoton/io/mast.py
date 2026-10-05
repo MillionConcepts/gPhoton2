@@ -2,9 +2,10 @@
 .. module:: mast
    :synopsis: Methods for retrieving GALEX files from MAST. Aspect solution
        retrieval is largely deprecated by consolidated aspect tables, but raw6
-       (L0 telemetry) retrieval is not. Most methods of this module operate
-       via live queries to MAST resources and therefore require internet
-       access.
+       (L0 telemetry) retrieval is not. raw6 / scst download URLs are looked
+       up in the local raw_data_urls aspect table; most other methods of this
+       module operate via live queries to MAST resources and therefore
+       require internet access.
 """
 # NOTE: contains some functions previously -- and perhaps one day again! --
 # housed in FileUtils & GQuery. Some related but conditionally-deprecated
@@ -18,6 +19,7 @@ from typing import Optional, Literal
 import requests
 
 from gPhoton import TIME_ID
+from gPhoton.aspect import aspect_tables
 from gPhoton.io.netutils import chunked_download
 from gPhoton.pretty import print_inline
 from gPhoton.types import GalexBand, Pathlike
@@ -49,24 +51,28 @@ def truncate(n: float):
     return str(n * TSCALE).split(".")[0]
 
 
-def get_raw_paths(eclipse: int, verbose: int = 0) -> dict[str, Optional[str]]:
+def get_raw_paths(
+    eclipse: int,
+    verbose: int = 0,
+    aspect_dir: None | str | Path = None,
+) -> dict[str, Optional[str]]:
     """
-    query MAST for URLs to the NUV and FUV raw6 (L0 telemetry) and scst
-    (aspect solution) files associated with a particular eclipse.
+    look up MAST URLs to the NUV and FUV raw6 (L0 telemetry) and scst
+    (aspect solution) files associated with a particular eclipse in the
+    raw_data_urls table in aspect_dir (default: DEFAULT_ASPECT_DIR).
     """
-    url = raw_data_paths(eclipse)
     if verbose > 1:
-        print(url)
-    response = manage_networked_sql_request(url)
-    if response is None:
-        raise RuntimeError(f"gave up trying to retrieve {url}")
+        print(f"looking up raw data URLs for eclipse {eclipse}")
+    tbl = aspect_tables(
+        eclipse=eclipse, tables="raw_data_urls", aspect_dir=aspect_dir
+    )[0]
     out: dict[str, Optional[str]] = {"NUV": None, "FUV": None, "scst": None}
-    for f in response.json()["data"]["Tables"][0]["Rows"]:
-        band = f[1].strip()
+    for band, url in zip(tbl["band"].to_pylist(), tbl["URL"].to_pylist()):
+        band = band.strip()
         if band in ("NUV", "FUV", "scst"):
-            out[band] = f[2]
+            out[band] = url
         elif band == "BOTH":  # misnamed scst path
-            out["scst"] = f[2]
+            out["scst"] = url
         else:
             if verbose > 1:
                 print(f"ignoring unrecognized band {band}")
@@ -79,12 +85,13 @@ def download_data(
     band: Optional[GalexBand] = None,
     datadir: Pathlike = ".",
     verbose: int = 0,
+    aspect_dir: None | str | Path = None,
 ) -> Path | None:
     """
     download a raw6 (L0 telemetry) or scst (aspect solution) file for a given
     eclipse from MAST to datadir.
     """
-    urls = get_raw_paths(eclipse, verbose=verbose)
+    urls = get_raw_paths(eclipse, verbose=verbose, aspect_dir=aspect_dir)
     if ftype == "raw6":
         if band not in ("NUV", "FUV"):
             raise ValueError("band must be either NUV or FUV")
@@ -133,10 +140,16 @@ def raw_data_paths(eclipse):
     return mast_url(f"spGetRawUrls {eclipse}")
 
 
-def retrieve_raw6(eclipse: int, band: GalexBand, outbase: Pathlike) -> Path:
+def retrieve_raw6(
+    eclipse: int,
+    band: GalexBand,
+    outbase: Pathlike,
+    aspect_dir: None | str | Path = None,
+) -> Path:
     """retrieve raw6 (L0 telemetry) file from MAST and save it to outbase."""
     raw6file = download_data(
         eclipse, "raw6", band, datadir=os.path.dirname(outbase),
+        aspect_dir=aspect_dir,
     )
     if raw6file is None:
         raise ValueError("Unable to retrieve raw6 file for this eclipse.")
