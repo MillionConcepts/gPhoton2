@@ -66,6 +66,8 @@ namespaces = false
 
 [tool.setuptools.package-data]
 "*" = ["*.csv", "*.fits", "*.md", "*.tbl"]
+# the large aspect tables are downloaded on first need, not bundled
+"gPhoton.aspect" = ["raw_data_urls.parquet"]
 
 # Recommended for new projects by pytest manual.
 [tool.pytest.ini_options]

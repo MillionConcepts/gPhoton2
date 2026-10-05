@@ -3,7 +3,9 @@ methods for retrieving aspect solution (meta)data from gPhoton 2's combined
 aspect solution tables
 """
 
+import os
 from pathlib import Path
+import tempfile
 from typing import Any, Iterable, Literal, Sequence, cast, get_args
 
 import numpy as np
@@ -13,6 +15,7 @@ from pyarrow import parquet
 
 from gPhoton import DEFAULT_ASPECT_DIR
 from gPhoton.coords.gnomonic import gnomfwd_simple
+from gPhoton.io.netutils import chunked_download
 from gPhoton.parquet_utils import parquet_to_ndarrays
 from gPhoton.pretty import print_inline
 
@@ -24,6 +27,41 @@ ASPECT_TABLE_TYPE = Literal["aspect", "aspect2", "boresight", "metadata", "expos
 # give them back in any particular order
 ALL_ASPECT_TABLES = \
     cast(list[ASPECT_TABLE_TYPE], sorted(get_args(ASPECT_TABLE_TYPE)))
+
+# permanent home of the large aspect tables; these are retrieved into the
+# aspect directory the first time they are needed.
+ASPECT_URL_BASE = "https://archive.stsci.edu/hlsps/gphoton/aspect_files/"
+REMOTE_ASPECT_TABLES = ("aspect", "boresight", "leg-aperture", "metadata")
+
+
+def aspect_table_path(table: str, aspect_dir: None | str | Path = None) -> Path:
+    """
+    return the path to an aspect table in aspect_dir (default:
+    DEFAULT_ASPECT_DIR), first downloading it from ASPECT_URL_BASE if it is
+    one of REMOTE_ASPECT_TABLES and is not already present.
+    """
+    if aspect_dir is None:
+        aspect_dir = DEFAULT_ASPECT_DIR
+    if not isinstance(aspect_dir, Path):
+        aspect_dir = Path(aspect_dir)
+    path = aspect_dir / (table + ".parquet")
+    if path.exists() or table not in REMOTE_ASPECT_TABLES:
+        return path
+    url = ASPECT_URL_BASE + path.name
+    print(f"{path.name} not found in {aspect_dir}; downloading from {url}")
+    aspect_dir.mkdir(parents=True, exist_ok=True)
+    # download to a temporary file and move it into place on success, so
+    # that an interrupted download never leaves a truncated table behind
+    fd, tmp = tempfile.mkstemp(dir=aspect_dir, suffix=".part")
+    os.close(fd)
+    try:
+        chunked_download(url, tmp, render_bar=True)
+        os.replace(tmp, path)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
+    return path
+
 
 def aspect_tables(
     eclipse: None | int,
@@ -80,7 +118,7 @@ def aspect_tables(
         kwargs["filters"] = filters
 
     return [
-        parquet.read_table(aspect_dir / (table + ".parquet"), **kwargs)
+        parquet.read_table(aspect_table_path(table, aspect_dir), **kwargs)
         for table in tables
     ]
 
