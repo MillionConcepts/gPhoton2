@@ -26,11 +26,12 @@ cd gphoton2
 mamba env create -f environment.yml
 ```
 
-gPhoton 2 also relies on several large aspect metadata files that are not 
-distributed along with this repository. 
-[They are currently available here.](https://drive.google.com/drive/u/1/folders/1aPfLKsZM8x5Pxji0Lh3dUblpo9dyt1IW)
-Place these files in the `gPhoton/aspect/` directory after downloading
-them.
+gPhoton 2 also relies on several large aspect metadata files (~3.2 GB total)
+that are not distributed along with this repository. They are hosted at
+[MAST](https://archive.stsci.edu/hlsps/gphoton/aspect_files/) and are
+downloaded automatically into the `gPhoton/aspect/` directory (or into the
+`aspect_dir` passed to the pipeline) the first time each one is needed. To
+skip the download, place copies of these files in that directory yourself.
 
 ## basic usage
 

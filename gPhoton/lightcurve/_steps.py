@@ -46,22 +46,19 @@ def count_full_depth_image(
 
     # make apertures from source list
     source_table = source_table.reset_index(drop=True)
-    positions = source_table[["xcentroid", "ycentroid"]].to_numpy()
+    positions = source_table[["x_centroid", "y_centroid"]].to_numpy()
     apertures = CircularAperture(positions, r=aperture_size)
 
     # run photometry on count images, this is run for all run types
     cnt_result = aperture_photometry(
         image_dict["cnt"],
         apertures,
-        method='exact',
-    )
-    source_table["xcenter"] = cnt_result["xcenter"].data
-    source_table["ycenter"] = cnt_result["ycenter"].data
-    source_table["aperture_sum"] = cnt_result["aperture_sum"].data.astype("float32")
-    del cnt_result
-    gc.collect()
-
-    # flag aperture photometry, all run types
+        method='exact'
+    ).to_pandas()
+    source_table = pd.concat([
+        source_table,
+        cnt_result[["x_center", "y_center", "aperture_sum"]],
+    ], axis=1)
     source_table["artifact_flag"] = bitwise_aperture_photometry(
         image_dict["flag"],
         apertures
@@ -326,5 +323,5 @@ def format_source_catalog(source_table, wcs):
             for position in source_table[["ra", "dec"]].values
         ]
     )
-    source_table[["xcentroid", "ycentroid"]] = positions
+    source_table[["x_centroid", "y_centroid"]] = positions
     return source_table

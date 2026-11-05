@@ -447,7 +447,9 @@ def _look_for_raw6(ctx) -> Path:
         from gPhoton.io.mast import retrieve_raw6
 
         print("downloading raw6file")
-        raw6file = retrieve_raw6(ctx.eclipse, ctx.band, raw6path)
+        raw6file = retrieve_raw6(
+            ctx.eclipse, ctx.band, raw6path, aspect_dir=ctx.aspect_dir
+        )
         if raw6file is not None:
             raw6path = Path(raw6file)
     return raw6path
