@@ -57,7 +57,7 @@ def count_full_depth_image(
     ).to_pandas()
     source_table = pd.concat([
         source_table,
-        phot_table[["x_center", "y_center", "aperture_sum"]],
+        cnt_result[["x_center", "y_center", "aperture_sum"]],
     ], axis=1)
     source_table["artifact_flag"] = bitwise_aperture_photometry(
         image_dict["flag"],
