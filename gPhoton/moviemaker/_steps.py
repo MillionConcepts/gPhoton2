@@ -475,8 +475,7 @@ def populate_fits_header(
         "dose": "Detector-space histogram of photon counts.",
         "coverage": (
             "Aspect-derived maps in sky-projected space. Coverage varies due "
-            "to dither patterns. 1. Full coverage during observation. "
-            "2. Partial coverage during observation."
+            "to dither patterns. 1 is partial coverage, 0 is no coverage."
         ),
     }
     header['COMMENT'] = comment[key]

@@ -303,8 +303,17 @@ def get_point_sources(
         outline_seg_map = np.zeros_like(segment_map)
     del segment_map
 
-    seg_sources.astype({'label': 'int32'})
-    seg_sources = seg_sources.set_index("label", drop=True)
+    seg_sources = seg_sources.astype({
+        'label': 'int32',
+        'area': 'float32',
+        'segment_flux': 'float32',
+        'elongation': 'float32',
+        'eccentricity': 'float32',
+        'equivalent_radius': 'float32',
+        'orientation': 'float32',
+        'max_value': 'float32',
+        'min_value': 'float32',
+    }).set_index("label", drop=True)
     # removed so labels align with outline_seg_map
     # .dropna(axis=0, how='any')
 
