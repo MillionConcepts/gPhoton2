@@ -45,6 +45,8 @@ def aspect_table_path(table: str, aspect_dir: None | str | Path = None) -> Path:
     if not isinstance(aspect_dir, Path):
         aspect_dir = Path(aspect_dir)
     path = aspect_dir / (table + ".parquet")
+    if table == "raw_data_urls" and not path.exists():
+        return Path(DEFAULT_ASPECT_DIR) / path.name
     if path.exists() or table not in REMOTE_ASPECT_TABLES:
         return path
     url = ASPECT_URL_BASE + path.name
