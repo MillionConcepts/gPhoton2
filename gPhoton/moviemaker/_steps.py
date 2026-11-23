@@ -560,7 +560,6 @@ def write_fits_array(
                 ctx.compression,
                 **ctx.hdu_constructor_kwargs
             )
-            outpaths = [array_path]
             outpaths.append(array_path)
     else:
         array_path = ctx["movie"] if is_movie is True else ctx["image"]

@@ -3,7 +3,7 @@ channels:
   - numba
   - conda-forge
 dependencies:
-  - python>=3.10
+  - python>=3.11
   - astropy
   - dustgoggles
   - fast-histogram
@@ -12,6 +12,7 @@ dependencies:
   - matplotlib
   - numba
   - numpy>=2.2
+  - cytoolz
   - pandas
   - photutils>=3.0
   - pip
@@ -33,6 +34,6 @@ dependencies:
   - icc_rt
   # optional, only required for object-search functions
   - astroquery
+  - quickbin
   # optional, only required for tests
   - pytest
-  - quickbin

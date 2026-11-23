@@ -18,10 +18,10 @@ from gPhoton.aspect import aspect_tables, aspect_table_path, DEFAULT_ASPECT_DIR
 
 # parquet filters implementing canonical definitions for specific eclipse types
 MISLIKE_FILTER = (
-    ("planned_legs", "=", 0), ("plan_type", "in", ["MIS", "DIS", "GII"])
+    ("planned_legs", "=", 1), ("plan_type", "in", ["MIS", "DIS", "GII"])
 )
 # 'big' eclipses, useful category for testing
-COMPLEX_FILTER = (("planned_legs", ">", 0),)
+COMPLEX_FILTER = (("planned_legs", ">", 1),)
 
 
 def boundaries_of_a_square(x: float, y: float, size: float):
@@ -142,8 +142,9 @@ def eclipses_near_object(object_name: str, arcseconds: float,
 def filter_galex_eclipses(eclipse_type=None, filters=None, as_pandas=True,
                           aspect_dir: None | str | Path = None):
     """
-    randomly select a set of GALEX eclipses matching predefined criteria.
-    if no arguments are passed, returns all eclipses.
+    select GALEX eclipses by metadata criteria. `eclipse_type` may be
+    "mislike" or "complex" (predefined filters); alternatively, pass pyarrow
+    `filters` directly. if no arguments are passed, returns all eclipses.
     """
     available_filters = {
         name.lower(): obj

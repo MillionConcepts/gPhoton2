@@ -1,7 +1,7 @@
 import os
 import time
 
-__version__ = '3.0.0a0'
+__version__ = '3.0.0b1'
 PKG_DIR = os.path.abspath(os.path.dirname(__file__))
 CAL_DIR = os.path.join(PKG_DIR, 'cal_data')
 DEFAULT_ASPECT_DIR = os.path.join(PKG_DIR, 'aspect')

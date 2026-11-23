@@ -1,6 +1,6 @@
 [project]
 name        = "gPhoton"
-version     = "0.1.0"
+dynamic     = ["version"]
 description = "Data processing pipeline for the GALEX ultraviolet telescope"
 readme      = "README.md"
 license     = { file = "LICENSE" }
@@ -9,10 +9,11 @@ authors     =  [
     { name = "Chase Million",     email = "chase@millionconcepts.com"    },
     { name = "Michael St. Clair", email = "mstclair@millionconcepts.com" },
     { name = "Beka Albach",       email = "ralbach@millionconcepts.com"  },
+    { name = "Zack Weinberg",     email = "zack@millionconcepts.com"     },
 ]
 
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 4 - Beta",
     "License :: OSI Approved :: BSD License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
@@ -21,6 +22,7 @@ classifiers = [
 requires-python = ">=3.11"
 dependencies = [
     "astropy",
+    "cytoolz",
     "dustgoggles",
     "fast-histogram",
     "fitsio",
@@ -58,6 +60,9 @@ Repository = "https://github.com/MillionConcepts/gphoton2"
 [build-system]
 requires = ["setuptools >= 64"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools.dynamic]
+version = { attr = "gPhoton.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["."]

@@ -353,7 +353,7 @@ def check_eclipse(eclipse, aspect_dir: None | str | Path = None):
     )[0]
     if len(meta) == 0:
         e_error.append(f"No metadata found for e{eclipse}.")
-        return e_warn, e_error
+        return e_warn, e_error, post_csp
     actual, nominal = titular_legs(eclipse, aspect_dir=aspect_dir)
     if actual != nominal:
         obstype = meta['plan_type'].to_pylist()[0]
