@@ -146,7 +146,7 @@ including:
 `nd`/`fd` denote NUV and FUV direct-mode data; `bNN` is the leg number within each eclipse. The
 image/movie suffix reflects compression (`g` for gzip, `r` for RICE, `n` for
 none); only gzip output ends in `.fits.gz`. Gzip compression shells out to
-none); only gzip output ends in `.fits.gz`. Gzip compression shells out to `igzip`, `libdeflate_gzip`, or `gzip`, so one of them must be installed. Burst mode (`burst=True`) writes each movie frame as its own file, with `-tNNNN-` in
+`igzip`, `libdeflate_gzip`, or `gzip`, so one of them must be installed. Burst mode (`burst=True`) writes each movie frame as its own file, with `-tNNNN-` in the name corresponding to frame number. Pass `ftype="parquet"` to write photometry tables as parquet instead of CSV.
 the name corresponding to frame number. Pass `ftype="parquet"` to write photometry tables as parquet instead
 of CSV.
 
