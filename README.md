@@ -291,9 +291,7 @@ gPhoton 2 is an active component of multiple ongoing research projects. In
 particular, continued development is a core component of the [GALEX Legacy
 Catalog (GLCAT) project.](https://www.millionconcepts.com/documents/glcat_adap_trimmed.pdf) The GLCAT project is nearing its conclusion, so the feature set and interface are somewhat stable. However, stability is not guaranteed. Whenever you use gPhoton2 for your research, it would be wise to note the specific git hash of the version of the software that you used, in order to guarantee reproducibility.
 
-[FIXME] gPhoton 2 does not currently have comprehensive software tests, and its existing
-regression tests are disabled. It has been primarily (although not
-exclusively) deployed and tested in our preferred deployment environments.
+[FIXME] gPhoton 2 does not currently have comprehensive software tests. The end-to-end regression tests are deselected by default because they are slow and may download data; the unit tests run by default. It has been primarily (although not exclusively) deployed and tested in our preferred deployment environments. Some features or components may be unstable in other environments.
 Some features or components may be unstable in other environments.
 
 ## feedback and contributions
