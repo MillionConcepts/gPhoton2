@@ -170,7 +170,7 @@ Note that an additional "ghost" flagging step is applied automatically to eclips
 gPhoton 2 development to date has been focused on performance and stability in our
 primary cloud deployment environments -- AWS EC2 instances running Ubuntu
 Linux. As such, Linux is the preferred OS for gPhoton2. It is also known to be
-compatible with MacOS, but multithreading may not be as performant; we suggest running gPhoton2 in single-threaded mode MacOS. The software will probably run on Windows Subsystem for Linux (WSL), although it has not been extensively tested.
+compatible with MacOS, but multithreading may not be as performant; we suggest running gPhoton2 in single-threaded mode on MacOS. The software will probably run on Windows Subsystem for Linux (WSL), although it has not been extensively tested.
 
 ### resources
 gPhoton 2 does not have hard-and-fast system requirements. It is highly
