@@ -128,7 +128,7 @@ FIXME: The tutorial currently expects local copies
 of the GFCAT catalog tables. Bundle these tables with the distro.
 
 FIXME: The tutorial requires the optional dependencies [`pdr`](https://github.com/MillionConcepts/pdr) and
-`imageio`. These need to be defined as optional dependencies in the environmy.yml and pyproject.toml
+`imageio`. These need to be defined as optional dependencies in the environment.yml and pyproject.toml
 
 ### output files
 
