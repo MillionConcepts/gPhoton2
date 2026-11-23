@@ -127,8 +127,7 @@ resulting images, movies, and lightcurves.
 FIXME: The tutorial currently expects local copies
 of the GFCAT catalog tables. Bundle these tables with the distro.
 
-FIXME: The tutorial requires the optional dependencies [`pdr`](https://github.com/MillionConcepts/pdr) and
-`imageio`. These need to be defined as optional dependencies in the environment.yml and pyproject.toml
+Install the tutorial's optional dependencies with `pip install pdr imageio`.
 
 ### output files
 
@@ -279,7 +278,7 @@ The following dependencies are optional (`pip` extra in parentheses):
 * pandas-stubs, types-requests (`typecheck`): mypy type stubs
 * pytest (`tests`): test suite
 * pdr: tutorial notebook
-* imagio: tutorial notebook
+* imageio: tutorial notebook
 
 ## tests
 
