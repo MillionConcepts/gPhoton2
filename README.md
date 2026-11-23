@@ -14,7 +14,7 @@ gPhoton1 and features several significant calibration and quality of life improv
 
 ## installation
 
-gPhoton 2 is not yet distributed via any package manager. Install it
+gphoton2 is not yet distributed via any package manager. Install it
 from a clone of this repository. We recommend installing and running within a `conda` environment created from
 the provided [environment.yml](environment.yml) file,
 and installing the package into that environment with `pip`.
@@ -32,7 +32,7 @@ below.
 
 ### aspect tables
 
-gPhoton 2 relies on several large aspect metadata tables (~3.2 GB total)
+gphoton2 relies on several large aspect metadata tables (~3.2 GB total)
 that are not distributed along with this repository: `aspect.parquet`,
 `boresight.parquet`, `leg-aperture.parquet`, and `metadata.parquet`. They
 are hosted at [MAST](https://archive.stsci.edu/hlsps/gphoton/aspect_files/),
@@ -41,7 +41,7 @@ the download, place copies of these files in the aspect directory yourself.
 
 By default, the aspect directory is `gPhoton/aspect/` inside the installed
 package. With an editable install, that is the `gPhoton/aspect/` directory
-of your clone. If you installed gPhoton 2 somewhere you can't or don't want
+of your clone. If you installed gphoton2 somewhere you can't or don't want
 to write (such as a shared `site-packages`), pass `aspect_dir` to
 `execute_pipeline()` and to the search functions to put the tables somewhere
 else.
@@ -103,7 +103,7 @@ accepted arguments.
 
 ### finding eclipses
 
-gPhoton 2 always requires an eclipse number to be specified. ("Eclipse" refers to the period of time in which the spacecraft was in Earth's shadow, and could safely observe. This happened once per orbit. Therefore "eclipse"~="orbit".)
+gphoton2 always requires an eclipse number to be specified. ("Eclipse" refers to the period of time in which the spacecraft was in Earth's shadow, and could safely observe. This happened once per orbit. Therefore "eclipse"~="orbit".)
 
 To find eclipses that
 cover a position, use the functions in `gPhoton.search.core`.
@@ -123,9 +123,6 @@ For many worked examples of the main processing modes, see [COOKBOOK.md](COOKBOO
 [The tutorial notebook](tutorial.ipynb) walks step-by-step through the process of finding eclipses for a given set of
 sources, building an input source catalog, running the pipeline to generate images and photometry of those sources, and then plotting the
 resulting images, movies, and lightcurves.
-
-FIXME: The tutorial currently expects local copies
-of the GFCAT catalog tables. Bundle these tables with the distro.
 
 Install the tutorial's optional dependencies with `pip install pdr imageio`.
 
@@ -166,13 +163,13 @@ Note that an additional "ghost" flagging step is applied automatically to eclips
 ## requirements
 
 ### os
-gPhoton 2 development to date has been focused on performance and stability in our
+gPhoton2 development to date has been focused on performance and stability in our
 primary cloud deployment environments -- AWS EC2 instances running Ubuntu
 Linux. As such, Linux is the preferred OS for gPhoton2. It is also known to be
 compatible with MacOS, but multithreading may not be as performant; we suggest running gPhoton2 in single-threaded mode on MacOS. The software will probably run on Windows Subsystem for Linux (WSL), although it has not been extensively tested.
 
 ### resources
-gPhoton 2 does not have hard-and-fast system requirements. It is highly
+gphoton2 does not have hard-and-fast system requirements. It is highly
 configurable and not all of the portions of its pipelines are equally
 expensive. Also, the GALEX raw data archive is extremely diverse, and some
 visits / eclipses are much cheaper to process than others. The resource needs scale basically linearly with the number of _photon events_ being simultaneously processed; therefore, processing a
@@ -183,7 +180,7 @@ However, here are some general notes:
 
 * It should be possible to process any MIS-like eclipse to 30-second depth
   (bin size) in ~6 GB of free memory.
-* gPhoton 2 processes each "leg" (nominal boresight position) of an eclipse
+* gphoton2 processes each "leg" (nominal boresight position) of an eclipse
   separately, so eclipses with many "legs", like much of the All-Sky
   Imaging Survey (AIS) will often be very memory-cheap to process relative
   to overall visit time.
@@ -197,19 +194,19 @@ However, here are some general notes:
 * Decreasing the depth / increasing temporal
   resolution will tend to sharply increase the required memory for both
   producing and writing movies. If you only want to produce
-  full-depth images with gPhoton 2 and neither want to write movies or generate
+  full-depth images with gphoton2 and neither want to write movies or generate
   photometry, time and memory requirements will tend to go sharply down.
-* If you pass the `--burst=True` parameter, gPhoton 2 will write each
+* If you pass the `--burst=True` parameter, gphoton2 will write each
   frame of a movie as a separate file, which reduces memory pressure
   significantly, but is somewhat slower, and can produce a very large number of files.
-* There is no particular minimum CPU requirement; gPhoton 2 will run on
+* There is no particular minimum CPU requirement; gphoton2 will run on
   quite slow processors; but it can use all the processing power you can throw
   at it. Integrating video tends to be the most CPU-bound portion of the
   pipeline (especially at very high temporal resolution), followed by counting
   photometry on video frames, followed by producing photonlists.
-* Running gPhoton 2 in multithreaded mode will tend to increase average
+* Running gphoton2 in multithreaded mode will tend to increase average
   (although not necessarily peak) working memory. Even in multithreaded mode,
-  some portions of gPhoton 2 are thread-bound, and single-thread performance
+  some portions of gphoton2 are thread-bound, and single-thread performance
   remains important.
 * More than 8 parallel processes do not tend to be
   useful, except for high-resolution photometry on very dense fields.
@@ -219,7 +216,7 @@ However, here are some general notes:
   tables, which will take as long as it takes.
 * Some output files may be large enough that portions of the pipeline become
   I/O bound, and we do not recommend using a HDD or networked storage as
-  working space for gPhoton 2.
+  working space for gphoton2.
 
 ### storage
 
@@ -243,7 +240,7 @@ The aspect tables described [above](#aspect-tables) need ~3.2 GB.
 
 ### dependencies
 
-gPhoton 2 requires Python >= 3.11.
+gphoton2 requires Python >= 3.11.
 
 It also depends on the following Python libraries:
 * astropy
@@ -282,16 +279,16 @@ The following dependencies are optional (`pip` extra in parentheses):
 
 ## tests
 
-gPhoton 2's regression tests live in `gPhoton/tests/`. Unit tests run by default; end-to-end regression tests are deselected by default and can be run with `pytest gPhoton/tests -m e2e`; see
+gphoton2's regression tests live in `gPhoton/tests/`. Unit tests run by default; end-to-end regression tests are deselected by default and can be run with `pytest gPhoton/tests -m e2e`; see
 [gPhoton/tests/README.md](gPhoton/tests/README.md).
 
 ## caveats
 
-gPhoton 2 is an active component of multiple ongoing research projects. In
+gphoton2 is an active component of multiple ongoing research projects. In
 particular, continued development is a core component of the [GALEX Legacy
 Catalog (GLCAT) project.](https://www.millionconcepts.com/documents/glcat_adap_trimmed.pdf) The GLCAT project is nearing its conclusion, so the feature set and interface are somewhat stable. However, stability is not guaranteed. Whenever you use gPhoton2 for your research, it would be wise to note the specific git hash of the version of the software that you used, in order to guarantee reproducibility.
 
-[FIXME] gPhoton 2 does not currently have comprehensive software tests. The end-to-end regression tests are deselected by default because they are slow and may download data; the unit tests run by default. It has been primarily (although not exclusively) deployed and tested in our preferred deployment environments. Some features or components may be unstable in other environments.
+gPhoton2 has tests of critical functionality. The end-to-end regression tests are deselected by default because they are slow and may download data; the unit tests run by default. It has been primarily (although not exclusively) deployed and tested in our preferred deployment environments. Some features or components may be unstable in other environments.
 Some features or components may be unstable in other environments.
 
 ## feedback and contributions
