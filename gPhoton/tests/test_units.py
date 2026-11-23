@@ -68,9 +68,6 @@ def test_check_eclipse_unsupported_returns_three_values(monkeypatch):
     import gPhoton.aspect as aspect
     from gPhoton.reference import check_eclipse
 
-    class _Empty(list):
-        pass
-
     monkeypatch.setattr(aspect, "aspect_tables", lambda **kw: [[]])
     warns, errors, post_csp = check_eclipse(23456)
     assert len(errors) == 1 and "No metadata" in errors[0]
