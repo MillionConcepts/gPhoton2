@@ -61,7 +61,8 @@ covers several eclipses, an `eclipse` column. Without an `eclipse` column all
 rows are used. Duplicates are dropped.
 
 ```python
-pd.DataFrame({"eclipse": [23456], "ra": 323.93, "dec": -2.165}).to_csv("cat.csv", index=False) # write a valid catalog file
+import pandas as pd
+pd.DataFrame({"eclipse": [23456], "ra": [323.93], "dec": [-2.165]}).to_csv("cat.csv", index=False)
 execute_pipeline(23456, "NUV", depth=30, source_catalog_file="cat.csv")
 ```
 
