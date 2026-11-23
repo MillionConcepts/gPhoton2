@@ -283,8 +283,7 @@ The following dependencies are optional (`pip` extra in parentheses):
 
 ## tests
 
-gPhoton 2's regression tests live in `gPhoton/tests/`. [FIXME] They are currently
-disabled pending new benchmarks; see
+gPhoton 2's regression tests live in `gPhoton/tests/`. Unit tests run by default; end-to-end regression tests are deselected by default and can be run with `pytest gPhoton/tests -m e2e`; see
 [gPhoton/tests/README.md](gPhoton/tests/README.md).
 
 ## caveats
