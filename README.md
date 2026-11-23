@@ -36,7 +36,7 @@ gPhoton 2 relies on several large aspect metadata tables (~3.2 GB total)
 that are not distributed along with this repository: `aspect.parquet`,
 `boresight.parquet`, `leg-aperture.parquet`, and `metadata.parquet`. They
 are hosted at [MAST](https://archive.stsci.edu/hlsps/gphoton/aspect_files/),
-and gPhoton downloadeds them automatically the first time each one is needed. To skip
+and gPhoton downloads them automatically the first time each one is needed. To skip
 the download, place copies of these files in the aspect directory yourself.
 
 By default, the aspect directory is `gPhoton/aspect/` inside the installed
