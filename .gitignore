@@ -21,6 +21,7 @@ e*.fits.gz
 /gPhoton_old/
 /gPhoton/test_data/
 /gPhoton/aspect/*.parquet
+!/gPhoton/aspect/raw_data_urls.parquet
 aspect_info_raw/
 regr_test_data/
 .venv/

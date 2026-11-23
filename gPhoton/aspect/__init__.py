@@ -19,7 +19,8 @@ from gPhoton.io.netutils import chunked_download
 from gPhoton.parquet_utils import parquet_to_ndarrays
 from gPhoton.pretty import print_inline
 
-ASPECT_TABLE_TYPE = Literal["aspect", "aspect2", "boresight", "metadata", "exposure_rgns"]
+ASPECT_TABLE_TYPE = Literal["aspect", "aspect2", "boresight", "metadata",
+                          "leg-aperture"]
 # This odd-looking construct is needed because get_args returns
 # tuple[Any, ...]; we're essentially saying 'trust me, in this case
 # the elements of the tuple are all appropriate strings'.
@@ -114,10 +115,8 @@ def aspect_tables(
                 " filters=[('eclipse', '=', N)])"
             )
 
-    if filters is None:
-        del kwargs["filters"] # this should be impossible but just in case
-    else:
-        kwargs["filters"] = filters
+    # filters=None is pyarrow's default (no filtering)
+    kwargs["filters"] = filters
 
     return [
         parquet.read_table(aspect_table_path(table, aspect_dir), **kwargs)

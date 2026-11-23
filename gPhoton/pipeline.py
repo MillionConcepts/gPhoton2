@@ -22,7 +22,11 @@ from cytoolz import identity, keyfilter
 from more_itertools import chunked
 
 import gPhoton.reference
-from gPhoton.reference import PipeContext, check_eclipse
+from gPhoton.reference import (
+    EXTENDED_PIPELINE_VARIABLES,
+    PipeContext,
+    check_eclipse,
+)
 from gPhoton.io.fits_utils import get_fits_header
 from gPhoton.types import GalexBand
 
@@ -46,11 +50,19 @@ def get_photonlists(ctx: PipeContext, raise_errors: bool = True):
     if ctx.recreate is False:
         photonpaths = find_photonfiles(ctx)
         if all([path.exists() for path in photonpaths]):
-            print(
-                f"using existing photon list(s): "
-                f"{[str(path) for path in photonpaths]}"
-            )
-            return photonpaths
+            if ctx.extended_photonlist and not _has_extended_columns(
+                photonpaths
+            ):
+                print(
+                    "existing photon list(s) lack extended columns; "
+                    "regenerating"
+                )
+            else:
+                print(
+                    f"using existing photon list(s): "
+                    f"{[str(path) for path in photonpaths]}"
+                )
+                return photonpaths
     raw6path = _look_for_raw6(ctx)
     if not raw6path.exists():
         print("couldn't find raw6 file.")
@@ -65,6 +77,16 @@ def get_photonlists(ctx: PipeContext, raise_errors: bool = True):
         if raise_errors:
             raise value_error
         return parse_photonpipe_error(value_error)
+
+
+def _has_extended_columns(paths) -> bool:
+    from pyarrow import parquet
+
+    return all(
+        set(EXTENDED_PIPELINE_VARIABLES)
+        <= set(parquet.read_schema(path).names)
+        for path in paths
+    )
 
 
 def find_photonfiles(context: PipeContext):
@@ -623,6 +645,9 @@ def unpack_movie(movie_file, compression, lil):
         array = hdu.data
         for frame_ix in range(len(results['exptimes'])):
             cut = array[frame_ix]
+            # FITS data is big-endian; scipy.sparse requires native order
+            if cut.dtype.byteorder not in ("=", "|"):
+                cut = cut.astype(cut.dtype.newbyteorder("="))
             plane.append(constructor(cut))
     return results | {"cnt": planes[0], "flag": planes[1]}
 

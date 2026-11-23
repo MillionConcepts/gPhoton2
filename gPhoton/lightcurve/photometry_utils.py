@@ -209,7 +209,7 @@ def outline_segments(self, mask_background=False):
                                grey_erosion)
 
     # edge connectivity
-    footprint = generate_binary_structure(self._ndim, 1)
+    footprint = generate_binary_structure(self.data.ndim, 1)
 
     # mode='constant' ensures outline is included on the array borders
     eroded = grey_erosion(self.data, footprint=footprint, mode='constant',

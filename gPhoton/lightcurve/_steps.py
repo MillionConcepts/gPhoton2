@@ -273,7 +273,7 @@ def _load_parquet_catalog(
     from pyarrow import parquet
     ds = parquet.read_schema(source_catalog_file)
     if "eclipse" in ds.names:
-        filters = [("eclipse", "=", eclipse)],
+        filters = [("eclipse", "=", eclipse)]
     else:
         # If there is not an eclipse column, then just use everything
         # This lets you feed gPhoton2's outputs back into itself

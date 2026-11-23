@@ -17,7 +17,6 @@ from gPhoton.coords.wcs import (
     sky_box_to_image_box,
 )
 from gPhoton.io.fits_utils import (
-    pyfits_open_igzip,
     read_wcs_from_fits,
     AgnosticHDUL,
     AgnosticHDU,
@@ -121,8 +120,9 @@ def project_to_shared_wcs(
     """
     fits_path: path to fits file
     shared_wcs: WCS object
-    hdu_offset: number of HDUs to skip at the beginning of the file. this will
-        be 1 for RICE-compressed GALEX images and 0 otherwise.
+    hdu_offset: number of HDUs to skip at the beginning of the file. this is
+        1 for current gPhoton images (empty primary HDU, then COUNT, FLAG,
+        ...) and for RICE-compressed GALEX images, and 0 otherwise.
     nonzero: sparsify returned weights?
     system: precomputed WCS object for this image (only for optimization)
     """
@@ -160,7 +160,7 @@ def bin_projected_weights(x, y, weights, imsz):
     return binned
 
 
-def get_full_frame_coadd_layer(gphoton_fits, shared_wcs, hdu_offset=0):
+def get_full_frame_coadd_layer(gphoton_fits, shared_wcs, hdu_offset=1):
     projection = project_to_shared_wcs(gphoton_fits, shared_wcs, hdu_offset)
     return bin_projected_weights(
         projection["x"],
@@ -171,14 +171,12 @@ def get_full_frame_coadd_layer(gphoton_fits, shared_wcs, hdu_offset=0):
 
 
 def coadd_image_files(image_files):
-    headers, systems = read_wcs_from_fits(*image_files)
+    # current images have an empty primary HDU; WCS is in HDU 1 (COUNT)
+    headers, systems = read_wcs_from_fits(*image_files, hdu=1)
     shared_wcs = make_shared_wcs(systems)
     coadd = np.zeros(wcs_imsz(shared_wcs), dtype=np.float64)
     for image_file in image_files:
-        print(image_file)
-        coadd += get_full_frame_coadd_layer(
-            pyfits_open_igzip(image_file), shared_wcs
-        )
+        coadd += get_full_frame_coadd_layer(image_file, shared_wcs)
     return coadd
 
 
