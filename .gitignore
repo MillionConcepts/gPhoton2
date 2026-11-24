@@ -25,3 +25,4 @@ e*.fits.gz
 aspect_info_raw/
 regr_test_data/
 .venv/
+CLAUDE.md

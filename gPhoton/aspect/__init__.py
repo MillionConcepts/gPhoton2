@@ -137,14 +137,18 @@ def distribute_legs(
     """
     aspect = pd.DataFrame(aspect)
     boresight = pd.DataFrame(boresight)
+    # boresight times trail the first aspect sample of each leg by one
+    # (1 s) aspect sample: each is 0.005 s before the sample that follows it,
+    # and the sample 0.995 s earlier already sits at the new pointing. without
+    # this offset, the previous leg claims that sample and, after a slew,
+    # photons from the next field get valid sky coordinates in it.
+    leg_starts = boresight["time"] - 1.0
     legframes = []
     for leg_ix in boresight.index:
         leg = boresight.loc[leg_ix]
-        time_pred = aspect["time"] >= leg["time"]
+        time_pred = aspect["time"] >= leg_starts.loc[leg_ix]
         if leg_ix != len(boresight) - 1:
-            time_pred = time_pred & (
-                aspect["time"] < boresight.loc[leg_ix + 1]["time"]
-            )
+            time_pred = time_pred & (aspect["time"] < leg_starts.loc[leg_ix + 1])
         leg_indices = aspect.loc[time_pred].index
         leg_arrays = {
             'ra0': np.full(len(leg_indices), leg['ra0']),

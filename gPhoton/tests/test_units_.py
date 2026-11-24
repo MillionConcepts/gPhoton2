@@ -12,7 +12,7 @@ import pytest
 from pyarrow import parquet
 
 import gPhoton.aspect
-from gPhoton.aspect import ASPECT_URL_BASE, aspect_table_path
+from gPhoton.aspect import ASPECT_URL_BASE, aspect_table_path, distribute_legs
 from gPhoton.eclipse import eclipse_to_paths
 from gPhoton.io.mast import get_raw_paths
 from gPhoton.reference import check_eclipse
@@ -255,16 +255,40 @@ def test_make_frame_bins_fits_pixel_coordinates():
     assert frame.sum() == 7
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="make_frame bounds both axes by min(imsz), dropping photons from "
-           "the longer axis of non-square images (e.g. 56% of photons in "
-           "e43337 leg 2, 4964 x 3331 pixels)",
-)
 def test_make_frame_non_square_image():
-    # 10 rows x 20 columns; photon at x = 15, y = 3
-    frame = make_frame(np.array([[15.0, 3.0]]), np.array([1.0]), "sum", (10, 20))
-    assert frame[2, 14] == 1
+    # 10 rows x 20 columns; x bounds columns and y bounds rows separately
+    foc = np.array([
+        [15.0, 3.0],   # -> row 2, column 14
+        [20.5, 10.5],  # upper corner of the last pixel
+        [3.0, 15.0],   # past the last row
+        [20.6, 5.0],   # past the last column
+    ])
+    weights = np.array([1.0, 2.0, 4.0, 8.0])
+    frame = make_frame(foc, weights, "sum", (10, 20))
+    assert frame.shape == (10, 20)
+    assert frame[2, 14] == 1 and frame[9, 19] == 2
+    assert frame.sum() == 3
+
+
+def test_distribute_legs_assigns_boundary_sample_to_next_leg():
+    # aspect samples sit at x.995; boresight times at x.99, i.e. 0.995 s
+    # after the sample that really starts each leg
+    t0 = 1000.0
+    leg_a = t0 + np.arange(0, 5)                  # leg 0 at (10, 20)
+    leg_b = t0 + 35 + np.arange(0, 5)             # leg 1 at (11, 21), after a slew
+    times = np.concatenate([leg_a, leg_b]) - 0.005
+    ra = np.r_[np.full(5, 10.0), np.full(5, 11.0)]
+    dec = np.r_[np.full(5, 20.0), np.full(5, 21.0)]
+    aspect = pd.DataFrame({"time": times, "ra": ra, "dec": dec})
+    boresight = pd.DataFrame({
+        "time": [times[0] + 0.995, times[5] + 0.995],
+        "ra0": [10.0, 11.0], "dec0": [20.0, 21.0],
+    })
+    out = distribute_legs(aspect, boresight)
+    assert len(out) == len(aspect)  # leg 0 keeps its first sample
+    assert out["leg"].tolist() == [0] * 5 + [1] * 5
+    # no sample is assigned a boresight from the wrong pointing
+    assert (out["ra"] == out["ra0"]).all() and (out["dec"] == out["dec0"]).all()
 
 
 def test_bitwise_aperture_photometry_flags_bits_inside_apertures():

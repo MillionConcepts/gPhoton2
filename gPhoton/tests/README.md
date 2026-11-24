@@ -103,15 +103,6 @@ After an *intentional* change in output:
 
 Never regenerate baselines to make an unexplained failure go away.
 
-## known issues
-
-`test_make_frame_non_square_image` is a strict `xfail`. `make_frame` bounds
-both image axes by `min(imsz)`, which drops photons from the longer axis of
-non-square images. In e43337 leg 2 (4964 × 3331 pixels), this drops 56% of
-the photons. The E4 baseline currently includes this bug. When it is fixed,
-the xfail will fail as an unexpected pass. At that point, remove the
-`xfail` marker and regenerate the E4 baseline.
-
 ## legacy tests
 
 `test_pipeline_regression.py` and `test_pipeline_regression_quick.py`,
